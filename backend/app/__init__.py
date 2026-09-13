@@ -1,0 +1,1 @@
+"""Stegloc application package."""

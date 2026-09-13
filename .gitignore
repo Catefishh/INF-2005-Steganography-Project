@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.pytest-*/
+*.egg-info/
+.worktrees/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Local configuration and sensitive material
+.env
+.env.*
+secrets/
+keys/
+*.key
+*.pem
+
+# Runtime artifacts
+uploads/
+jobs/
+tmp/
+temp/
+*.stegloc
+.pytest-tmp*/
+.pytest-final/
