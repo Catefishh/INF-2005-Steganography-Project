@@ -1,408 +1,273 @@
+"""FastAPI server for the Stegloc GUI (local use only)."""
+
 import os
-import re
-import threading
-import uuid
-import json
-import asyncio
 import secrets
-from contextlib import asynccontextmanager
+import threading
+from collections import OrderedDict
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import Response, StreamingResponse
-from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field, ConfigDict
 
-from . import workflows
-from .session import Registry, current_session, require_artifact, Session, Job
-from .cancellation import installed as install_cancel
-from .stego.carriers.image import inspect_image
-from .stego.carriers.audio import inspect_audio
-from .stego.security import (generate_ed25519_private_key, export_private_key_pem,
-    export_public_key_pem, import_private_key_pem, import_public_key_pem)
-
+from .stego import analysis, attacks, engine
+from .stego.covers import CoverError, load_cover
+from .stego.security import (KeyFormatError, fingerprint, generate_rsa_keys, load_private_key,
+                             load_public_key)
 
 DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 FRONTEND_DIST = Path(__file__).parents[2] / "frontend" / "dist"
-MAX_MEDIA = 100 * 1024 * 1024
-MAX_TEXT = 10 * 1024 * 1024
-SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+TEXT_PREVIEW_BYTES = 200_000
+
+
+class FileStore:
+    """Keeps generated files (stego, extracted payloads, tampered samples) in memory."""
+
+    def __init__(self, max_files=80, max_bytes=1024 * 1024 * 1024):
+        self.items = OrderedDict()
+        self.max_files = max_files
+        self.max_bytes = max_bytes
+        self.lock = threading.Lock()
+
+    def put(self, data, filename, media_type):
+        file_id = secrets.token_urlsafe(16)
+        with self.lock:
+            self.items[file_id] = (data, filename, media_type)
+            while len(self.items) > self.max_files or sum(len(v[0]) for v in self.items.values()) > self.max_bytes:
+                self.items.popitem(last=False)
+        return {"id": file_id, "filename": filename, "media_type": media_type, "size": len(data)}
+
+    def get(self, file_id):
+        with self.lock:
+            return self.items.get(file_id)
 
 
 class EstimateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    cover_artifact_id: str
-    payload_artifact_id: str
-    depth: int = Field(3, ge=1, le=8)
-    start: int | None = Field(None, ge=0)
-    filename: str | None = Field(None, max_length=255)
-    media_type: str | None = Field(None, max_length=127)
-    team: dict[str, str] = Field(default_factory=dict, max_length=16)
+    cover_kind: str = Field(max_length=10)
+    descriptor: str = Field(max_length=200)
+    cover_filename: str = Field("", max_length=200)
+    payload_filename: str = Field(max_length=200)
+    payload_type: str = Field(max_length=200)
+    payload_size: int = Field(ge=0)
+    team: str = Field("", max_length=200)
+    key_bits: int = Field(2048, ge=1024, le=16384)
 
 
-class ProtectRequest(EstimateRequest):
-    private_key: str = Field(max_length=16384, repr=False)
-    password: str = Field(max_length=4096, repr=False)
-    filename: str | None = Field(None, max_length=255)
-    media_type: str | None = Field(None, max_length=127)
-    team: dict[str, str] = Field(default_factory=dict, max_length=16)
+class KeyInspectRequest(BaseModel):
+    pem: str = Field(max_length=32768)
+    password: str | None = Field(None, max_length=1024)
 
 
-class VerifyRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    stego_artifact_id: str
-    sidecar_artifact_id: str
-    recovery_code: str = Field(min_length=1, max_length=4096)
-    public_key: str | None = Field(None, max_length=16384)
-    public_key_artifact_id: str | None = None
+async def _read(upload, name):
+    data = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"{name} is larger than 200 MB.")
+    return data
 
 
-class KeyRequest(BaseModel):
-    include_private: bool = False
-    password: str | None = Field(None, min_length=1, max_length=4096)
-
-
-class TextRequest(BaseModel):
-    text: str = Field(max_length=MAX_TEXT, repr=False)
-
-
-def _filename(name: str | None) -> str:
-    clean = SAFE_NAME.sub("_", Path(name or "upload.bin").name).strip("._")
-    return (clean or "upload.bin")[:120]
-
-
-async def _read_upload(registry, session: Session, upload: UploadFile, limit: int, destination: Path) -> int:
-    total = 0
-    reserved = 0
-    complete = False
+def _optional_int(value, name):
+    if value is None or str(value).strip() == "":
+        return None
     try:
-        with destination.open("wb") as output:
-            while chunk := await upload.read(1024 * 1024):
-                if total + len(chunk) > limit:
-                    raise HTTPException(413, "upload is too large")
-                registry.reserve_upload_bytes(session, len(chunk))
-                reserved += len(chunk)
-                total += len(chunk)
-                output.write(chunk)
-        complete = True
-    finally:
-        if not complete:
-            registry.release_upload_bytes(session, reserved)
-    return total
+        return int(value)
+    except ValueError as exc:
+        raise HTTPException(400, f"{name} must be a whole number.") from exc
 
 
-def _media(data: bytes):
+def _optional_float(value, name):
+    if value is None or str(value).strip() == "":
+        return None
     try:
-        if data[:2] == b"BM" or data[:8] == b"\x89PNG\r\n\x1a\n":
-            inspect_image(data); return "image"
-        inspect_audio(data); return "audio"
-    except Exception as exc:
-        raise HTTPException(422, "unsupported or malformed media") from exc
+        return float(value)
+    except ValueError as exc:
+        raise HTTPException(400, f"{name} must be a number.") from exc
 
 
-def _start_job(session: Session, fn):
-    if session.active_job:
-        active = session.jobs.get(session.active_job)
-        if active and active.status in {"queued", "running"}:
-            raise HTTPException(409, "a job is already active")
-    ident = uuid.uuid4().hex
-    if len(session.jobs) >= 64:
-        raise HTTPException(429, "job limit reached; reset session")
-    job = session.jobs[ident] = Job(session.root)
-    session.active_job = ident
-    session.active_operations += 1
-    def run():
-        try:
-            with session.lock:
-                _check_job(job, session)
-                job.status = "running"
-            if job.cancel.is_set(): raise InterruptedError
-            with install_cancel(lambda: _check_job(job, session)):
-                result = fn(job)
-            with session.lock:
-                if job.cancel.is_set() or session.closed: raise InterruptedError
-                job.result = result
-                job.status = "succeeded"
-        except InterruptedError:
-            job.status = "cancelled"
-            job.result = None
-        except Exception as exc:
-            job.status = "failed"
-            job.error = {"code": "workflow_error", "message": "Operation could not be completed"}
-        finally:
-            with session.lock:
-                session.active_operations = max(0, session.active_operations - 1)
-                session.operations_done.notify_all()
-                if session.active_job == ident: session.active_job = None
-    threading.Thread(target=run, daemon=True).start()
-    return ident
+def _bad_request(exc):
+    return HTTPException(400, str(exc))
 
 
-def _check_job(job: Job, session: Session) -> None:
-    if job.cancel.is_set() or session.closed:
-        raise InterruptedError
+def _looks_like_text(data):
+    if b"\x00" in data[:4096]:
+        return False
+    try:
+        data.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
 
 
 def create_app(frontend_dist: Path | None = None) -> FastAPI:
-    @asynccontextmanager
-    async def lifespan(app):
-        async def sweep():
-            while True:
-                await asyncio.sleep(30)
-                with app.state.registry.lock:
-                    app.state.registry.expire()
-        task = asyncio.create_task(sweep())
-        try: yield
-        finally:
-            task.cancel()
-            for token in list(app.state.registry.sessions): app.state.registry.reset(token)
-    app = FastAPI(title="Stegloc API", lifespan=lifespan)
-    app.state.registry = Registry()
-    origins = [
-        origin.strip()
-        for origin in os.getenv("STEGLOC_DEV_ORIGINS", DEFAULT_ORIGINS).split(",")
-        if origin.strip()
-    ]
+    app = FastAPI(title="Stegloc API")
+    store = FileStore()
+    app.state.store = store
+
+    origins = [o.strip() for o in os.getenv("STEGLOC_DEV_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
     if any("*" in origin for origin in origins):
         raise ValueError("STEGLOC_DEV_ORIGINS must not contain wildcard origins")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        allow_credentials=True,
-    )
-    app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"]
-    )
-
-    @app.exception_handler(RequestValidationError)
-    async def validation_error(request, exc):
-        return Response('{"detail":"invalid request"}', status_code=422, media_type="application/json")
-
-    @app.middleware("http")
-    async def request_limits(request, call_next):
-        origin = request.headers.get("origin")
-        if origin and origin not in origins and origin not in {"http://" + request.headers.get("host", ""), "https://" + request.headers.get("host", "")}:
-            return Response(status_code=403)
-        limit = MAX_MEDIA + 65536 if request.headers.get("content-type", "").startswith("multipart/") else MAX_TEXT + 65536
-        received = 0
-        receive = request._receive
-        async def bounded_receive():
-            nonlocal received
-            message = await receive()
-            received += len(message.get("body", b""))
-            if received > limit: raise HTTPException(413, "request too large")
-            return message
-        request._receive = bounded_receive
-        try:
-            if int(request.headers.get("content-length", "0")) > limit: return Response(status_code=413)
-        except ValueError: return Response(status_code=400)
-        response = await call_next(request)
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 
     @app.get("/api/health")
-    def health() -> dict[str, str]:
+    def health():
         return {"status": "ok", "service": "stegloc-api"}
 
+    # ---------------------------------------------------------------- keys --
     @app.post("/api/keys/generate")
-    def keys(body: KeyRequest, request: Request):
-        token, _ = current_session(request)
-        key = generate_ed25519_private_key()
-        public = export_public_key_pem(key.public_key()).decode()
-        result = {"public_key": public}
-        if body.include_private:
-            if not body.password: raise HTTPException(422, "password required")
-            result["private_key"] = export_private_key_pem(key, body.password).decode()
-        return _session_response(request, token, result)
+    def keys_generate():
+        private_pem, public_pem = generate_rsa_keys()
+        key = load_public_key(public_pem)
+        return {"private_key": private_pem.decode(), "public_key": public_pem.decode(),
+                "fingerprint": fingerprint(key), "bits": key.key_size}
 
-    @app.post("/api/covers", status_code=201)
-    async def covers(request: Request, file: UploadFile = File(...)):
-        return await _store_upload(request, file, "cover", True)
+    @app.post("/api/keys/inspect")
+    def keys_inspect(body: KeyInspectRequest):
+        pem = body.pem.encode()
+        try:
+            if b"PRIVATE KEY" in pem:
+                if b"ENCRYPTED" in pem and not body.password:
+                    return {"type": "private", "encrypted": True, "bits": None, "fingerprint": None}
+                key = load_private_key(pem, body.password.encode() if body.password else None)
+                return {"type": "private", "encrypted": b"ENCRYPTED" in pem, "bits": key.key_size,
+                        "fingerprint": fingerprint(key.public_key())}
+            key = load_public_key(pem)
+            return {"type": "public", "encrypted": False, "bits": key.key_size, "fingerprint": fingerprint(key)}
+        except KeyFormatError as exc:
+            raise _bad_request(exc)
 
-    @app.post("/api/payloads", status_code=201)
-    async def payloads(request: Request, file: UploadFile = File(...)):
-        return await _store_upload(request, file, "payload", False)
+    # -------------------------------------------------------------- covers --
+    @app.post("/api/inspect")
+    async def inspect(file: UploadFile = File(...)):
+        data = await _read(file, "Cover")
 
-    @app.post("/api/recovery", status_code=201)
-    async def recovery(request: Request, file: UploadFile = File(...)):
-        return await _store_upload(request, file, "recovery", False)
-
-    @app.post("/api/keys/public", status_code=201)
-    async def public_key_upload(request: Request, file: UploadFile = File(...)):
-        return await _store_upload(request, file, "public_key", False)
-
-    @app.post("/api/payloads/text", status_code=201)
-    def text_payload(body: TextRequest, request: Request):
-        token, session = current_session(request)
-        data = body.text.encode("utf-8")
-        if len(data) > MAX_TEXT: raise HTTPException(413, "text too large")
-        ident = app.state.registry.artifact(session, data, "payload.txt", "text/plain", "payload")
-        return _session_response(request, token, {"artifact_id": ident}, 201)
+        def work():
+            cover = load_cover(data)
+            info = cover.info()
+            info["file_size"] = len(data)
+            info["header"] = cover.location(max(engine.header_slot(cover.n_slots), 0))
+            info["capacity"] = [{"n_lsb": n, "max_package_bytes": max(0, engine.max_package_bytes(cover.n_slots, n))}
+                                for n in range(1, 9)]
+            return info
+        try:
+            return await run_in_threadpool(work)
+        except CoverError as exc:
+            raise _bad_request(exc)
 
     @app.post("/api/estimate")
-    def estimate(body: EstimateRequest, request: Request):
-        token, session = current_session(request)
-        cover = require_artifact(session, body.cover_artifact_id, {"cover"})
-        payload = require_artifact(session, body.payload_artifact_id, {"payload"})
+    def estimate(body: EstimateRequest):
         try:
-            result = workflows.estimate(cover.data, len(payload.data), metadata={"filename": body.filename or payload.filename, "media_type": body.media_type or payload.media_type, "team": body.team}, depth=body.depth)
-            if body.start is not None:
-                adapter = workflows._inspect(cover.data)
-                result["start"] = body.start
-                result["available_bytes"] = workflows.lsb.available_bytes(adapter.eligible_slots, body.start, body.depth)
-                result["remaining_bytes"] = result["available_bytes"] - result["total_bytes"]
-                result["fits"] = workflows.lsb.fits(adapter.eligible_slots, body.start, body.depth, result["total_bytes"])
-        except Exception as exc: raise HTTPException(422, "invalid media or estimate") from exc
-        return _session_response(request, token, result)
+            size = engine.estimate_package_bytes(body.cover_kind, body.descriptor, body.cover_filename,
+                                                 body.payload_filename, body.payload_type, body.payload_size,
+                                                 body.team, body.key_bits)
+        except ValueError as exc:
+            raise _bad_request(exc)
+        return {"package_bytes": size}
 
-    @app.post("/api/protect", status_code=202)
-    def protect(body: ProtectRequest, request: Request):
-        token, session = current_session(request)
-        cover = require_artifact(session, body.cover_artifact_id, {"cover"})
-        payload = require_artifact(session, body.payload_artifact_id, {"payload"})
-        try: key = import_private_key_pem(body.private_key.encode(), body.password)
-        except Exception as exc: raise HTTPException(422, "invalid private key") from exc
-        def work(job):
-            kind = _media(cover.data)
-            metadata = {"filename": body.filename or payload.filename, "media_type": body.media_type or payload.media_type, "team": body.team}
-            result = workflows.protect_image(cover.data, payload.data, key, metadata=metadata, depth=body.depth, start=body.start) if kind == "image" else workflows.protect_audio(cover.data, payload.data, key, metadata=metadata, depth=body.depth, start=body.start)
-            if job.cancel.is_set() or session.closed: raise InterruptedError
-            staged = []
-            registered = []
-            try:
-                for data, filename, kind_name in ((result.carrier, "protected." + cover.filename.split(".")[-1], "stego"), (result.sidecar, "locator.stegloc", "sidecar")):
-                    path = Path(session.directory.name) / ("stage-" + secrets.token_hex(12))
-                    path.write_bytes(data)
-                    staged.append((path, filename, kind_name))
-                _check_job(job, session)
-                with session.lock:
-                    _check_job(job, session)
-                    for path, filename, kind_name in staged:
-                        registered.append(session_registry(request).artifact_file(session, path, filename, "application/octet-stream", kind_name))
-                    return {"stego_artifact_id": registered[0], "sidecar_artifact_id": registered[1], "recovery_code": result.recovery_code}
-            except BaseException:
-                with session.lock:
-                    for ident in registered:
-                        artifact = session.artifacts.pop(ident, None)
-                        if artifact: artifact.path.unlink(missing_ok=True)
-                for path, *_ in staged: path.unlink(missing_ok=True)
-                raise
-        with session.lock:
-            return _session_response(request, token, {"job_id": _start_job(session, work)}, 202)
+    # ---------------------------------------------------------------- hide --
+    @app.post("/api/hide")
+    async def hide(cover: UploadFile = File(...), payload_file: UploadFile | None = File(None),
+                   payload_text: str | None = Form(None), passphrase: str = Form(...),
+                   private_key: str = Form(...), key_password: str | None = Form(None),
+                   n_lsb: int = Form(1), start_mode: str = Form("auto"), start_x: str | None = Form(None),
+                   start_y: str | None = Form(None), start_seconds: str | None = Form(None),
+                   start_slot: str | None = Form(None), team: str = Form("")):
+        cover_data = await _read(cover, "Cover")
+        if payload_file is not None and payload_file.filename:
+            content = await _read(payload_file, "Payload")
+            payload_name = payload_file.filename
+            payload_type = payload_file.content_type or "application/octet-stream"
+        elif payload_text:
+            content = payload_text.encode("utf-8")
+            payload_name, payload_type = "message.txt", "text/plain; charset=utf-8"
+        else:
+            raise HTTPException(400, "Add a secret message or choose a payload file.")
+        manual = dict(start_x=_optional_int(start_x, "Start X"), start_y=_optional_int(start_y, "Start Y"),
+                      start_seconds=_optional_float(start_seconds, "Start time"),
+                      start_slot=_optional_int(start_slot, "Start slot"))
 
-    @app.post("/api/verify", status_code=202)
-    def verify(body: VerifyRequest, request: Request):
-        token, session = current_session(request)
-        stego = require_artifact(session, body.stego_artifact_id, {"stego", "cover"})
-        sidecar = require_artifact(session, body.sidecar_artifact_id, {"sidecar", "recovery"})
-        key_data = require_artifact(session, body.public_key_artifact_id, {"public_key"}).data if body.public_key_artifact_id else (body.public_key or "").encode()
-        try: public = import_public_key_pem(key_data)
-        except Exception as exc: raise HTTPException(422, "invalid public key") from exc
-        def work(job):
-            result = workflows.verify_image(stego.data, sidecar.data, body.recovery_code, public) if _media(stego.data) == "image" else workflows.verify_audio(stego.data, sidecar.data, body.recovery_code, public)
-            if job.cancel.is_set() or session.closed: raise InterruptedError
-            ident = None
-            if result.overall is workflows.Verdict.AUTHENTIC:
-                record = result.record or {}
-                content = result.content or b""
-                path = Path(session.directory.name) / ("stage-" + secrets.token_hex(12))
-                path.write_bytes(content)
-                try:
-                    _check_job(job, session)
-                    with session.lock:
-                        _check_job(job, session)
-                        ident = session_registry(request).artifact_file(session, path, record.get("content", {}).get("filename", "verified.bin"), record.get("content", {}).get("media_type", "application/octet-stream"), "content")
-                except BaseException:
-                    path.unlink(missing_ok=True)
-                    raise
-            return {"overall": result.overall.value, "stages": result.stages, "content_artifact_id": ident}
-        with session.lock:
-            return _session_response(request, token, {"job_id": _start_job(session, work)}, 202)
+        def work():
+            return engine.hide(cover_data, cover.filename or "cover", content, payload_name, payload_type,
+                               passphrase, private_key.encode(), (key_password or "").encode() or None, n_lsb,
+                               start_mode, team=team, **manual)
+        try:
+            stego, cover_obj, report = await run_in_threadpool(work)
+        except ValueError as exc:  # CoverError, CapacityError, StartLocationError, KeyFormatError
+            raise _bad_request(exc)
+        stem = Path(cover.filename or "cover").stem or "cover"
+        saved = store.put(stego, f"stego_{stem}{cover_obj.extension}", cover_obj.mime)
+        return {"stego": saved, "report": report}
 
-    @app.get("/api/jobs/{job_id}")
-    def job(job_id: str, request: Request):
-        _, session = current_session(request); item = session.jobs.get(job_id)
-        if not item: raise HTTPException(404, "job not found")
-        return {"job_id": job_id, "status": item.status, "progress": item.progress, "result": item.result, "error": item.error}
+    # -------------------------------------------------------------- verify --
+    @app.post("/api/verify")
+    async def verify(stego: UploadFile = File(...), passphrase: str = Form(""), public_key: str = Form(""),
+                     start_x: str | None = Form(None), start_y: str | None = Form(None),
+                     start_seconds: str | None = Form(None), start_slot: str | None = Form(None)):
+        data = await _read(stego, "Stego file")
+        manual = dict(start_x=_optional_int(start_x, "Start X"), start_y=_optional_int(start_y, "Start Y"),
+                      start_seconds=_optional_float(start_seconds, "Start time"),
+                      start_slot=_optional_int(start_slot, "Start slot"))
+        result = await run_in_threadpool(engine.verify, data, passphrase, public_key.encode(), **manual)
+        content = result.pop("content")
+        result["content"] = None
+        if content is not None and result["record"]:
+            payload = result["record"]["payload"]
+            saved = store.put(content, Path(str(payload.get("filename") or "payload.bin")).name,
+                              str(payload.get("media_type") or "application/octet-stream"))
+            if _looks_like_text(content):
+                saved["text"] = content[:TEXT_PREVIEW_BYTES].decode("utf-8", errors="replace")
+                saved["text_truncated"] = len(content) > TEXT_PREVIEW_BYTES
+            result["content"] = saved
+        return result
 
-    @app.delete("/api/jobs/{job_id}", status_code=202)
-    def cancel(job_id: str, request: Request):
-        _, session = current_session(request); item = session.jobs.get(job_id)
-        if not item: raise HTTPException(404, "job not found")
-        with session.lock:
-            item.cancel.set()
-        return {"status": "cancellation_requested"}
+    # ------------------------------------------------------------ analysis --
+    @app.post("/api/analyse")
+    async def analyse(file: UploadFile = File(...), compare: UploadFile | None = File(None), channel: int = Form(0)):
+        data = await _read(file, "File")
+        other = await _read(compare, "Comparison file") if compare is not None and compare.filename else None
+        try:
+            return await run_in_threadpool(analysis.analyse, data, other, channel)
+        except ValueError as exc:
+            raise _bad_request(exc)
 
-    @app.get("/api/artifacts/{artifact_id}")
-    def download(artifact_id: str, request: Request):
-        _, session = current_session(request); artifact = require_artifact(session, artifact_id)
-        def chunks():
-            with artifact.path.open("rb") as stream:
-                while chunk := stream.read(1024 * 1024): yield chunk
-        return StreamingResponse(chunks(), media_type=artifact.media_type, headers={"Content-Disposition": f'attachment; filename="{_filename(artifact.filename)}"'})
+    @app.post("/api/attacks")
+    async def attack_suite(stego: UploadFile = File(...), cover: UploadFile | None = File(None),
+                           passphrase: str = Form(...), public_key: str = Form(...)):
+        data = await _read(stego, "Stego file")
+        original = await _read(cover, "Cover") if cover is not None and cover.filename else None
+        try:
+            scenarios, files = await run_in_threadpool(attacks.run_suite, data, passphrase, public_key.encode(),
+                                                       original)
+        except ValueError as exc:
+            raise _bad_request(exc)
+        media = load_cover(data).mime
+        saved = {key: store.put(content, name, "image/png" if name.endswith(".png") else media)
+                 for key, (name, content) in files.items()}
+        for scenario in scenarios:
+            scenario["file"] = saved.get(scenario["file"]) if scenario["file"] else None
+        return {"scenarios": scenarios}
 
-    @app.delete("/api/session", status_code=204)
-    def cleanup(request: Request):
-        token = request.cookies.get("stegloc_session") or request.headers.get("X-Session-Token")
-        if token: app.state.registry.reset(token)
-        return Response(status_code=204)
+    # --------------------------------------------------------------- files --
+    @app.get("/api/files/{file_id}")
+    def download(file_id: str, download: int = 0):
+        item = store.get(file_id)
+        if item is None:
+            raise HTTPException(404, "File expired. Run the operation again.")
+        data, filename, media_type = item
+        disposition = "attachment" if download else "inline"
+        safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in filename) or "file"
+        return Response(data, media_type=media_type, headers={
+            "Content-Disposition": f'{disposition}; filename="{safe}"', "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff"})
 
     dist = frontend_dist or FRONTEND_DIST
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")
-
     return app
-
-
-def session_registry(request: Request):
-    return request.app.state.registry
-
-
-def _session_response(request: Request, token: str, body: dict, status_code: int = 200):
-    response = Response(content=json.dumps(body), media_type="application/json", status_code=status_code)
-    response.set_cookie("stegloc_session", token, httponly=True, samesite="strict")
-    return response
-
-
-async def _store_upload(request: Request, file: UploadFile, kind: str, parsed: bool):
-    token, session = current_session(request)
-    temporary = Path(session.directory.name) / ("upload-" + secrets.token_hex(12))
-    registry = request.app.state.registry
-    registry.reserve_upload(session)
-    reserved = 0
-    try:
-        size = await _read_upload(registry, session, file, 16384 if kind == "public_key" else 65536 if kind == "recovery" else MAX_MEDIA, temporary)
-        reserved = size
-        data = temporary.read_bytes() if parsed or kind in {"public_key", "recovery"} else None
-        media_type = "application/octet-stream"
-        filename = _filename(file.filename)
-        if parsed:
-            media = _media(data)
-            suffix = "wav" if media == "audio" else "bmp" if data[:2] == b"BM" else "png"
-            media_type = {"wav": "audio/wav", "bmp": "image/bmp", "png": "image/png"}[suffix]
-            filename = "cover." + suffix
-        if kind == "public_key":
-            try: import_public_key_pem(data)
-            except ValueError as exc: raise HTTPException(422, "invalid public key") from exc
-        if kind == "recovery":
-            from .stego.security import _parse_sidecar
-            try: _parse_sidecar(data)
-            except ValueError as exc: raise HTTPException(422, "invalid recovery file") from exc
-        ident = request.app.state.registry.artifact_file(session, temporary, filename, media_type, kind)
-        return _session_response(request, token, {"artifact_id": ident, "filename": _filename(file.filename), "size": size}, 201)
-    finally:
-        try:
-            temporary.unlink(missing_ok=True)
-            await file.close()
-        finally:
-            registry.release_upload(session, reserved)
 
 
 app = create_app()

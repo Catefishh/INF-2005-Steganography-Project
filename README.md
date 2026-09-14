@@ -1,112 +1,152 @@
-# Stegloc
+# Stegloc: LSB steganography with digital signatures
 
-Stegloc is a local React and Python steganography workbench. Tasks 1-6 provide PNG/RGBA, BMP, and integer PCM WAV inspection, LSB protection, encrypted signed locators, fresh-session API protect/verify flows, bounded uploads, cancellation, and structured verification evidence. The functional UI remains the next task.
+INF2005 ACW1: a web GUI that hides a signed and encrypted verification payload inside an **image** or **WAV audio** cover using **LSB replacement**, then extracts it and verifies it with **SHA-256** and an **RSA digital signature**.
 
-## Prerequisites
+| Page | What it does |
+| --- | --- |
+| **Keys** | Generate or load an RSA-2048 key pair (private key signs, public key verifies) |
+| **Embed & sign** (party A) | Drag in a cover and a payload (text or any file), choose 1-8 LSBs and the start location, then embed |
+| **Extract & verify** (party B) | Drag in the received stego file, enter the passphrase and public key, get a verdict |
+| **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
+| **Attack lab** | Runs up to 10 positive/negative scenarios and lets you download the tampered sample files |
 
-- Python 3.12
-- Node.js `^20.19.0 || >=22.12.0` and npm
-- Windows PowerShell
+## Setup (Windows PowerShell)
 
-## Backend Setup
-
-From the repository root in PowerShell:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.lock
-python -m pip install -e . --no-deps
-```
-
-Run the local API on loopback only:
+Requires Python 3.11+ and Node.js 20.19+.
 
 ```powershell
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-```
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock
 
-Check health from another PowerShell terminal:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/api/health
-```
-
-The expected payload is `{"status":"ok","service":"stegloc-api"}`.
-
-The development CORS allowlist defaults only to `http://localhost:5173` and `http://127.0.0.1:5173`. Override it with a comma-separated `STEGLOC_DEV_ORIGINS` value when another explicit development origin is required.
-
-## Frontend Development
-
-```powershell
 Set-Location frontend
 npm install
-npm run dev -- --host 127.0.0.1
-```
-
-The development shell uses `http://127.0.0.1:8000` for API requests. Keep the backend command running in a separate terminal.
-
-## Production Shell Build
-
-```powershell
-Set-Location frontend
-npm install
-npm run build
 Set-Location ..
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-When `frontend/dist` exists, FastAPI serves it at `/` while `/api/*` routes remain available.
+## Run
+
+Terminal 1 (API):
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+Terminal 2 (GUI):
+
+```powershell
+Set-Location frontend
+npm run dev
+```
+
+Open <http://127.0.0.1:5173>. Vite forwards `/api` calls to the API on port 8000.
+
+Single-server alternative: `npm run build` inside `frontend`, then start only the API and open <http://127.0.0.1:8000>.
 
 ## Tests
 
-## Local workflow API
-
-The API issues a random `stegloc_session` HttpOnly, SameSite=Strict cookie.
-Clients retain that cookie (or send its value as `X-Session-Token`). Artifact
-and job IDs are scoped to that session; downloads never accept filesystem paths.
-Run one local server process. Sessions expire after one idle hour, with a
-30-second cleanup sweep during application lifespan and cleanup on shutdown.
-`DELETE /api/session` marks the session closed, cancels jobs, waits for active uploads/workers to stop, and then removes temporary artifacts.
-
-Multipart `file` uploads use `/api/covers`, `/api/payloads`, `/api/recovery`,
-and `/api/keys/public`. Covers are parsed as PNG/BMP/WAV. Limits are 100 MiB
-for media/payloads, 64 KiB for sidecars, and 16 KiB for public keys.
-`POST /api/payloads/text` accepts `{ "text": "..." }`, bounded to 10 MiB UTF-8.
-There are at most 16 sessions, 64 artifacts and 64 jobs per session, with a
-512 MiB artifact budget per session. Video is not accepted in this milestone.
-
-`/api/keys/generate` returns public PEM; encrypted private PEM is returned only
-with `include_private: true` and a nonempty `password`. `/api/estimate` accepts
-`cover_artifact_id`, `payload_artifact_id`, and `depth` (1–8). `/api/protect`
-adds encrypted `private_key` PEM and `password`; placement is selected by the
-existing workflow. `/api/verify` accepts `stego_artifact_id`,
-`sidecar_artifact_id`, `recovery_code`, and `public_key_artifact_id` (or public PEM
-in `public_key`). Protect and verify return a `job_id` with HTTP 202.
-
-Poll `/api/jobs/{id}` for status, progress, result and structured error.
-Protect results contain stego/sidecar artifact IDs and the separate recovery
-code; successful verification returns a verified-content artifact ID.
-Download using `/api/artifacts/{id}`. `DELETE /api/jobs/{id}` requests
-cancellation at workflow boundaries; an executing crypto/carrier operation
-finishes before cancellation is observed. Cancelled work publishes no result.
-
-### Running tests
-
 ```powershell
-.venv\Scripts\python.exe -m pytest --basetemp=.pytest-tmp
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-## Progress
+## Demo flow (party A to party B)
 
-- [x] Tasks 1-6: protocol, carriers, protection/recovery, API sessions, bounded uploads, cooperative cancellation, atomic publication, and structured verification evidence.
-- [ ] UI workflow: deferred to the next milestone.
+1. **Keys**: generate a key pair, then download `private_key.pem` (sender) and `public_key.pem` (receiver).
+2. **Embed & sign**: drop a PNG/BMP/JPEG or a WAV and pick a payload (the *Short* and *Large* brief samples are one click; a file works too). Choose the LSBs and watch the capacity meter. Enter a passphrase, then click **Embed & sign**. Compare cover and stego with the slider or waveforms, then **Download** the stego file.
+3. Email the stego file to party B and share the passphrase separately. B downloads the file.
+4. **Extract & verify**: B drops the downloaded file, types the passphrase, loads `public_key.pem`, then clicks **Extract & verify**. The verdict, every check and the extracted payload are shown.
+5. **Attack lab**: run the suite for the negative cases and download the tampered files as evidence.
 
-## V1 Scope
+## How it works
 
-- PNG: nonanimated 8-bit RGB/RGBA, dimensions preserved, encoded size explicitly variable.
-- BMP: uncompressed 24-bit `BI_RGB`, exact byte length.
-- WAV: RIFF integer PCM 8/16/24/32-bit mono/stereo, exact byte length.
-- Recovery: encrypted `.stegloc` locator sidecar plus a separate random recovery code.
-- Restricted uncompressed AVI only after mandatory image/audio support is complete.
+### LSB replacement (lecture code, extended)
 
-See [PRODUCT.md](PRODUCT.md) for approved product decisions and [docs/protocol.md](docs/protocol.md) for the frozen v1 framing and cryptographic protocol.
+`backend/app/stego/lsb.py` follows the lecture's `to_bin` / `encode` / `decode`. A **slot** is one byte that may carry hidden bits:
+
+- **Image:** every R, G, B byte, in the lecture's loop order (row, pixel, R G B). Alpha is never changed.
+- **Audio:** the least significant byte of every PCM sample.
+
+With `n` LSBs, every slot becomes `int(slot_bits[:-n] + payload_bits[i:i+n], 2)`. Payload bits are taken MSB first, as in the lecture.
+
+### What is hidden
+
+```
+slot 0 ... start ............ start+span ...... last 520 slots
+| unused | PAYLOAD (n LSBs)   | unused          | HEADER (1 LSB) |
+```
+
+- **HEADER** (65 bytes): `"STG1" | salt | AES-GCM(start slot, payload length, n LSBs)`.
+- **PAYLOAD**: `AES-GCM(record length | record JSON | signature length | RSA signature | content)`.
+- **Record** (FR3): media ID (UUID4), UTC timestamp, 128-bit nonce, team metadata, cover SHA-256, payload SHA-256, payload name/type/size, LSB count, start and header slots, signer fingerprint.
+
+### Security workflow
+
+**Sender:**
+
+1. Hash the payload (SHA-256).
+2. Hash the cover, with the LSBs that will carry data set to 0, so the cover and stego give the same hash.
+3. Build the record.
+4. `digest = SHA-256(record)`.
+5. `signature = RSA-PSS-sign(private key, digest)`.
+6. Derive 3 keys from the passphrase (PBKDF2-HMAC-SHA256, 200,000 rounds, random salt).
+7. Choose the start slot = `HMAC-SHA256(start key, salt | cover descriptor | size)` (or manual, never slot 0).
+8. AES-256-GCM encrypt the payload and the header.
+9. LSB-embed the payload at the start and the header at the end.
+
+**Receiver:**
+
+1. Read the header (1 LSB, last 520 slots).
+2. Decrypt the start location with the passphrase.
+3. Extract the payload.
+4. AES-GCM decrypt and authenticate it.
+5. Recompute `SHA-256(record)` and verify the RSA signature with the public key.
+6. Compare the payload SHA-256.
+7. Recompute and compare the cover SHA-256.
+
+### Start location security
+
+- The header sits at a fixed, public place so the decoder can always find it. The payload start inside it is AES-GCM encrypted.
+- Without the passphrase the start cannot be read, guessed, or changed without detection.
+- The auto start comes from a keyed HMAC, so it is different for every protection (fresh salt) and never the top-left slot.
+
+### Verdicts (FR10)
+
+| Verdict | When |
+| --- | --- |
+| Authentic | Signature valid, payload hash and cover hash match |
+| Tampered | Payload bits changed (AES-GCM tag fails), payload hash mismatch, or cover changed outside the hidden bits |
+| Signature Invalid | Wrong public key, or the record was altered by someone who knew the passphrase |
+| Payload Missing | No `STG1` header (clean cover, LSB plane overwritten, JPEG re-compression) |
+| Wrong Start Location | Payload read from a manually entered start that is not the real one |
+| Cannot Verify | Unsupported/corrupt file, invalid key, wrong passphrase (header cannot be decrypted) |
+
+## Supported files
+
+| Cover | Output | Size preserved? |
+| --- | --- | --- |
+| PCM WAV 8/16/24/32-bit, any channel count (incl. WAVE_FORMAT_EXTENSIBLE) | WAV, patched in place | **Yes, byte-identical length** |
+| BMP | BMP | Yes for standard 24-bit BMP |
+| PNG, JPEG, GIF, WEBP, TIFF, palette / 16-bit images | PNG | No: PNG re-compresses (pixels and dimensions are exact) |
+
+MP3, AAC and MP4 cannot be covers because lossy codecs destroy LSBs. They can still be hidden as payloads.
+
+## Limitations (be honest in the demo)
+
+- LSB replacement is fragile: any re-compression, resizing or editing removes the payload (the verifier then reports *Payload Missing* or *Tampered*, never a false *Authentic*).
+- The `STG1` header marks that this tool was used; steganalysis (chi-square, bit planes) can also reveal embedding. Encryption protects **confidentiality and integrity**, not the fact that data is hidden.
+- The passphrase is the shared secret for the start location and encryption. A weak passphrase can be brute-forced offline (PBKDF2 only slows this down).
+- The cover hash covers pixel/sample values, not PNG metadata chunks.
+- Keys generated in the GUI are for the demo; a real deployment would protect the private key with a password or hardware.
+
+## Project layout
+
+```
+backend/app/main.py            FastAPI endpoints
+backend/app/stego/lsb.py       LSB encode / decode (lecture style)
+backend/app/stego/covers.py    image and WAV cover objects -> slots
+backend/app/stego/security.py  SHA-256, RSA-PSS, PBKDF2, AES-GCM
+backend/app/stego/engine.py    hide / verify workflow and verdicts
+backend/app/stego/analysis.py  bit planes, histogram, chi-square, difference
+backend/app/stego/attacks.py   attack simulation module
+frontend/src/                  React GUI (pages/, components.tsx, api.ts)
+tests/                         pytest suite
+```

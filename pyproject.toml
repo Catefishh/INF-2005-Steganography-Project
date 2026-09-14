@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stegloc"
-version = "0.1.0"
-description = "Local steganography workbench"
-requires-python = ">=3.12,<3.13"
+version = "0.2.0"
+description = "LSB steganography with SHA-256 and RSA digital signature verification"
+requires-python = ">=3.11"
 dependencies = [
     "cryptography==50.0.1",
     "fastapi==0.141.1",
@@ -18,7 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "httpx2==2.12.0",
+    "httpx==0.28.1",
     "pytest==9.1.1",
 ]
 

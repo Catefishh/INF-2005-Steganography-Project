@@ -1,103 +1,83 @@
 import io
-import struct
 
+import numpy as np
 import pytest
 from PIL import Image
 
-from backend.app.stego.carriers.image import (
-    ImageError,
-    inspect_image,
-    canonical_hash,
-)
+from backend.app.stego.covers import CoverError, ImageCover, load_cover
 
 
-def png(mode="RGB", size=(9, 5)):
-    image = Image.new(mode, size)
-    for y in range(size[1]):
-        for x in range(size[0]):
-            image.putpixel((x, y), ((x * 17) % 256, (y * 31) % 256, 73, 200) if mode == "RGBA" else ((x * 17) % 256, (y * 31) % 256, 73))
-    out = io.BytesIO(); image.save(out, format="PNG"); return out.getvalue()
+def image_bytes(mode="RGB", size=(40, 30), fmt="PNG", seed=1):
+    rng = np.random.default_rng(seed)
+    channels = {"RGB": 3, "RGBA": 4}.get(mode)
+    if channels:
+        array = rng.integers(0, 256, (size[1], size[0], channels), dtype=np.uint8)
+        image = Image.fromarray(array)
+    else:
+        image = Image.new(mode, size)
+    out = io.BytesIO()
+    image.save(out, format=fmt)
+    return out.getvalue()
 
 
-def bmp(width=5, height=3, top_down=False):
-    row = width * 3
-    stride = (row + 3) & ~3
-    pixels = bytearray()
-    for physical_y in range(height):
-        logical_y = physical_y if top_down else height - 1 - physical_y
-        for x in range(width): pixels += bytes((90, logical_y + 2, x + 1))
-        pixels += b"\0" * (stride - row)
-    dib = struct.pack("<IiiHHIIiiII", 40, width, -height if top_down else height, 1, 24, 0, len(pixels), 0, 0, 0, 0)
-    return b"BM" + struct.pack("<IHHI", 14 + 40 + len(pixels), 0, 0, 54) + dib + pixels
+def test_slot_order_matches_lecture_loop():
+    data = image_bytes()
+    cover = load_cover(data)
+    array = np.array(Image.open(io.BytesIO(data)))
+    assert cover.slots[:6].tolist() == array[0, 0].tolist() + array[0, 1].tolist()
+    assert cover.location(3 * 41 + 2) == {"slot": 125, "x": 1, "y": 1, "channel": "B", "text": "pixel (1, 1) channel B"}
+    assert cover.slot_from_xy(1, 1) == 123
 
 
-@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
-@pytest.mark.parametrize("k", range(1, 9))
-def test_png_logical_slots_round_trip_and_metadata(mode, k):
-    original = png(mode)
-    adapter = inspect_image(original)
-    slots = adapter.slots()
-    before = bytes(slots)
-    adapter.embed(b"hello", k, 7)
-    output = adapter.export()
-    reread = inspect_image(output)
-    assert reread.extract(5, k, 7) == b"hello"
-    assert len(output) != 0
-    assert reread.width == 9 and reread.height == 5
-    if mode == "RGBA": assert reread.alpha_bytes() == adapter.alpha_bytes()
-    assert bytes(slots[:7]) == before[:7]
+def test_png_rgba_export_keeps_alpha_and_slots():
+    cover = load_cover(image_bytes("RGBA"))
+    cover.slots[5] ^= 1
+    again = load_cover(cover.export())
+    assert again.mode == "RGBA"
+    assert np.array_equal(again.rgb, cover.rgb)
+    assert np.array_equal(again.alpha, cover.alpha)
 
 
-@pytest.mark.parametrize("top_down", [False, True])
-@pytest.mark.parametrize("k", range(1, 9))
-def test_bmp_padded_rows_orientations_are_exact_size_and_round_trip(top_down, k):
-    original = bmp(top_down=top_down)
-    adapter = inspect_image(original)
-    adapter.embed(b"x", k, 2)
-    output = adapter.export()
-    assert len(output) == len(original)
-    assert inspect_image(output).extract(1, k, 2) == b"x"
+def test_bmp_stays_bmp_with_same_size():
+    data = image_bytes(fmt="BMP")
+    cover = load_cover(data)
+    cover.slots[0] ^= 1
+    out = cover.export()
+    assert out[:2] == b"BM" and len(out) == len(data)
 
 
-def test_canonical_hash_masks_only_occupied_bits_and_png_metadata_is_excluded():
-    data = png()
-    adapter = inspect_image(data)
-    first = canonical_hash(adapter, 3, 4, 4)
-    adapter.embed(b"x", 3, 4)
-    assert canonical_hash(adapter, 3, 4, 4) == first
-    image = Image.open(io.BytesIO(data)); out = io.BytesIO(); image.save(out, format="PNG", comment="different")
-    assert canonical_hash(inspect_image(out.getvalue()), 3, 4, 4) == first
+def test_jpeg_is_accepted_but_output_is_png():
+    cover = load_cover(image_bytes(fmt="JPEG"))
+    assert cover.info()["lossy_source"] is True
+    assert cover.export()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-def test_png_alpha_only_tamper_changes_canonical_hash():
-    original = png("RGBA")
-    image = Image.open(io.BytesIO(original)).convert("RGBA")
-    pixels = list(image.get_flattened_data())
-    pixels[0] = (*pixels[0][:3], (pixels[0][3] + 1) % 256)
-    image.putdata(pixels)
-    out = io.BytesIO(); image.save(out, format="PNG")
-    assert canonical_hash(inspect_image(out.getvalue()), 3, 4, 4) != canonical_hash(inspect_image(original), 3, 4, 4)
+def test_palette_and_16_bit_images_are_converted():
+    assert load_cover(image_bytes("P")).mode == "RGB"
+    image = Image.fromarray(np.full((4, 4), 0x1234, dtype=np.uint16))
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    cover = load_cover(out.getvalue())
+    assert cover.rgb[0, 0].tolist() == [0x12, 0x12, 0x12]
 
 
-def test_png_rejects_16_bit_and_trns_inputs():
-    image = Image.new("I;16", (2, 2), 7)
-    out = io.BytesIO(); image.save(out, format="PNG")
-    with pytest.raises(ImageError): inspect_image(out.getvalue())
-
-    image = Image.new("P", (2, 2)); image.putdata([0, 1, 0, 1]); image.info["transparency"] = bytes([0, 255])
-    out = io.BytesIO(); image.save(out, format="PNG")
-    with pytest.raises(ImageError): inspect_image(out.getvalue())
-
-
-def test_bmp_rejects_declared_file_and_image_sizes_that_do_not_match():
-    original = bytearray(bmp())
-    original[2:6] = struct.pack("<I", len(original) + 1)
-    with pytest.raises(ImageError): inspect_image(bytes(original))
-    original = bytearray(bmp())
-    original[34:38] = struct.pack("<I", 1)
-    with pytest.raises(ImageError): inspect_image(bytes(original))
+def test_stable_hash_ignores_only_masked_bits():
+    cover = load_cover(image_bytes())
+    regions = [(10, 20, 3)]
+    before = cover.stable_hash(regions)
+    cover.slots[15] ^= 0b111
+    assert cover.stable_hash(regions) == before
+    cover.slots[15] ^= 0b1000
+    assert cover.stable_hash(regions) != before
+    cover.slots[15] ^= 0b1000
+    cover.slots[40] ^= 1
+    assert cover.stable_hash(regions) != before
 
 
-@pytest.mark.parametrize("bad", [b"", b"GIF89a", b"BM" + b"\0" * 52])
-def test_unsupported_or_malformed_images_are_rejected(bad):
-    with pytest.raises(ImageError): inspect_image(bad)
+def test_rejects_non_images():
+    with pytest.raises(CoverError):
+        load_cover(b"hello world, not an image")
+    with pytest.raises(CoverError, match="MP3"):
+        load_cover(b"ID3\x04" + b"\0" * 20)
+    with pytest.raises(CoverError):
+        ImageCover(b"")
