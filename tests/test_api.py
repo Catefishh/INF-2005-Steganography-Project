@@ -31,7 +31,8 @@ def png_bytes():
 
 
 @pytest.mark.parametrize("name,data,mime", [("cover.png", png_bytes(), "image/png"),
-                                            ("cover.wav", wav(frames=9000), "audio/wav")])
+                                            ("cover.wav", wav(frames=9000), "audio/wav")],
+                         ids=["image", "audio"])
 def test_sender_to_receiver_flow(client, keys, name, data, mime):
     info = client.post("/api/inspect", files={"file": (name, data, mime)}).json()
     assert info["capacity"][0]["n_lsb"] == 1

@@ -94,7 +94,12 @@ def test_record_parser_normalizes_huge_integer_value_error() -> None:
     assert len(str(caught.value)) < 100
 
 
-def test_record_parser_normalizes_deep_nesting_recursion_error() -> None:
+def test_record_parser_normalizes_deep_nesting_recursion_error(monkeypatch) -> None:
+    # JSON decoder nesting limits differ between Python versions.
+    def too_deep(*args, **kwargs):
+        raise RecursionError("decoder nesting limit")
+
+    monkeypatch.setattr("backend.app.stego.protocol.json.loads", too_deep)
     encoded = b'{"x":' + b"[" * 5_000 + b"0" + b"]" * 5_000 + b"}"
 
     with pytest.raises(ProtocolError, match="valid.*JSON") as caught:

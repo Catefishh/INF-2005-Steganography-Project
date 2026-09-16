@@ -170,7 +170,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(path, init);
   } catch {
-    throw new ApiError("Cannot reach the Stegloc server. Is the backend running on port 8000?");
+    throw new ApiError("Cannot reach Stegloc. Restart the desktop app, or check that the server is running if using a browser.");
   }
   if (!response.ok) {
     let text = `Request failed (${response.status}).`;

@@ -12,6 +12,10 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# Desktop packaging
+/build/
+/dist/
+
 # Local configuration and sensitive material
 .env
 .env.*

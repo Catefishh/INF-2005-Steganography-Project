@@ -79,7 +79,7 @@ export function KeysPage({ vault, setVault }: { vault: Vault; setVault: (vault: 
         <p className="muted small">A hash cannot be reversed. Only the private key can create a signature that the public key accepts.</p>
       </Panel>
 
-      <Panel step="B" title="Generate an RSA-2048 key pair" subtitle="Keys stay in this browser tab until you download them."
+      <Panel step="B" title="Generate an RSA-2048 key pair" subtitle="Keys stay in memory for this session. Download them before closing Stegloc."
         aside={<button type="button" className="btn primary" onClick={generate} disabled={busy}>
           {busy ? <Spinner /> : <Icon name="key" />} Generate key pair
         </button>}>

@@ -6,9 +6,9 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -102,15 +102,39 @@ def _looks_like_text(data):
         return False
 
 
-def create_app(frontend_dist: Path | None = None) -> FastAPI:
+def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None = None) -> FastAPI:
     app = FastAPI(title="Stegloc API")
     store = FileStore()
     app.state.store = store
 
-    origins = [o.strip() for o in os.getenv("STEGLOC_DEV_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
+    origins = ([] if desktop_token else
+               [o.strip() for o in os.getenv("STEGLOC_DEV_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()])
     if any("*" in origin for origin in origins):
         raise ValueError("STEGLOC_DEV_ORIGINS must not contain wildcard origins")
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
+
+    if desktop_token:
+        cookie_name = f"stegloc_{desktop_token[:16]}"
+
+        @app.middleware("http")
+        async def desktop_session(request: Request, call_next):
+            if request.method == "GET" and secrets.compare_digest(
+                request.url.path.encode(), f"/_desktop/{desktop_token}".encode()
+            ):
+                response = RedirectResponse("/", status_code=303)
+                response.set_cookie(cookie_name, desktop_token, httponly=True, samesite="strict")
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Referrer-Policy"] = "no-referrer"
+                return response
+            if not secrets.compare_digest(request.cookies.get(cookie_name, "").encode(), desktop_token.encode()):
+                return Response("This service belongs to a Stegloc desktop window.", status_code=403)
+            origin = request.headers.get("origin")
+            if request.method not in {"GET", "HEAD"} and origin and origin != str(request.base_url).rstrip("/"):
+                return Response("Origin not allowed.", status_code=403)
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 
     @app.get("/api/health")

@@ -1,6 +1,6 @@
 # Stegloc: LSB steganography with digital signatures
 
-INF2005 ACW1: a web GUI that hides a signed and encrypted verification payload inside an **image** or **WAV audio** cover using **LSB replacement**, then extracts it and verifies it with **SHA-256** and an **RSA digital signature**.
+INF2005 ACW1: a desktop and web GUI that hides a signed and encrypted verification payload inside an **image** or **WAV audio** cover using **LSB replacement**, then extracts it and verifies it with **SHA-256** and an **RSA digital signature**.
 
 | Page | What it does |
 | --- | --- |
@@ -10,9 +10,17 @@ INF2005 ACW1: a web GUI that hides a signed and encrypted verification payload i
 | **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
 | **Attack lab** | Runs up to 10 positive/negative scenarios and lets you download the tampered sample files |
 
-## Setup (Windows PowerShell)
+## Run the packaged Windows app
 
-Requires Python 3.11+ and Node.js 20.19+.
+Open `dist\Stegloc\Stegloc.exe` from a built distribution. Keep the **entire `Stegloc` folder** together, including `_internal`; copying the executable alone will not work. End users do not need Python or Node.js.
+
+The desktop app requires the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). Install the Evergreen Runtime if it is missing.
+
+Processing runs locally and works offline. The app starts its internal server automatically on a private loopback port and stops it when the window closes. Download keys and generated files before exiting: unsaved outputs and session keys are lost on exit.
+
+## Development setup (Windows PowerShell)
+
+Requires Python 3.11+ and Node.js 20.19+ (or 22.12+ on newer release lines).
 
 ```powershell
 py -3.13 -m venv .venv
@@ -23,7 +31,32 @@ npm install
 Set-Location ..
 ```
 
-## Run
+## Run the desktop app from source
+
+Install the desktop dependency, build the React assets, then launch with the project Python:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install ".[desktop]"
+Set-Location frontend
+npm run build
+Set-Location ..
+.\.venv\Scripts\python.exe desktop.py
+```
+
+With the virtual environment activated, the launch command is `python desktop.py`. WebView2 is also required for source launches.
+
+## Build the Windows distribution
+
+Build on Windows after completing development setup:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install ".[desktop,build]"
+.\scripts\build-desktop.ps1
+```
+
+The script builds the frontend and packages a windowed application at `dist\Stegloc\Stegloc.exe`. It uses `.venv\Scripts\python.exe` by default; select another prepared environment with `-Python "C:\path\to\python.exe"`. Distribute the entire `dist\Stegloc` folder, for example as a ZIP archive.
+
+## Run in a browser during development
 
 Terminal 1 (API):
 
@@ -141,6 +174,10 @@ MP3, AAC and MP4 cannot be covers because lossy codecs destroy LSBs. They can st
 
 ```
 backend/app/main.py            FastAPI endpoints
+backend/desktop.py             desktop window and internal server lifecycle
+desktop.py                     desktop launch entry point
+Stegloc.spec                   Windows folder distribution
+scripts/build-desktop.ps1      frontend and desktop build
 backend/app/stego/lsb.py       LSB encode / decode (lecture style)
 backend/app/stego/covers.py    image and WAV cover objects -> slots
 backend/app/stego/security.py  SHA-256, RSA-PSS, PBKDF2, AES-GCM
