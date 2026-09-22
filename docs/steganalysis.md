@@ -27,7 +27,7 @@ The response keeps legacy fields and adds `chi_square_details`, `bpcs`, and `dur
 Run the deterministic benchmark with:
 
 ```powershell
-..\..\.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks/modular.json
+.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks/modular.json
 ```
 
 It uses seeded 256x256, 1024x768, and 2048x1536 RGB fixtures with deterministic suspect/reference pairs. Reports include wall and analyzer medians, environment data, and semantic digests covering scalar results and PNG payloads. A baseline compares measurements but fails only if semantic results differ, not because machine speed changes.

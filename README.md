@@ -85,7 +85,7 @@ npm run build
 Set-Location ..
 ```
 
-Detailed steganalysis methods, response fields, limits, and benchmark reproduction are documented in [`docs/steganalysis.md`](docs/steganalysis.md). Run the repeatable benchmark with `..\..\.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks\modular.json` from the repository root.
+Detailed steganalysis methods, response fields, limits, and benchmark reproduction are documented in [`docs/steganalysis.md`](docs/steganalysis.md). Run the repeatable benchmark with `.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks\modular.json` from the repository root.
 
 ## Demo flow (party A to party B)
 
