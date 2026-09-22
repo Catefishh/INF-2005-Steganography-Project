@@ -32,3 +32,4 @@ temp/
 *.stegloc
 .pytest-tmp*/
 .pytest-final/
+.benchmarks/

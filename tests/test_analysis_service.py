@@ -1,5 +1,6 @@
 import io
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -183,3 +184,9 @@ def test_service_loads_each_nonempty_input_exactly_once(monkeypatch):
     analysis.analyse(stego, cover)
 
     assert calls == [stego, cover]
+
+
+def test_steganalysis_document_covers_canonical_contract_terms():
+    document = Path(__file__).parents[1].joinpath("docs", "steganalysis.md").read_text()
+    for term in ("westfeld-pfitzmann-pairs-of-values", "include-valid-adjacencies", "bpcs_complexity_threshold", "0.30", "0.95", "capacity_bits", "descriptive_only"):
+        assert term in document

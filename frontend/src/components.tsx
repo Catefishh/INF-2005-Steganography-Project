@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { HideStep, LectureRow, VerdictName, VerifyStep } from "./api";
+import type { ChiSquareSegment, HideStep, LectureRow, VerdictName, VerifyStep } from "./api";
 import { formatBytes } from "./util";
 
 const ICONS = {
@@ -40,11 +40,11 @@ export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
 
-export function Panel({ step, title, subtitle, aside, children, className = "" }: {
-  step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string;
+export function Panel({ step, title, subtitle, aside, children, className = "", "aria-busy": busy }: {
+  step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; "aria-busy"?: boolean;
 }) {
   return (
-    <section className={`panel ${className}`}>
+    <section className={`panel ${className}`} aria-busy={busy}>
       <header className="panel-head">
         {step && <span className="panel-step">{step}</span>}
         <div className="panel-titles">
@@ -421,14 +421,14 @@ export function Histogram({ series, colors }: { series: number[][]; colors: stri
   );
 }
 
-export function ChiStrip({ values }: { values: (number | null)[] }) {
+export function ChiStrip({ values }: { values: ChiSquareSegment[] }) {
   return (
     <div className="chi" role="img" aria-label="Chi-square p-value per segment">
-      {values.map((p, index) => (
-        <div key={index} className="chi-bar" title={p === null ? `Segment ${index + 1}: not enough data` : `Segment ${index + 1}: p = ${p.toFixed(4)}`}>
+      {values.map((segment) => (
+        <div key={segment.index} className="chi-bar" title={segment.p_value === null ? `Segment ${segment.index + 1}: ${segment.reason ?? "not enough data"}` : `Segment ${segment.index + 1}: ${segment.sample_count} samples, ${segment.valid_category_count} valid pairs, p = ${segment.p_value.toFixed(4)}`}>
           <span style={{
-            height: `${Math.max(2, (p ?? 0) * 100)}%`,
-            background: p === null ? "var(--line)" : p >= 0.95 ? "var(--coral)" : p >= 0.5 ? "var(--amber)" : "var(--teal)",
+            height: `${Math.max(2, (segment.p_value ?? 0) * 100)}%`,
+            background: segment.p_value === null ? "var(--line)" : segment.p_value >= 0.95 ? "var(--coral)" : segment.p_value >= 0.5 ? "var(--amber)" : "var(--teal)",
           }} />
         </div>
       ))}
