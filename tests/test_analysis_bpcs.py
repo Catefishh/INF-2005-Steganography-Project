@@ -48,6 +48,27 @@ def all_keys(value):
             yield from all_keys(child)
 
 
+def scalar_block_complexities(plane: np.ndarray, block_size: int):
+    block_rows = (plane.shape[0] + block_size - 1) // block_size
+    block_columns = (plane.shape[1] + block_size - 1) // block_size
+    complexities = np.zeros((block_rows, block_columns), dtype=np.float64)
+    transitions = np.zeros((block_rows, block_columns), dtype=np.int64)
+    possible = np.zeros((block_rows, block_columns), dtype=np.int64)
+    for block_row in range(block_rows):
+        for block_column in range(block_columns):
+            block = plane[
+                block_row * block_size:(block_row + 1) * block_size,
+                block_column * block_size:(block_column + 1) * block_size,
+            ]
+            count = int((block[:, 1:] != block[:, :-1]).sum())
+            count += int((block[1:, :] != block[:-1, :]).sum())
+            maximum = block.shape[0] * (block.shape[1] - 1) + (block.shape[0] - 1) * block.shape[1]
+            transitions[block_row, block_column] = count
+            possible[block_row, block_column] = maximum
+            complexities[block_row, block_column] = count / maximum if maximum else 0.0
+    return complexities, transitions, possible
+
+
 def test_config_defaults_and_blank_values_are_central_and_reproducible():
     expected = {
         "channel": 0,
@@ -166,6 +187,41 @@ def test_partial_blocks_do_not_count_padding_or_cross_block_transitions():
     np.testing.assert_array_equal(transitions, [[0, 0], [0, 0]])
     np.testing.assert_array_equal(possible, [[4, 1], [1, 0]])
     np.testing.assert_array_equal(complexity, np.zeros((2, 2)))
+
+
+@pytest.mark.parametrize("block_size", ALLOWED_BLOCK_SIZES)
+@pytest.mark.parametrize(
+    "dimensions",
+    [(1, 1), (1, 7), (7, 1), (3, 5), (8, 8), (9, 10), (17, 13), (65, 67)],
+)
+def test_vectorized_kernel_matches_scalar_reference_for_random_partial_planes(block_size, dimensions):
+    seed = dimensions[0] * 10_000 + dimensions[1] * 100 + block_size
+    plane = np.random.default_rng(seed).integers(0, 2, dimensions, dtype=np.uint8)
+    expected_complexity, expected_transitions, expected_possible = scalar_block_complexities(plane, block_size)
+
+    complexity, transitions, possible = block_complexities(plane, block_size)
+
+    np.testing.assert_array_equal(transitions, expected_transitions)
+    np.testing.assert_array_equal(possible, expected_possible)
+    np.testing.assert_allclose(complexity, expected_complexity, rtol=0, atol=0)
+    for threshold in (0.0, 0.3, 1.0):
+        np.testing.assert_array_equal(complexity >= threshold, expected_complexity >= threshold)
+
+
+def test_block_kernel_does_not_reduce_each_block_individually(monkeypatch):
+    calls = 0
+    real_count_nonzero = np.count_nonzero
+
+    def recording_count_nonzero(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real_count_nonzero(*args, **kwargs)
+
+    monkeypatch.setattr(np, "count_nonzero", recording_count_nonzero)
+
+    block_complexities(np.indices((31, 29)).sum(axis=0).astype(np.uint8) % 2, 2)
+
+    assert calls <= 4
 
 
 def test_image_result_maps_and_partial_block_capacity_are_exact():

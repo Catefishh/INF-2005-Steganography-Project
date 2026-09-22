@@ -113,24 +113,38 @@ def block_complexities(plane: np.ndarray, block_size: int) -> tuple[np.ndarray, 
     height, width = plane.shape
     block_rows = math.ceil(height / block_size)
     block_columns = math.ceil(width / block_size)
-    complexities = np.zeros((block_rows, block_columns), dtype=np.float64)
-    transitions = np.zeros((block_rows, block_columns), dtype=np.int64)
-    possible = np.zeros((block_rows, block_columns), dtype=np.int64)
+    padded = np.zeros((block_rows * block_size, block_columns * block_size), dtype=plane.dtype)
+    padded[:height, :width] = plane
+    blocks = padded.reshape(block_rows, block_size, block_columns, block_size).transpose(0, 2, 1, 3)
 
-    for block_row in range(block_rows):
-        row_start = block_row * block_size
-        row_end = min(row_start + block_size, height)
-        for block_column in range(block_columns):
-            column_start = block_column * block_size
-            column_end = min(column_start + block_size, width)
-            block = plane[row_start:row_end, column_start:column_end]
-            block_height, block_width = block.shape
-            count = int(np.count_nonzero(block[:, 1:] != block[:, :-1]))
-            count += int(np.count_nonzero(block[1:, :] != block[:-1, :]))
-            maximum = block_height * (block_width - 1) + (block_height - 1) * block_width
-            transitions[block_row, block_column] = count
-            possible[block_row, block_column] = maximum
-            complexities[block_row, block_column] = count / maximum if maximum else 0.0
+    row_sizes = np.minimum(block_size, height - np.arange(block_rows) * block_size)
+    column_sizes = np.minimum(block_size, width - np.arange(block_columns) * block_size)
+    valid_rows = np.arange(block_size)[None, :] < row_sizes[:, None]
+    valid_columns = np.arange(block_size)[None, :] < column_sizes[:, None]
+    valid_horizontal_pairs = np.arange(1, block_size)[None, :] < column_sizes[:, None]
+    valid_vertical_pairs = np.arange(1, block_size)[None, :] < row_sizes[:, None]
+
+    horizontal = (
+        (blocks[:, :, :, 1:] != blocks[:, :, :, :-1])
+        & valid_rows[:, None, :, None]
+        & valid_horizontal_pairs[None, :, None, :]
+    ).sum(axis=(2, 3), dtype=np.int64)
+    vertical = (
+        (blocks[:, :, 1:, :] != blocks[:, :, :-1, :])
+        & valid_vertical_pairs[:, None, :, None]
+        & valid_columns[None, :, None, :]
+    ).sum(axis=(2, 3), dtype=np.int64)
+    transitions = horizontal + vertical
+    possible = (
+        row_sizes[:, None] * np.maximum(column_sizes - 1, 0)[None, :]
+        + np.maximum(row_sizes - 1, 0)[:, None] * column_sizes[None, :]
+    ).astype(np.int64)
+    complexities = np.divide(
+        transitions,
+        possible,
+        out=np.zeros((block_rows, block_columns), dtype=np.float64),
+        where=possible != 0,
+    )
     return complexities, transitions, possible
 
 
@@ -169,18 +183,19 @@ def _metrics(
     }
 
 
-def _plane_data(context: CarrierAnalysis, config: BPCSConfig, bit: int) -> dict[str, object]:
+def _plane_data(
+    context: CarrierAnalysis,
+    config: BPCSConfig,
+    bit: int,
+    valid_pixels: np.ndarray,
+) -> dict[str, object]:
     plane = context.bit_plane(config.channel, bit)
     complexities, transitions, possible = block_complexities(plane, config.block_size)
     classifications = complexities >= config.complexity_threshold
-    valid_pixels = _valid_pixel_counts(plane.shape[0], plane.shape[1], config.block_size)
     return {
         "plane": plane,
         "complexities": complexities,
-        "transitions": transitions,
-        "possible": possible,
         "classifications": classifications,
-        "valid_pixels": valid_pixels,
         "metrics": _metrics(complexities, transitions, possible, classifications, valid_pixels),
     }
 
@@ -205,15 +220,15 @@ def _plane_result(data: dict[str, object], bit: int) -> dict[str, object]:
     }
 
 
-def _summary(all_data: list[dict[str, object]]) -> dict[str, int | float]:
-    block_count = sum(data["metrics"]["block_count"] for data in all_data)
-    complex_blocks = sum(data["metrics"]["complex_blocks"] for data in all_data)
-    transition_count = sum(data["metrics"]["transition_count"] for data in all_data)
-    possible_transition_count = sum(data["metrics"]["possible_transition_count"] for data in all_data)
-    capacity_bits = sum(data["metrics"]["capacity_bits"] for data in all_data)
-    complexity_sum = sum(float(data["complexities"].sum()) for data in all_data)
+def _summary(parts: list[dict[str, object]]) -> dict[str, int | float]:
+    block_count = sum(part["metrics"]["block_count"] for part in parts)
+    complex_blocks = sum(part["metrics"]["complex_blocks"] for part in parts)
+    transition_count = sum(part["metrics"]["transition_count"] for part in parts)
+    possible_transition_count = sum(part["metrics"]["possible_transition_count"] for part in parts)
+    capacity_bits = sum(part["metrics"]["capacity_bits"] for part in parts)
+    complexity_sum = sum(part["complexity_sum"] for part in parts)
     return {
-        "selected_plane_count": len(all_data),
+        "selected_plane_count": len(parts),
         "block_count": block_count,
         "complex_blocks": complex_blocks,
         "non_complex_blocks": block_count - complex_blocks,
@@ -222,8 +237,8 @@ def _summary(all_data: list[dict[str, object]]) -> dict[str, int | float]:
         "possible_transition_count": possible_transition_count,
         "transition_ratio": transition_count / possible_transition_count if possible_transition_count else 0.0,
         "mean_complexity": complexity_sum / block_count,
-        "minimum_complexity": min(float(data["complexities"].min()) for data in all_data),
-        "maximum_complexity": max(float(data["complexities"].max()) for data in all_data),
+        "minimum_complexity": min(part["minimum_complexity"] for part in parts),
+        "maximum_complexity": max(part["maximum_complexity"] for part in parts),
         "capacity_bits": capacity_bits,
         "capacity_bytes_floor": capacity_bits // 8,
         "capacity_remainder_bits": capacity_bits % 8,
@@ -232,19 +247,12 @@ def _summary(all_data: list[dict[str, object]]) -> dict[str, int | float]:
 
 def _changed_blocks(suspect: np.ndarray, reference: np.ndarray, block_size: int) -> np.ndarray:
     height, width = suspect.shape
-    changed = np.zeros((math.ceil(height / block_size), math.ceil(width / block_size)), dtype=bool)
-    differences = suspect != reference
-    for row in range(changed.shape[0]):
-        row_start = row * block_size
-        for column in range(changed.shape[1]):
-            column_start = column * block_size
-            changed[row, column] = bool(
-                differences[
-                    row_start:min(row_start + block_size, height),
-                    column_start:min(column_start + block_size, width),
-                ].any()
-            )
-    return changed
+    block_rows = math.ceil(height / block_size)
+    block_columns = math.ceil(width / block_size)
+    padded = np.zeros((block_rows * block_size, block_columns * block_size), dtype=bool)
+    padded[:height, :width] = suspect != reference
+    blocks = padded.reshape(block_rows, block_size, block_columns, block_size).transpose(0, 2, 1, 3)
+    return blocks.any(axis=(2, 3))
 
 
 def _comparison_metrics(
@@ -272,35 +280,24 @@ def _comparison_metrics(
     return metrics, deltas
 
 
-def _comparison(
-    suspect_data: list[dict[str, object]],
-    reference: CarrierAnalysis,
-    config: BPCSConfig,
-) -> dict[str, object]:
-    planes = []
-    reference_data = []
-    deltas = []
-    for bit, suspect in zip(range(config.bit_plane_start, config.bit_plane_end + 1), suspect_data):
-        reference_plane = _plane_data(reference, config, bit)
-        metrics, plane_deltas = _comparison_metrics(suspect, reference_plane, config)
-        planes.append({"bit_plane": bit, **metrics})
-        reference_data.append(reference_plane)
-        deltas.append(plane_deltas)
-
-    suspect_capacity = sum(data["metrics"]["capacity_bits"] for data in suspect_data)
-    reference_capacity = sum(data["metrics"]["capacity_bits"] for data in reference_data)
-    block_count = sum(delta.size for delta in deltas)
+def _comparison_summary(
+    planes: list[dict[str, int | float]],
+    parts: list[dict[str, int | float]],
+) -> dict[str, int | float]:
+    block_count = sum(part["block_count"] for part in parts)
+    suspect_capacity = sum(part["suspect_capacity"] for part in parts)
+    reference_capacity = sum(part["reference_capacity"] for part in parts)
     summary = {
         "changed_blocks": sum(plane["changed_blocks"] for plane in planes),
         "classification_flips": sum(plane["classification_flips"] for plane in planes),
         "flips_to_complex": sum(plane["flips_to_complex"] for plane in planes),
         "flips_to_non_complex": sum(plane["flips_to_non_complex"] for plane in planes),
-        "mean_complexity_delta": sum(float(delta.sum()) for delta in deltas) / block_count,
-        "mean_absolute_complexity_delta": sum(float(np.abs(delta).sum()) for delta in deltas) / block_count,
+        "mean_complexity_delta": sum(part["complexity_delta_sum"] for part in parts) / block_count,
+        "mean_absolute_complexity_delta": sum(part["absolute_complexity_delta_sum"] for part in parts) / block_count,
         "capacity_bits_delta": suspect_capacity - reference_capacity,
         "capacity_bytes_floor_delta": suspect_capacity // 8 - reference_capacity // 8,
     }
-    return {"summary": summary, "planes": planes}
+    return summary
 
 
 def analyse(
@@ -319,19 +316,46 @@ def analyse(
             "comparison": None,
         }
 
-    all_data = [
-        _plane_data(suspect, config, bit)
-        for bit in range(config.bit_plane_start, config.bit_plane_end + 1)
-    ]
+    valid_pixels = _valid_pixel_counts(suspect.cover.height, suspect.cover.width, config.block_size)
+    plane_results = []
+    summary_parts = []
+    comparison_planes = []
+    comparison_parts = []
+    for bit in range(config.bit_plane_start, config.bit_plane_end + 1):
+        suspect_data = _plane_data(suspect, config, bit, valid_pixels)
+        plane_results.append(_plane_result(suspect_data, bit))
+        summary_parts.append({
+            "metrics": suspect_data["metrics"],
+            "complexity_sum": float(suspect_data["complexities"].sum()),
+            "minimum_complexity": suspect_data["metrics"]["minimum_complexity"],
+            "maximum_complexity": suspect_data["metrics"]["maximum_complexity"],
+        })
+        if reference is not None:
+            reference_data = _plane_data(reference, config, bit, valid_pixels)
+            comparison_metrics, deltas = _comparison_metrics(suspect_data, reference_data, config)
+            comparison_planes.append({"bit_plane": bit, **comparison_metrics})
+            comparison_parts.append({
+                "block_count": int(deltas.size),
+                "complexity_delta_sum": float(deltas.sum()),
+                "absolute_complexity_delta_sum": float(np.abs(deltas).sum()),
+                "suspect_capacity": suspect_data["metrics"]["capacity_bits"],
+                "reference_capacity": reference_data["metrics"]["capacity_bits"],
+            })
+            del reference_data, deltas
+        del suspect_data
+
+    comparison = None
+    if reference is not None:
+        comparison = {
+            "summary": _comparison_summary(comparison_planes, comparison_parts),
+            "planes": comparison_planes,
+        }
     return {
         "supported": True,
         "reason": None,
         "config": config.as_dict(),
         "image": {"width": suspect.cover.width, "height": suspect.cover.height},
-        "planes": [
-            _plane_result(data, bit)
-            for bit, data in zip(range(config.bit_plane_start, config.bit_plane_end + 1), all_data)
-        ],
-        "summary": _summary(all_data),
-        "comparison": _comparison(all_data, reference, config) if reference is not None else None,
+        "planes": plane_results,
+        "summary": _summary(summary_parts),
+        "comparison": comparison,
     }
