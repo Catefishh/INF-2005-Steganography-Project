@@ -10,6 +10,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
   const [reference, setReference] = useState<File | null>(null);
   const [channel, setChannel] = useState(0);
   const [bpcsForm, setBpcsForm] = useState<BpcsForm>({ ...DEFAULT_BPCS_FORM });
+  const [appliedBpcsForm, setAppliedBpcsForm] = useState<BpcsForm>({ ...DEFAULT_BPCS_FORM });
   const [bpcsError, setBpcsError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -19,6 +20,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
   useEffect(() => {
     if (handoff) {
       requestId.current += 1;
+      setBusy(false);
       setSuspect(handoff.stego);
       setReference(handoff.cover);
       setResult(null);
@@ -29,19 +31,21 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
 
   function changedFile(setter: (file: File | null) => void, file: File | null) {
     requestId.current += 1;
+    setBusy(false);
     setter(file);
     setResult(null);
     setError("");
     setBpcsError("");
   }
 
-  async function run(selected = channel) {
+  async function run(selected = channel, settings = bpcsForm, validateDraft = true) {
     if (!suspect) return;
-    const validation = validateBpcsForm(bpcsForm);
+    const validation = validateDraft ? validateBpcsForm(settings) : "";
     if (validation) {
       setBpcsError(validation);
       return;
     }
+    if (validateDraft) setAppliedBpcsForm(settings);
     const id = ++requestId.current;
     setBusy(true);
     setError("");
@@ -49,7 +53,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
     form.append("file", suspect, suspect.name);
     if (reference) form.append("compare", reference, reference.name);
     form.append("channel", String(selected));
-    appendBpcsForm(form, bpcsForm);
+    appendBpcsForm(form, settings);
     try {
       const next = await api.analyse(form);
       if (id === requestId.current) setResult(next);
@@ -76,13 +80,13 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         <label>First plane<input type="number" min="0" max="7" value={bpcsForm.bitPlaneStart} onChange={(event) => updateBpcs("bitPlaneStart", event.target.value)} /></label>
         <label>Last plane<input type="number" min="0" max="7" value={bpcsForm.bitPlaneEnd} onChange={(event) => updateBpcs("bitPlaneEnd", event.target.value)} /></label>
         <label>Complexity threshold<input type="number" min="0" max="1" step="0.01" value={bpcsForm.complexityThreshold} onChange={(event) => updateBpcs("complexityThreshold", event.target.value)} /></label>
-        <button type="button" className="btn ghost" disabled={!suspect || busy} onClick={() => void run()}>Apply BPCS settings and rerun</button>
+        <button type="button" className="btn ghost" disabled={!suspect || busy} onClick={() => void run(channel, bpcsForm, true)}>Apply BPCS settings and rerun</button>
       </div></fieldset>
       {result?.info.kind === "audio" && <p className="muted small">BPCS settings apply to images only.</p>}
       <ErrorNote text={error || bpcsError} />
     </Panel>
     {result && <>
-      <BitPlanesSection result={result} busy={busy} onChannel={(next) => { setChannel(next); void run(next); }} />
+      <BitPlanesSection result={result} busy={busy} onChannel={(next) => { setChannel(next); void run(next, appliedBpcsForm, false); }} />
       <BpcsSection result={result} busy={busy} />
       <div className="columns"><ChiSquareSection details={result.chi_square_details} busy={busy} /><HistogramSection result={result} busy={busy} /></div>
       <DifferenceSection result={result} busy={busy} />
