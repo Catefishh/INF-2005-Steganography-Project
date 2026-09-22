@@ -99,3 +99,13 @@ def test_legacy_analysis_treats_empty_comparison_as_absent():
     stego, _ = image_pair()
 
     assert analysis.analyse(stego, b"")["compare"] is None
+
+
+def test_rich_chi_square_is_the_source_of_legacy_projections():
+    stego, _ = image_pair()
+
+    result = analysis.analyse(stego)
+
+    details = result["chi_square_details"]
+    assert result["chi_square"] == [segment["p_value"] for segment in details["segments"]]
+    assert result["chi_square_overall"] == details["overall"]["p_value"]
