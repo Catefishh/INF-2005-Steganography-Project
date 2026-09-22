@@ -92,12 +92,26 @@ def prepare_inputs(data: bytes, compare_data: bytes | None) -> AnalysisInputs:
     reference_cover = load_cover(compare_data) if compare_data else None
     if reference_cover is not None:
         same_size = reference_cover.n_slots == suspect_cover.n_slots
+        same_format = reference_cover.kind == suspect_cover.kind
         if suspect_cover.kind == "image" and reference_cover.kind == "image":
             same_size = same_size and (reference_cover.width, reference_cover.height) == (
                 suspect_cover.width,
                 suspect_cover.height,
             )
-        if reference_cover.kind != suspect_cover.kind or not same_size:
+            same_format = reference_cover.mode == suspect_cover.mode
+        elif suspect_cover.kind == "audio" and reference_cover.kind == "audio":
+            same_format = (
+                reference_cover.channels,
+                reference_cover.bits,
+                reference_cover.sample_rate,
+                reference_cover.frames,
+            ) == (
+                suspect_cover.channels,
+                suspect_cover.bits,
+                suspect_cover.sample_rate,
+                suspect_cover.frames,
+            )
+        if not same_size or not same_format:
             raise ValueError(COMPARISON_ERROR)
     return AnalysisInputs(
         suspect=CarrierAnalysis(suspect_cover),

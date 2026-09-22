@@ -129,6 +129,23 @@ def test_analyse_preserves_legacy_error_statuses_and_empty_comparison(client):
     assert empty_named.json()["compare"] is None
 
 
+def test_analyse_rejects_equal_slot_incompatible_audio_comparison(client):
+    mono_8_bit = wav(bits=8, channels=1, frames=16, rate=8000)
+    stereo_16_bit = wav(bits=16, channels=2, frames=8, rate=16000)
+
+    response = client.post(
+        "/api/analyse",
+        files={
+            "file": ("mono.wav", mono_8_bit, "audio/wav"),
+            "compare": ("stereo.wav", stereo_16_bit, "audio/wav"),
+        },
+        data={"channel": "0"},
+    )
+
+    assert response.status_code == 400
+    assert "same kind and size" in response.json()["detail"]
+
+
 def test_analyse_uses_default_bpcs_config_when_fields_are_omitted(client):
     response = client.post(
         "/api/analyse",

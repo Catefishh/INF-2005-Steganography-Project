@@ -14,6 +14,12 @@ def png(array: np.ndarray) -> bytes:
     return out.getvalue()
 
 
+def rgba_png(array: np.ndarray) -> bytes:
+    out = io.BytesIO()
+    Image.fromarray(array.astype(np.uint8), mode="RGBA").save(out, format="PNG")
+    return out.getvalue()
+
+
 def test_image_sequence_is_flat_contiguous_row_major_and_cached():
     pixels = np.arange(4 * 5 * 3, dtype=np.uint8).reshape(4, 5, 3)
     context = prepare_inputs(png(pixels), None).suspect
@@ -79,3 +85,49 @@ def test_prepare_inputs_treats_empty_reference_as_absent():
     image = png(np.zeros((2, 2, 3), dtype=np.uint8))
 
     assert prepare_inputs(image, b"").reference is None
+
+
+@pytest.mark.parametrize(
+    ("suspect", "reference"),
+    [
+        (
+            wav(bits=8, channels=1, frames=16, rate=8000),
+            wav(bits=16, channels=2, frames=8, rate=16000),
+        ),
+        (
+            wav(bits=8, channels=2, frames=8, rate=8000),
+            wav(bits=16, channels=2, frames=8, rate=8000),
+        ),
+        (
+            wav(bits=16, channels=2, frames=8, rate=8000),
+            wav(bits=16, channels=2, frames=8, rate=16000),
+        ),
+    ],
+    ids=["layout-and-frames", "bit-depth", "sample-rate"],
+)
+def test_prepare_inputs_rejects_equal_slot_incompatible_audio(suspect, reference):
+    assert len(prepare_inputs(suspect, None).suspect.cover.slots) == len(
+        prepare_inputs(reference, None).suspect.cover.slots
+    )
+
+    with pytest.raises(ValueError, match="same kind and size"):
+        prepare_inputs(suspect, reference)
+
+
+def test_prepare_inputs_rejects_equal_size_image_mode_mismatch():
+    rgb = png(np.zeros((3, 4, 3), dtype=np.uint8))
+    rgba = rgba_png(np.zeros((3, 4, 4), dtype=np.uint8))
+
+    with pytest.raises(ValueError, match="same kind and size"):
+        prepare_inputs(rgb, rgba)
+
+
+def test_prepare_inputs_accepts_matching_audio_format_and_size():
+    reference = wav(bits=16, channels=2, frames=8, rate=8000)
+    suspect_cover = prepare_inputs(reference, None).suspect.cover
+    suspect_cover.slots[3] ^= 1
+
+    inputs = prepare_inputs(suspect_cover.export(), reference)
+
+    assert inputs.reference is not None
+    assert inputs.suspect.cover.info() == inputs.reference.cover.info()
