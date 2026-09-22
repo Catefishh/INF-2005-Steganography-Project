@@ -1,10 +1,13 @@
 import io
+import math
 
 import numpy as np
 import pytest
 from PIL import Image
 
 from backend.app.stego import analysis
+from backend.app.stego.analysis.bpcs import BPCSConfig
+from backend.app.stego.analysis import common
 from test_audio import wav
 
 
@@ -109,3 +112,74 @@ def test_rich_chi_square_is_the_source_of_legacy_projections():
     details = result["chi_square_details"]
     assert result["chi_square"] == [segment["p_value"] for segment in details["segments"]]
     assert result["chi_square_overall"] == details["overall"]["p_value"]
+
+
+def test_service_assembles_default_bpcs_comparison_and_durations():
+    stego, cover = image_pair()
+
+    result = analysis.analyse(stego, cover)
+
+    assert result["bpcs"]["supported"] is True
+    assert result["bpcs"]["config"] == BPCSConfig().as_dict()
+    assert result["bpcs"]["comparison"] is not None
+    assert result["compare"]["slots_changed"] == 8
+    assert set(result["durations_ms"]) == {
+        "load",
+        "bit_planes",
+        "histogram",
+        "chi_square",
+        "bpcs",
+        "difference",
+        "total",
+    }
+    for duration in result["durations_ms"].values():
+        assert math.isfinite(duration)
+        assert duration >= 0
+        assert duration == round(duration, 3)
+    assert result["durations_ms"]["total"] >= max(
+        duration
+        for name, duration in result["durations_ms"].items()
+        if name != "total"
+    )
+
+
+def test_service_applies_custom_bpcs_config_and_ascending_planes():
+    stego, _ = image_pair()
+    config = BPCSConfig.from_values(2, 4, 1, 3, 0.45)
+
+    result = analysis.analyse(stego, bpcs_config=config)
+
+    assert result["bpcs"]["config"] == config.as_dict()
+    assert [plane["bit_plane"] for plane in result["bpcs"]["planes"]] == [1, 2, 3]
+
+
+def test_service_returns_unsupported_bpcs_for_audio_with_custom_config():
+    config = BPCSConfig.from_values(2, 4, 1, 3, 0.45)
+
+    result = analysis.analyse(wav(channels=2, frames=64), bpcs_config=config)
+
+    assert result["bpcs"] == {
+        "supported": False,
+        "reason": "BPCS analysis is available only for image inputs.",
+        "config": config.as_dict(),
+        "image": None,
+        "planes": [],
+        "summary": None,
+        "comparison": None,
+    }
+
+
+def test_service_loads_each_nonempty_input_exactly_once(monkeypatch):
+    stego, cover = image_pair()
+    calls = []
+    real_load_cover = common.load_cover
+
+    def recording_load_cover(data):
+        calls.append(data)
+        return real_load_cover(data)
+
+    monkeypatch.setattr(common, "load_cover", recording_load_cover)
+
+    analysis.analyse(stego, cover)
+
+    assert calls == [stego, cover]
