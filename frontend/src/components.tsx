@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { HideStep, LectureRow, VerdictName, VerifyStep } from "./api";
+import { missingDetail, missingHeading } from "./requirements";
+import { stepTone } from "./verdict";
 import { formatBytes } from "./util";
 
 const ICONS = {
@@ -23,6 +25,12 @@ const ICONS = {
   copy: "M9 9h13v13H9z M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1",
   pen: "M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z",
   target: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M22 12h-4 M6 12H2 M12 6V2 M12 22v-4",
+  menu: "M3 6h18 M3 12h18 M3 18h18",
+  chevronRight: "m9 6 6 6-6 6",
+  chevronDown: "m6 9 6 6 6-6",
+  arrowRight: "M5 12h14 M13 6l6 6-6 6",
+  refresh: "M21 2v6h-6 M3 12a9 9 0 0 1 15-6.7L21 8 M3 22v-6h6 M21 12a9 9 0 0 1-15 6.7L3 16",
+  info: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 16v-5 M12 8h.01",
 };
 
 export type IconName = keyof typeof ICONS;
@@ -40,11 +48,11 @@ export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
 
-export function Panel({ step, title, subtitle, aside, children, className = "" }: {
-  step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string;
+export function Panel({ step, title, subtitle, aside, children, className = "", id }: {
+  step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; id?: string;
 }) {
   return (
-    <section className={`panel ${className}`}>
+    <section className={`panel ${className}`} id={id}>
       <header className="panel-head">
         {step && <span className="panel-step">{step}</span>}
         <div className="panel-titles">
@@ -67,15 +75,35 @@ export function ErrorNote({ text }: { text: string }) {
   );
 }
 
-export function DropZone({ title, hint, accept, file, onFile, icon = "upload" }: {
-  title: string; hint: string; accept?: string; file: File | null; onFile: (file: File | null) => void; icon?: IconName;
+/**
+ * A file slot. `label` stays above the slot after a file is chosen, so a filled slot still
+ * says which slot it is — a filename on its own does not.
+ */
+export function DropZone({ title, hint, accept, file, onFile, icon = "upload", label, id, tone = "" }: {
+  title: string; hint: string; accept?: string; file: File | null; onFile: (file: File | null) => void;
+  icon?: IconName; label?: ReactNode; id?: string; tone?: "" | "bad";
+}) {
+  const slot = <DropSlot title={title} hint={hint} accept={accept} file={file} onFile={onFile} icon={icon} id={id} tone={tone} />;
+  if (!label) return slot;
+  return (
+    <div className="slot">
+      <span className="slot-label">{label}</span>
+      {slot}
+    </div>
+  );
+}
+
+function DropSlot({ title, hint, accept, file, onFile, icon, id, tone }: {
+  title: string; hint: string; accept?: string; file: File | null; onFile: (file: File | null) => void;
+  icon: IconName; id?: string; tone: "" | "bad";
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const open = () => input.current?.click();
   return (
     <div
-      className={`drop${over ? " over" : ""}${file ? " filled" : ""}`}
+      id={id}
+      className={`drop${over ? " over" : ""}${file ? " filled" : ""}${tone ? ` ${tone}` : ""}`}
       role="button"
       tabIndex={0}
       onClick={open}
@@ -124,13 +152,14 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const fieldId = `${useId()}pem`;
   const readFile = (file: File | null | undefined) => {
     if (file) void file.text().then(onChange);
   };
   return (
     <div className="field">
       <div className="field-head">
-        <label>{label}</label>
+        <label htmlFor={fieldId}>{label}</label>
         <span className="field-actions">
           {vaultPem && vaultPem !== value && (
             <button type="button" className="link-btn" onClick={() => onChange(vaultPem)}>{vaultLabel}</button>
@@ -143,6 +172,7 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
         event.target.value = "";
       }} />
       <textarea
+        id={fieldId}
         className={`pem${over ? " over" : ""}`}
         value={value}
         spellCheck={false}
@@ -163,17 +193,243 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
   );
 }
 
-export function PassphraseField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
+export function PassphraseField({ value, onChange, hint, label = "Shared password", placeholder = "Agreed in person, never sent with the file", inputRef }: {
+  value: string;
+  onChange: (v: string) => void;
+  hint?: ReactNode;
+  label?: string;
+  placeholder?: string;
+  inputRef?: RefObject<HTMLInputElement | null>;
+}) {
   const [show, setShow] = useState(false);
+  const fieldId = `${useId()}passphrase`;
   return (
     <div className="field">
       <div className="field-head">
-        <label>Shared passphrase</label>
+        <label htmlFor={fieldId}>{label}</label>
         <button type="button" className="link-btn" onClick={() => setShow(!show)}>{show ? "Hide" : "Show"}</button>
       </div>
-      <input type={show ? "text" : "password"} value={value} autoComplete="off" placeholder="Agreed in person, never sent with the file"
-        onChange={(event) => onChange(event.target.value)} />
+      <input id={fieldId} ref={inputRef} type={show ? "text" : "password"} value={value} autoComplete="off"
+        placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
       {hint && <small className="field-hint">{hint}</small>}
+    </div>
+  );
+}
+
+/**
+ * The one place a screen's primary action lives: the bottom of the form column.
+ *
+ * `missing` drives the blocked state. The reason block gets a stable id which is handed to
+ * the render function, so the button can point at it with aria-describedby and a disabled
+ * action can never be silent about why.
+ */
+export function ActionBar({ missing = [], heading, detail, tone = "", children }: {
+  missing?: string[];
+  heading?: string;
+  detail?: ReactNode;
+  tone?: "" | "warn";
+  children: (reasonId: string) => ReactNode;
+}) {
+  const reasonId = `${useId()}action-reason`;
+  const blocked = missing.length > 0;
+  const shownHeading = heading ?? missingHeading(missing);
+  const shownDetail = detail ?? missingDetail(missing);
+  return (
+    <div className={`action-bar${blocked ? " blocked" : ""}${tone ? ` ${tone}` : ""}`}>
+      <div className="action-why" id={reasonId}>
+        <b>{shownHeading}</b>
+        {shownDetail && <span>{shownDetail}</span>}
+      </div>
+      <div className="action-buttons">{children(reasonId)}</div>
+    </div>
+  );
+}
+
+/**
+ * Progressive disclosure that cannot change behaviour by being opened.
+ *
+ * `value` is printed on the closed summary, so a collapsed panel always states its own live
+ * setting and no active choice is ever invisible. Open state is internal unless `open` is
+ * supplied, in which case the caller owns it.
+ */
+export function Disclosure({ title, value, tone = "", defaultOpen = false, open, onOpenChange, children }: {
+  title: ReactNode;
+  value?: ReactNode;
+  tone?: "" | "warn";
+  defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isOpen = open ?? internalOpen;
+  const bodyId = `${useId()}disclosure`;
+  const toggle = () => {
+    if (open === undefined) setInternalOpen(!isOpen);
+    onOpenChange?.(!isOpen);
+  };
+  return (
+    <div className={`disclose${isOpen ? " open" : ""}${tone ? ` ${tone}` : ""}`}>
+      <button type="button" className="disclose-summary" aria-expanded={isOpen} aria-controls={bodyId} onClick={toggle}>
+        <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={16} />
+        <span className="disclose-title">{title}</span>
+        {value !== undefined && <span className="disclose-value">{value}</span>}
+      </button>
+      <div className="disclose-body" id={bodyId} hidden={!isOpen}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Modal confirmation for an action that cannot be undone. Focus moves to the dialog, Escape
+ * and the scrim cancel, and Tab is kept inside while it is open.
+ */
+export function ConfirmDialog({ title, confirmLabel, cancelLabel = "Cancel", danger = false, onConfirm, onCancel, children }: {
+  title: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  children: ReactNode;
+}) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const headingId = `${useId()}dialog-title`;
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.querySelector<HTMLElement>("button")?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog.current) return;
+      const focusable = dialog.current.querySelectorAll<HTMLElement>("button, a[href], input, [tabindex]:not([tabindex='-1'])");
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
+  }, [onCancel]);
+
+  return (
+    <div className="scrim" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={headingId} ref={dialog}>
+        <h2 id={headingId}>{title}</h2>
+        {children}
+        <div className="dialog-actions">
+          <button type="button" className="btn ghost" onClick={onCancel}>{cancelLabel}</button>
+          <button type="button" className={`btn ${danger ? "solid-danger" : "primary"}`} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function EmptyState({ icon, title, children }: { icon: IconName; title: string; children?: ReactNode }) {
+  return (
+    <div className="empty">
+      <span className="empty-icon"><Icon name={icon} size={22} /></span>
+      <strong>{title}</strong>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The headline of a result. Sits at the top of the viewport, takes focus after the run and is
+ * announced, so an outcome is never rendered off-screen. Colour, icon and words always agree.
+ */
+export function Outcome({ tone, icon, label, title, summary, actions, headingRef }: {
+  tone: "good" | "bad" | "warn" | "flat";
+  icon: IconName;
+  label: string;
+  title: string;
+  summary?: ReactNode;
+  actions?: ReactNode;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
+}) {
+  return (
+    <div className={`outcome ${tone}`} role="status" aria-live="polite">
+      <span className="outcome-icon"><Icon name={icon} size={26} /></span>
+      <div className="outcome-text">
+        <span className="outcome-label">{label}</span>
+        <h2 ref={headingRef} tabIndex={-1}>{title}</h2>
+        {summary && <p>{summary}</p>}
+      </div>
+      {actions && <div className="outcome-actions">{actions}</div>}
+    </div>
+  );
+}
+
+/**
+ * The one way a result says it no longer describes the form. Sits directly above the dimmed
+ * result, so the stale state is stated rather than left to be inferred from a faded panel.
+ */
+export function StaleBanner({ reason, busy = false, onRerun, onDismiss }: {
+  reason: string;
+  busy?: boolean;
+  onRerun: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="note note-warn" role="status">
+      <Icon name="alert" />
+      <span>
+        <b>This result is out of date.</b> {reason} It no longer describes what is in the form.
+        <span className="note-actions">
+          <button type="button" className="btn primary sm" onClick={onRerun} disabled={busy} aria-busy={busy}>
+            {busy ? <Spinner /> : <Icon name="refresh" size={14} />} Check again
+          </button>
+          <button type="button" className="btn quiet sm" onClick={onDismiss}>Dismiss</button>
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** A number with a line saying whether the number is good. */export function Metric({ label, value, reading, tone = "" }: {
+  label: string; value: ReactNode; reading?: ReactNode; tone?: "" | "good" | "warn" | "bad";
+}) {
+  return (
+    <div className={`metric${tone ? ` ${tone}` : ""}`}>
+      <span className="metric-label">{label}</span>
+      <strong className="metric-value">{value}</strong>
+      {reading && <span className="metric-reading">{reading}</span>}
+    </div>
+  );
+}
+
+/** Collapses the inputs that produced a result into one line, with a way back to them. */
+export function InputStrip({ items, actions }: {
+  items: { label: string; value: ReactNode; icon?: IconName }[];
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="input-strip">
+      {items.map((item, index) => (
+        <Fragment key={item.label}>
+          {index > 0 && <span className="strip-divider" />}
+          <span className="strip-item">
+            {item.icon && <Icon name={item.icon} size={15} />}
+            {item.label} <b>{item.value}</b>
+          </span>
+        </Fragment>
+      ))}
+      {actions && <span className="strip-actions">{actions}</span>}
     </div>
   );
 }
@@ -188,14 +444,29 @@ export function Stat({ label, value, sub, tone = "" }: { label: string; value: R
   );
 }
 
-export function Meter({ used, total }: { used: number | null; total: number | null }) {
+export function Meter({ used, total, label, reading }: {
+  used: number | null; total: number | null; label?: string; reading?: ReactNode;
+}) {
+  const header = label && (
+    <div className="meter-head">
+      <span className="meter-label">{label}</span>
+      {reading && <span className="meter-reading">{reading}</span>}
+    </div>
+  );
   if (used === null || total === null) {
-    return <div className="meter"><div className="meter-track"><span style={{ width: "0%" }} /></div><small>Add a cover and a payload to see the capacity check.</small></div>;
+    return (
+      <div className="meter">
+        {header}
+        <div className="meter-track"><span style={{ width: "0%" }} /></div>
+        <small>Add a cover and something to hide to see how much room there is.</small>
+      </div>
+    );
   }
   const percent = total > 0 ? (used / total) * 100 : Infinity;
   const tone = percent > 100 ? "bad" : percent > 75 ? "warn" : "good";
   return (
     <div className={`meter ${tone}`}>
+      {header}
       <div className="meter-track"><span style={{ width: `${Math.min(100, percent)}%` }} /></div>
       <small>
         {percent > 100
@@ -206,7 +477,7 @@ export function Meter({ used, total }: { used: number | null; total: number | nu
   );
 }
 
-export function ByteDiagram({ nLsb }: { nLsb: number }) {
+export function ByteDiagram({ nLsb, caption }: { nLsb: number; caption?: ReactNode }) {
   return (
     <div className="byte-diagram" aria-label={`Lowest ${nLsb} bits replaced`}>
       {Array.from({ length: 8 }, (_, index) => {
@@ -217,7 +488,7 @@ export function ByteDiagram({ nLsb }: { nLsb: number }) {
           </span>
         );
       })}
-      <small>MSB → LSB · coral bits carry the payload</small>
+      <small>{caption ?? "the top bits stay · the bottom bit carries the hidden content"}</small>
     </div>
   );
 }
@@ -242,17 +513,23 @@ export function HideTimeline({ steps }: { steps: HideStep[] }) {
 export function VerifySteps({ steps }: { steps: VerifyStep[] }) {
   return (
     <ol className="checks">
-      {steps.map((step, index) => (
-        <li key={step.id} className={step.status} style={{ animationDelay: `${index * 70}ms` }}>
-          <span className="check-icon">
-            <Icon name={step.status === "passed" ? "check" : step.status === "failed" ? "x" : "minus"} size={14} />
-          </span>
-          <div>
-            <strong>{step.title}</strong>
-            <p>{step.detail || (step.status === "skipped" ? "Not reached" : "")}</p>
-          </div>
-        </li>
-      ))}
+      {steps.map((step, index) => {
+        const tone = stepTone(step);
+        return (
+          <li key={step.id} className={tone} style={{ animationDelay: `${index * 70}ms` }}>
+            <span className="check-icon">
+              <Icon name={tone === "passed" ? "check" : tone === "failed" ? "x" : tone === "override" ? "target" : "minus"} size={14} />
+            </span>
+            <div>
+              <strong>{step.title}</strong>
+              <p>{step.detail || (step.status === "skipped" ? "Not reached" : "")}</p>
+            </div>
+            <span className="check-tail">
+              {tone === "override" ? <span className="chip warn">override</span> : tone === "skipped" ? null : <span className={`chip ${tone === "passed" ? "good" : "bad"}`}>{step.status}</span>}
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -266,22 +543,12 @@ const VERDICT_TONE: Record<VerdictName, string> = {
   "Cannot Verify": "neutral",
 };
 
+/**
+ * The verdict as a chip. Kept because it is the one place the raw verdict name is shown next to
+ * something else, and because "Payload Missing" must stay recognisable as the backend's name.
+ */
 export function VerdictChip({ verdict }: { verdict: VerdictName }) {
   return <span className={`chip ${VERDICT_TONE[verdict]}`}>{verdict}</span>;
-}
-
-export function VerdictBanner({ verdict, summary }: { verdict: VerdictName; summary: string }) {
-  const tone = VERDICT_TONE[verdict];
-  return (
-    <div className={`verdict ${tone}`}>
-      <span className="verdict-icon"><Icon name={tone === "good" ? "shield" : tone === "bad" ? "x" : "alert"} size={30} /></span>
-      <div>
-        <span className="verdict-label">Verdict</span>
-        <h3>{verdict}</h3>
-        <p>{summary}</p>
-      </div>
-    </div>
-  );
 }
 
 export function LectureTable({ rows, nLsb }: { rows: LectureRow[]; nLsb: number }) {
@@ -289,7 +556,7 @@ export function LectureTable({ rows, nLsb }: { rows: LectureRow[]; nLsb: number 
     <div className="table-wrap">
       <table className="lecture">
         <thead>
-          <tr><th>Slot</th><th>Where</th><th>Original data</th><th>Payload bits</th><th>Stego data</th></tr>
+          <tr><th>Position</th><th>Where</th><th>Original data</th><th>Hidden content bits</th><th>Protected data</th></tr>
         </thead>
         <tbody>
           {rows.map((row) => (
@@ -320,17 +587,62 @@ export function CompareSlider({ before, after }: { before: string; after: string
   const [position, setPosition] = useState(50);
   return (
     <div className="compare">
-      <img src={after} alt="Stego image" draggable={false} />
+      <img src={after} alt="Protected image" draggable={false} />
       <div className="compare-top" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}>
-        <img src={before} alt="Cover image" draggable={false} />
+        <img src={before} alt="Original image" draggable={false} />
       </div>
       <div className="compare-handle" style={{ left: `${position}%` }}><span /></div>
       <span className="compare-label left">Cover</span>
-      <span className="compare-label right">Stego</span>
-      <input type="range" min={0} max={100} value={position} aria-label="Slide to compare cover and stego"
+      <span className="compare-label right">Protected</span>
+      <input type="range" min={0} max={100} value={position} aria-label="Slide to compare the original and the protected image"
         onChange={(event) => setPosition(Number(event.target.value))} />
     </div>
   );
+}
+
+/**
+ * Per-column min/max envelope of channel 0, drawn at a fixed pixel step. Exported for testing —
+ * `Waveform` itself needs Web Audio to decode a file, but the shape-picking logic is a pure
+ * function over sample data and is what actually decides whether a preview looks flat.
+ */
+export function waveformColumns(samples: Float32Array | number[], width: number): { low: number; high: number }[] {
+  const columns: { low: number; high: number }[] = [];
+  const step = Math.max(1, Math.floor(samples.length / Math.max(1, width)));
+  for (let x = 0; x < width; x++) {
+    const first = x * step;
+    if (first >= samples.length) break;
+    let low = 1;
+    let high = -1;
+    for (let i = first; i < Math.min(first + step, samples.length); i++) {
+      const value = samples[i];
+      if (value < low) low = value;
+      if (value > high) high = value;
+    }
+    columns.push({ low, high });
+  }
+  return columns;
+}
+
+/**
+ * Scales an envelope to its own peak so a quiet recording still reads as a waveform instead of
+ * collapsing to a near-invisible line. Silence (peak 0) is left alone rather than amplified into
+ * noise. `floor` guarantees every column is at least a hairline tall, matching the "always at
+ * least 1px" behaviour the drawing already relied on.
+ */
+export function normalizeColumns(
+  columns: { low: number; high: number }[],
+  floor = 0.04,
+): { low: number; high: number }[] {
+  const peak = columns.reduce((max, { low, high }) => Math.max(max, Math.abs(low), Math.abs(high)), 0);
+  if (peak === 0) return columns.map(() => ({ low: 0, high: 0 }));
+  const gain = Math.max(1, Math.min(1 / peak, 40));
+  return columns.map(({ low, high }) => {
+    const scaledLow = Math.max(-1, low * gain);
+    const scaledHigh = Math.min(1, high * gain);
+    if (scaledHigh - scaledLow >= floor) return { low: scaledLow, high: scaledHigh };
+    const mid = (scaledLow + scaledHigh) / 2;
+    return { low: Math.max(-1, mid - floor / 2), high: Math.min(1, mid + floor / 2) };
+  });
 }
 
 export function Waveform({ src, color }: { src: string; color: string }) {
@@ -355,23 +667,14 @@ export function Waveform({ src, color }: { src: string; color: string }) {
         const pen = element.getContext("2d");
         if (!pen) return;
         const samples = audio.getChannelData(0);
-        const step = Math.max(1, Math.floor(samples.length / width));
+        const columns = normalizeColumns(waveformColumns(samples, width));
         pen.clearRect(0, 0, width, height);
         pen.fillStyle = color;
-        for (let x = 0; x < width; x++) {
-          const first = x * step;
-          if (first >= samples.length) break;
-          let low = 1;
-          let high = -1;
-          for (let i = first; i < Math.min(first + step, samples.length); i++) {
-            const value = samples[i];
-            if (value < low) low = value;
-            if (value > high) high = value;
-          }
+        columns.forEach(({ low, high }, x) => {
           const top = ((1 - high) * height) / 2;
           const bottom = ((1 - low) * height) / 2;
           pen.fillRect(x, top, 1, Math.max(1, bottom - top));
-        }
+        });
         setState("ready");
       })
       .catch(() => {
