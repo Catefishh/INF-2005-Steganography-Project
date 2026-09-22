@@ -9,6 +9,20 @@ from backend.app.main import create_app
 from test_audio import wav
 
 
+LEGACY_ANALYSIS_FIELDS = {
+    "info",
+    "channel",
+    "channel_names",
+    "stride",
+    "bit_planes",
+    "chi_square",
+    "chi_square_overall",
+    "histograms",
+    "lsb_composite",
+    "compare",
+}
+
+
 @pytest.fixture(scope="module")
 def client():
     return TestClient(create_app(), base_url="http://127.0.0.1:8000")
@@ -64,10 +78,54 @@ def test_sender_to_receiver_flow(client, keys, name, data, mime):
                         data={"passphrase": "pw", "public_key": keys["public_key"]}).json()
     assert all(s["as_expected"] for s in suite["scenarios"]), suite
 
-    analysed = client.post("/api/analyse", files={"file": ("s", stego, mime), "compare": ("c", data, mime)},
-                           data={"channel": "0"}).json()
+    response = client.post("/api/analyse", files={"file": ("s", stego, mime), "compare": ("c", data, mime)},
+                           data={"channel": "0"})
+    assert response.status_code == 200, response.text
+    analysed = response.json()
+    assert LEGACY_ANALYSIS_FIELDS <= analysed.keys()
     assert len(analysed["bit_planes"]) == 8
     assert analysed["compare"]["slots_changed"] > 0
+
+
+def test_analyse_preserves_legacy_error_statuses_and_empty_comparison(client):
+    image = png_bytes()
+
+    out_of_range = client.post(
+        "/api/analyse",
+        files={"file": ("image.png", image, "image/png")},
+        data={"channel": "3"},
+    )
+    assert out_of_range.status_code == 400
+    assert out_of_range.json()["detail"] == "Channel is out of range for this file."
+
+    malformed = client.post(
+        "/api/analyse",
+        files={"file": ("image.png", image, "image/png")},
+        data={"channel": "not-an-int"},
+    )
+    assert malformed.status_code == 422
+
+    mismatch = client.post(
+        "/api/analyse",
+        files={
+            "file": ("image.png", image, "image/png"),
+            "compare": ("audio.wav", wav(), "audio/wav"),
+        },
+        data={"channel": "0"},
+    )
+    assert mismatch.status_code == 400
+    assert "same kind and size" in mismatch.json()["detail"]
+
+    empty_named = client.post(
+        "/api/analyse",
+        files={
+            "file": ("image.png", image, "image/png"),
+            "compare": ("empty.png", b"", "image/png"),
+        },
+        data={"channel": "0"},
+    )
+    assert empty_named.status_code == 200
+    assert empty_named.json()["compare"] is None
 
 
 def test_friendly_errors(client, keys):
