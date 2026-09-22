@@ -1,5 +1,9 @@
+import base64
+import io
+
 import numpy as np
 import pytest
+from PIL import Image
 
 from backend.app.stego.analysis.bpcs import (
     ALLOWED_BLOCK_SIZES,
@@ -10,8 +14,38 @@ from backend.app.stego.analysis.bpcs import (
     DEFAULT_COMPLEXITY_THRESHOLD,
     PARTIAL_BLOCK_POLICY,
     BPCSConfig,
+    analyse,
     block_complexities,
 )
+from backend.app.stego.analysis.common import CarrierAnalysis, prepare_inputs
+from test_audio import wav
+
+
+def png(array: np.ndarray) -> bytes:
+    out = io.BytesIO()
+    Image.fromarray(array.astype(np.uint8), mode="RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
+def decode_png(data_url: str) -> np.ndarray:
+    encoded = data_url.split(",", 1)[1]
+    return np.array(Image.open(io.BytesIO(base64.b64decode(encoded))))
+
+
+def image_context(plane: np.ndarray, *, channel: int = 0, bit: int = 0) -> CarrierAnalysis:
+    pixels = np.zeros((*plane.shape, 3), dtype=np.uint8)
+    pixels[:, :, channel] = plane.astype(np.uint8) << bit
+    return prepare_inputs(png(pixels), None).suspect
+
+
+def all_keys(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield key
+            yield from all_keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from all_keys(child)
 
 
 def test_config_defaults_and_blank_values_are_central_and_reproducible():
@@ -132,3 +166,146 @@ def test_partial_blocks_do_not_count_padding_or_cross_block_transitions():
     np.testing.assert_array_equal(transitions, [[0, 0], [0, 0]])
     np.testing.assert_array_equal(possible, [[4, 1], [1, 0]])
     np.testing.assert_array_equal(complexity, np.zeros((2, 2)))
+
+
+def test_image_result_maps_and_partial_block_capacity_are_exact():
+    checker = np.indices((6, 6)).sum(axis=0).astype(np.uint8) % 2
+    context = image_context(checker)
+    config = BPCSConfig.from_values(0, 4, 0, 0, 0.3)
+
+    result = analyse(context, None, config)
+
+    assert result["supported"] is True
+    assert result["reason"] is None
+    assert result["config"] == config.as_dict()
+    assert result["image"] == {"width": 6, "height": 6}
+    assert [plane["bit_plane"] for plane in result["planes"]] == [0]
+    assert result["comparison"] is None
+
+    plane = result["planes"][0]
+    assert plane["block_rows"] == 2
+    assert plane["block_columns"] == 2
+    assert plane["block_count"] == 4
+    assert plane["complex_blocks"] == 4
+    assert plane["non_complex_blocks"] == 0
+    assert plane["complex_percent"] == 100.0
+    assert plane["transition_count"] == 48
+    assert plane["possible_transition_count"] == 48
+    assert plane["transition_ratio"] == 1.0
+    assert plane["mean_complexity"] == 1.0
+    assert plane["minimum_complexity"] == 1.0
+    assert plane["maximum_complexity"] == 1.0
+    assert plane["capacity_bits"] == 36
+    assert plane["capacity_bytes_floor"] == 4
+    assert plane["capacity_remainder_bits"] == 4
+    assert plane["map_rows"] == 2
+    assert plane["map_columns"] == 2
+    assert plane["map_block_stride"] == 1
+    np.testing.assert_array_equal(decode_png(plane["complexity_map"]), np.full((2, 2), 255))
+    np.testing.assert_array_equal(decode_png(plane["classification_map"]), np.full((2, 2), 255))
+
+    assert result["summary"] == {
+        "selected_plane_count": 1,
+        "block_count": 4,
+        "complex_blocks": 4,
+        "non_complex_blocks": 0,
+        "complex_percent": 100.0,
+        "transition_count": 48,
+        "possible_transition_count": 48,
+        "transition_ratio": 1.0,
+        "mean_complexity": 1.0,
+        "minimum_complexity": 1.0,
+        "maximum_complexity": 1.0,
+        "capacity_bits": 36,
+        "capacity_bytes_floor": 4,
+        "capacity_remainder_bits": 4,
+    }
+
+
+def test_maps_are_bounded_while_statistics_keep_all_blocks():
+    checker = np.indices((1025, 1025)).sum(axis=0).astype(np.uint8) % 2
+    context = image_context(checker)
+    config = BPCSConfig.from_values(block_size=2, bit_plane_start=0, bit_plane_end=0)
+
+    result = analyse(context, None, config)
+
+    plane = result["planes"][0]
+    assert plane["block_rows"] == 513
+    assert plane["block_columns"] == 513
+    assert plane["block_count"] == 513 * 513
+    assert plane["map_block_stride"] == 2
+    assert plane["map_rows"] == 257
+    assert plane["map_columns"] == 257
+    assert decode_png(plane["complexity_map"]).shape == (257, 257)
+    assert decode_png(plane["classification_map"]).shape == (257, 257)
+    assert not ({"complexities", "classifications", "matrix", "raw"} & set(plane))
+
+
+def test_summary_aggregates_raw_blocks_across_selected_planes():
+    pixels = np.zeros((2, 2, 3), dtype=np.uint8)
+    pixels[:, :, 0] = np.array([[0, 1], [1, 0]], dtype=np.uint8)
+    context = prepare_inputs(png(pixels), None).suspect
+    config = BPCSConfig.from_values(block_size=2, bit_plane_start=0, bit_plane_end=1)
+
+    summary = analyse(context, None, config)["summary"]
+
+    assert summary == {
+        "selected_plane_count": 2,
+        "block_count": 2,
+        "complex_blocks": 1,
+        "non_complex_blocks": 1,
+        "complex_percent": 50.0,
+        "transition_count": 4,
+        "possible_transition_count": 8,
+        "transition_ratio": 0.5,
+        "mean_complexity": 0.5,
+        "minimum_complexity": 0.0,
+        "maximum_complexity": 1.0,
+        "capacity_bits": 4,
+        "capacity_bytes_floor": 0,
+        "capacity_remainder_bits": 4,
+    }
+
+
+def test_reference_comparison_reports_directional_block_and_capacity_deltas():
+    reference_plane = np.array([[0, 0, 0, 1, 0, 0], [0, 0, 1, 0, 0, 0]], dtype=np.uint8)
+    suspect_plane = np.array([[0, 0, 1, 1, 0, 1], [0, 0, 1, 0, 1, 0]], dtype=np.uint8)
+    reference = image_context(reference_plane)
+    suspect = image_context(suspect_plane)
+    config = BPCSConfig.from_values(block_size=2, bit_plane_start=0, bit_plane_end=0, complexity_threshold=0.3)
+
+    result = analyse(suspect, reference, config)
+
+    expected = {
+        "changed_blocks": 2,
+        "classification_flips": 1,
+        "flips_to_complex": 1,
+        "flips_to_non_complex": 0,
+        "mean_complexity_delta": pytest.approx(1 / 6),
+        "mean_absolute_complexity_delta": pytest.approx(0.5),
+        "capacity_bits_delta": 4,
+        "capacity_bytes_floor_delta": 1,
+    }
+    assert result["comparison"]["summary"] == expected
+    assert result["comparison"]["planes"] == [{"bit_plane": 0, **expected}]
+    assert not ({"detector", "detected", "suspicious", "verdict"} & set(all_keys(result)))
+
+
+def test_audio_returns_exact_unsupported_shape_without_image_kernels(monkeypatch):
+    context = prepare_inputs(wav(channels=2, frames=32), None).suspect
+    config = BPCSConfig.from_values(2, 4, 1, 3, 0.45)
+
+    def fail_image_channel(*_args, **_kwargs):
+        raise AssertionError("audio BPCS must not invoke image-only kernels")
+
+    monkeypatch.setattr(CarrierAnalysis, "image_channel", fail_image_channel)
+
+    assert analyse(context, None, config) == {
+        "supported": False,
+        "reason": "BPCS analysis is available only for image inputs.",
+        "config": config.as_dict(),
+        "image": None,
+        "planes": [],
+        "summary": None,
+        "comparison": None,
+    }
