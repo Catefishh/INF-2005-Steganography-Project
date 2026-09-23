@@ -5,7 +5,6 @@ import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
 import { KeysPage } from "./pages/KeysPage";
 import { VerifyPage } from "./pages/VerifyPage";
-import { V2Page } from "./pages/V2Page";
 import { TextPage } from "./pages/TextPage";
 import { isPlainLeftClick, navigate, pathFor, resolveRoute, usePathname } from "./router";
 import type { Handoff, Page, Vault } from "./util";
@@ -14,8 +13,6 @@ type Group = "Set up" | "Send and receive" | "Examine";
 
 /** The sidebar label, the page heading and the URL are the same string for every screen. */
 const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Group; lede: string }[] = [
-  { id: "v2", icon: "shield", label: "V2 Workbench", role: "New workflow", group: "Set up",
-    lede: "Protect and verify images, audio and uncompressed AVI with Ed25519 and a separate recovery file." },
   { id: "keys", icon: "key", label: "Keys", role: "Start here", group: "Set up",
     lede: "You need one key pair before you can embed or verify a file. It takes one click." },
   { id: "hide", icon: "shield", label: "Embed & Sign", role: "Sender", group: "Send and receive",
@@ -151,7 +148,6 @@ export default function App() {
           </div>
         </header>
         <Reveal hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></Reveal>
-        <Reveal hidden={route.page !== "v2"}><V2Page /></Reveal>
         <Reveal hidden={route.page !== "text"}><TextPage /></Reveal>
         <Reveal hidden={route.page !== "hide"}>
           <HidePage vault={vault} onHandoff={setHandoff} goTo={goTo}

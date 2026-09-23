@@ -568,12 +568,12 @@ details.advanced > :not(summary) { margin: 0 12px 12px; }
 .fingerprint { font-family: var(--mono); font-size: 0.78rem; }
 
 /* ---------------------------------------------------------------- analysis */
-.planes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.planes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; scroll-margin-top: 72px; }
 .planes.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* A fixed pair of columns for two figures of the same test, so they read as two scopes rather
    than as two verdicts. */
 .metrics.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.reading-note { margin: -6px 0 0; }
+.reading-note { margin: 12px 22px 0; }
 .planes figure, .composite { margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .planes img, .composite img { width: 100%; aspect-ratio: auto; image-rendering: pixelated; border-radius: 8px; border: 1px solid var(--line); background: #000; }
 .planes figure.low img { border-color: var(--coral); }

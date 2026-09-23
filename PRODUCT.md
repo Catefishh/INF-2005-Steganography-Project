@@ -43,7 +43,7 @@ The five-page INF2005 ACW1 assignment text and dashboard reference were supplied
 
 ## Implementation Status
 
-The original RSA/passphrase image/audio workflow, GUI, attack lab and Windows desktop distribution are present. V2 adds a separate Ed25519/recovery-file workflow, session-scoped jobs, image BPCS analysis and restricted AVI video carriers. V3 adds RS analysis, paired bit-plane and quality comparison, maximum usable payload capacity, secured text carriers and configurable image robustness. The legacy media protocols remain available for older files. See `docs/v2-protocol.md` for their format limits and the README for v3 features.
+The original RSA/passphrase image/audio workflow, GUI, attack lab and Windows desktop distribution are present. The V2 API retains Ed25519/recovery-file protection, session-scoped jobs, image BPCS analysis and restricted AVI video carriers; its standalone Workbench page has been removed. V3 adds RS analysis, paired bit-plane and quality comparison, maximum usable payload capacity, secured text carriers and configurable image robustness. The legacy media protocols remain available for older files. See `docs/v2-protocol.md` for their format limits and the README for v3 features.
 
 ## Product Principles
 

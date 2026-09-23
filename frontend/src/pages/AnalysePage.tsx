@@ -20,6 +20,8 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState<Analysis | null>(null);
   const outcomeRef = useRef<HTMLHeadingElement>(null);
+  const planesRef = useRef<HTMLDivElement>(null);
+  const focusTarget = useRef<"reading" | "planes">("reading");
   const requestId = useRef(0);
 
   useEffect(() => {
@@ -31,6 +33,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
     setResult(null);
     setError("");
     setBpcsError("");
+    focusTarget.current = "reading";
   }, [handoff]);
 
   function changeFile(file: File | null, which: "suspect" | "reference") {
@@ -41,6 +44,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
     setResult(null);
     setError("");
     setBpcsError("");
+    focusTarget.current = "reading";
   }
 
   function updateBpcs(key: keyof BpcsForm, value: string) {
@@ -72,15 +76,22 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         if (apply) setAppliedBpcs(settings);
       }
     } catch (e) {
-      if (id === requestId.current) setError(errorText(e));
+      if (id === requestId.current) {
+        focusTarget.current = "reading";
+        setError(errorText(e));
+      }
     } finally {
       if (id === requestId.current) setBusy(false);
     }
   }
 
-  // The reading is an outcome, so it is announced and takes focus when it appears.
+  // Initial results announce the reading; channel reruns keep the image in view instead.
   useEffect(() => {
-    if (result) outcomeRef.current?.focus();
+    if (!result) return;
+    if (focusTarget.current === "planes") {
+      planesRef.current?.scrollIntoView({ block: "start" });
+      focusTarget.current = "reading";
+    } else outcomeRef.current?.focus();
   }, [result]);
 
   const missing = inspectMissing({ hasFile: suspect !== null });
@@ -155,8 +166,9 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         </EmptyState>
       )}
 
-      {result && <Reveal className="evidence-arrival"><InspectResult analysis={result} busy={busy} channel={channel} outcomeRef={outcomeRef}
-        onChannel={(index) => { setChannel(index); void run(index, appliedBpcs); }} /></Reveal>}
+      {result && <Reveal className="evidence-arrival"><InspectResult analysis={result} busy={busy} channel={channel}
+        outcomeRef={outcomeRef} planesRef={planesRef}
+        onChannel={(index) => { focusTarget.current = "planes"; setChannel(index); void run(index, appliedBpcs); }} /></Reveal>}
     </div>
   );
 }

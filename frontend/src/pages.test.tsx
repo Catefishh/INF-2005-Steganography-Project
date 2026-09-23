@@ -109,7 +109,6 @@ async function goTo(linkName: RegExp, heading: string) {
 }
 
 const SCREENS: [RegExp, string][] = [
-  [/V2 Workbench/, "V2 Workbench"],
   [/^Keys/, "Keys"],
   [/Embed & Sign/, "Embed & Sign"],
   [/Extract & Verify/, "Extract & Verify"],
@@ -144,14 +143,15 @@ async function appWithKeys() {
   await waitFor(() => expect(within(view()).getByRole("button", { name: /Save both keys/ })).toBeInTheDocument());
 }
 
-it("offers all seven destinations, each with its own heading", async () => {
+it("offers the six active destinations, each with its own heading", async () => {
   render(<App />);
   for (const [linkName, heading] of SCREENS) {
     await goTo(linkName, heading);
     expect(document.querySelector(".topbar h1")).toHaveTextContent(heading);
   }
   // Screens stay mounted so a file and a password survive the walk between them.
-  expect(document.querySelectorAll(".main > div")).toHaveLength(7);
+  expect(document.querySelectorAll(".main > div")).toHaveLength(6);
+  expect(document.querySelector('#rail-nav a[href="/v2"]')).toBeNull();
 });
 
 it("keys: generates a pair, then guards replacing it", async () => {

@@ -114,3 +114,24 @@ it("ignores an outdated response and releases busy when the file is replaced", a
   pending.resolve(baseResult);
   await waitFor(() => expect(screen.queryByRole("heading", { name: "BPCS complexity segmentation" })).not.toBeInTheDocument());
 });
+
+it("keeps the selected bit-plane images in view when changing channels", async () => {
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  const scroll = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scroll });
+  try {
+    render(<AnalysePage handoff={null} />);
+    selectFile(picture);
+    fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
+    const outcome = await screen.findByRole("heading", { name: /Pair counts resemble/ });
+    const focus = vi.spyOn(outcome, "focus");
+    vi.mocked(api.analyse).mockResolvedValueOnce({ ...baseResult, channel: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Green" }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledOnce());
+    expect(scroll.mock.instances[0]).toHaveClass("planes");
+    expect(focus).not.toHaveBeenCalled();
+  } finally {
+    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  }
+});

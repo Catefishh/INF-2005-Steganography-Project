@@ -12,6 +12,7 @@ export function TextPage() {
   const [method, setMethod] = useState("acrostic");
   const [message, setMessage] = useState("");
   const [visible, setVisible] = useState("");
+  const [generatedVisible, setGeneratedVisible] = useState("");
   const [carrier, setCarrier] = useState("");
   const [recovery, setRecovery] = useState<File | null>(null);
   const [code, setCode] = useState("");
@@ -46,7 +47,7 @@ export function TextPage() {
     } catch (cause) { setError(errorText(cause)); }
   }
   async function protect() {
-    setError(""); setStatus("Preparing text carrier"); setProtected(null); setVerified(null);
+    setError(""); setStatus("Preparing text carrier"); setProtected(null); setVerified(null); setGeneratedVisible("");
     try {
       await session();
       const form = new FormData();
@@ -55,6 +56,7 @@ export function TextPage() {
       setProtected(result); setCode(result.recovery_code);
       const produced = await generatedText(result.carrier.id);
       setCarrier(produced);
+      if (method === "acrostic") setGeneratedVisible(produced);
       setGeneratedInitials(method === "acrostic" ? produced.split("\n").map((line) => line[0] || "").join("") : "");
       const sidecar = await recoveryFile(result.recovery);
       if (sidecar) setRecovery(sidecar);
@@ -86,8 +88,9 @@ export function TextPage() {
     || carrier.split("\n").map((line) => line[0] || "").join("") === generatedInitials;
 
   return <div className="form-column">
-    <CarrierForm method={method} onMethod={(value) => { setMethod(value); setEstimate(null); }}
-      message={message} onMessage={setMessage} visible={visible} onVisible={setVisible}
+    <CarrierForm method={method} onMethod={(value) => { setMethod(value); setEstimate(null); setGeneratedVisible(""); }}
+      message={message} onMessage={(value) => { setMessage(value); setGeneratedVisible(""); }}
+      visible={method === "acrostic" ? generatedVisible : visible} onVisible={setVisible}
       onImport={(file) => void importText(file, setVisible)} onEstimate={() => void previewCapacity()} estimate={estimate} />
     <Panel title="Sender keys and protection">
       <div className="field"><label htmlFor="text-password">Key password</label><input id="text-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></div>
