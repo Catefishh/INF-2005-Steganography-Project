@@ -132,6 +132,13 @@ export function Disclosure({ title, value, tone = "", defaultOpen = false, open,
   );
 }
 
+/** Content is present and operable as soon as it mounts; CSS only adds orientation. */
+export function Reveal({ children, className = "", hidden = false }: {
+  children: ReactNode; className?: string; hidden?: boolean;
+}) {
+  return <div className={`reveal ${className}`} hidden={hidden}>{children}</div>;
+}
+
 /**
  * Modal confirmation for an action that cannot be undone. Focus moves to the dialog, Escape
  * and the scrim cancel, and Tab is kept inside while it is open.

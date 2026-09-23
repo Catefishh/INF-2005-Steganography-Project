@@ -189,7 +189,7 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
           <StaleBanner reason={staleReason(changed)} busy={busy} onRerun={() => void submit()}
             onDismiss={() => setStaleDismissed(true)} />
         )}
-        <div className={`result-column${stale ? " stale" : ""}`}>
+        <div className={`reveal result-column${stale ? " stale" : ""}`}>
           <VerifyResult result={result} stegoName={stego?.name ?? "the file"}
             overrideUsed={resultInputs !== null && resultInputs[3] !== "from the password"}
             passphrase={passphrase} onPassphrase={setPassphrase} busy={busy}

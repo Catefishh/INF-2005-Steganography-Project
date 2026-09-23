@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Analysis } from "../api";
-import { ActionBar, DropZone, EmptyState, ErrorNote, Icon, Panel, Spinner } from "../components";
+import { ActionBar, Disclosure, DropZone, EmptyState, ErrorNote, Icon, Panel, Reveal, Spinner } from "../components";
 import { inspectMissing } from "../requirements";
 import { errorText, type Handoff } from "../util";
 import { appendBpcsForm, DEFAULT_BPCS_FORM, type BpcsForm, validateBpcsForm } from "./analyse/model";
@@ -99,26 +99,28 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
             accept="image/*,.wav" icon="image" file={reference}
             onFile={(file) => changeFile(file, "reference")} />
         </div>
-        <fieldset className="analysis-settings" disabled={busy || result?.info.kind === "audio"}>
-          <legend>BPCS image settings</legend>
-          <div className="inline-fields">
-            <label>Channel<select value={draftBpcs.channel} onChange={(event) => updateBpcs("channel", event.target.value)}>
-              <option value="0">Red</option><option value="1">Green</option><option value="2">Blue</option>
-            </select></label>
-            <label>Block size<select value={draftBpcs.blockSize} onChange={(event) => updateBpcs("blockSize", event.target.value)}>
-              {[2, 4, 8, 16, 32, 64].map((size) => <option key={size} value={size}>{size}</option>)}
-            </select></label>
-            <label>First plane<input type="number" min="0" max="7" value={draftBpcs.bitPlaneStart}
-              onChange={(event) => updateBpcs("bitPlaneStart", event.target.value)} /></label>
-            <label>Last plane<input type="number" min="0" max="7" value={draftBpcs.bitPlaneEnd}
-              onChange={(event) => updateBpcs("bitPlaneEnd", event.target.value)} /></label>
-            <label>Complexity threshold<input type="number" min="0" max="1" step="0.01" value={draftBpcs.complexityThreshold}
-              onChange={(event) => updateBpcs("complexityThreshold", event.target.value)} /></label>
-          </div>
-          <button type="button" className="btn ghost" disabled={!ready || busy}
-            onClick={() => void run(channel, draftBpcs, true)}>Apply BPCS settings and rerun</button>
-          <ErrorNote text={bpcsError} />
-        </fieldset>
+        <Disclosure title="BPCS image settings" value="optional">
+          <fieldset className="analysis-settings" disabled={busy || result?.info.kind === "audio"}>
+            <legend>BPCS image settings</legend>
+            <div className="inline-fields">
+              <label>Channel<select value={draftBpcs.channel} onChange={(event) => updateBpcs("channel", event.target.value)}>
+                <option value="0">Red</option><option value="1">Green</option><option value="2">Blue</option>
+              </select></label>
+              <label>Block size<select value={draftBpcs.blockSize} onChange={(event) => updateBpcs("blockSize", event.target.value)}>
+                {[2, 4, 8, 16, 32, 64].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select></label>
+              <label>First plane<input type="number" min="0" max="7" value={draftBpcs.bitPlaneStart}
+                onChange={(event) => updateBpcs("bitPlaneStart", event.target.value)} /></label>
+              <label>Last plane<input type="number" min="0" max="7" value={draftBpcs.bitPlaneEnd}
+                onChange={(event) => updateBpcs("bitPlaneEnd", event.target.value)} /></label>
+              <label>Complexity threshold<input type="number" min="0" max="1" step="0.01" value={draftBpcs.complexityThreshold}
+                onChange={(event) => updateBpcs("complexityThreshold", event.target.value)} /></label>
+            </div>
+            <button type="button" className="btn ghost" disabled={!ready || busy}
+              onClick={() => void run(channel, draftBpcs, true)}>Apply BPCS settings and rerun</button>
+            <ErrorNote text={bpcsError} />
+          </fieldset>
+        </Disclosure>
         {result?.info.kind === "audio" && <p className="field-hint">BPCS settings apply to images only.</p>}
         <ErrorNote text={error} />
       </Panel>
@@ -153,8 +155,8 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         </EmptyState>
       )}
 
-      {result && <InspectResult analysis={result} busy={busy} channel={channel} outcomeRef={outcomeRef}
-        onChannel={(index) => { setChannel(index); void run(index, appliedBpcs); }} />}
+      {result && <Reveal className="evidence-arrival"><InspectResult analysis={result} busy={busy} channel={channel} outcomeRef={outcomeRef}
+        onChannel={(index) => { setChannel(index); void run(index, appliedBpcs); }} /></Reveal>}
     </div>
   );
 }

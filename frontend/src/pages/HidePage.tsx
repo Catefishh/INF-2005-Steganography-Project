@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, fetchAsFile, fileUrl, type CoverInfo, type HideReport, type HideResponse, type StoredFile } from "../api";
 import {
-  ActionBar, ByteDiagram, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField,
+  ActionBar, ByteDiagram, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField, Reveal,
   LectureTable, MediaPreview, Meter, Metric, Outcome, Panel, PassphraseField, Spinner, Waveform,
 } from "../components";
 import { differenceLabel, differenceReading, qualityReading, roomReading, touchedReading } from "../readings";
@@ -222,8 +222,8 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   // The result replaces the form rather than being appended below it.
   if (showResult && result && report) {
     return (
-      <EmbedResult report={report} stego={result.stego} usedCoverUrl={usedCoverUrl} stegoUrl={stegoUrl}
-        team={team} onEdit={() => onShowResult(false)} onHandOff={handOff} />
+      <Reveal><EmbedResult report={report} stego={result.stego} usedCoverUrl={usedCoverUrl} stegoUrl={stegoUrl}
+        team={team} onEdit={() => onShowResult(false)} onHandOff={handOff} /></Reveal>
     );
   }
 

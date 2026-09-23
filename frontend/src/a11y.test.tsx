@@ -80,6 +80,7 @@ function expectNoSkippedLevels(levels: number[]) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/keys");
   vi.spyOn(api, "inspect").mockResolvedValue(IMAGE_INFO);
   vi.spyOn(api, "estimate").mockResolvedValue({ package_bytes: 916 });
   vi.spyOn(api, "inspectKey").mockResolvedValue({ type: "private", encrypted: false, bits: 2048, fingerprint: "f" });
@@ -90,6 +91,17 @@ beforeEach(() => {
 });
 
 describe("application shell", () => {
+  it("moves focus to the new screen heading and leaves one current destination", async () => {
+    window.history.replaceState(null, "", "/keys");
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: /Inspect a file/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Inspect a file", level: 1 })).toHaveFocus());
+    const current = document.querySelectorAll('#rail-nav a[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveAttribute("href", "/inspect");
+    expect(screen.queryByRole("button", { name: "Generate a key pair" })).not.toBeInTheDocument();
+  });
+
   it("marks exactly one nav item current, and marks it on the screen on show", () => {
     render(<App />);
     const current = document.querySelectorAll('#rail-nav a[aria-current="page"]');

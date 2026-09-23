@@ -1,5 +1,5 @@
 import type { Analysis, BpcsMetrics, ChiSquareDetails } from "../../api";
-import { ChiStrip, Icon, Panel, Stat } from "../../components";
+import { ChiStrip, Disclosure, Icon, Panel, Stat } from "../../components";
 
 function Capacity({ metrics }: { metrics: BpcsMetrics }) {
   return <>{metrics.capacity_bits.toLocaleString()} bits ({metrics.capacity_bytes_floor.toLocaleString()} whole bytes + {metrics.capacity_remainder_bits} bits)</>;
@@ -75,12 +75,11 @@ export function ChiSquareSection({ details, busy }: { details: ChiSquareDetails;
 
 export function AnalysisTiming({ result }: { result: Analysis }) {
   return (
-    <details className="advanced analysis-timing">
-      <summary>Analysis timings</summary>
+    <Disclosure title="Analysis timings" value="measured on this run">
       <p className="field-hint">Measured on this run; timings are not a detection result.</p>
       <div className="facts">{Object.entries(result.durations_ms).map(([name, duration]) => (
         <span key={name}>{name.replaceAll("_", " ")} <b>{duration.toFixed(3)} ms</b></span>
       ))}</div>
-    </details>
+    </Disclosure>
   );
 }

@@ -45,6 +45,7 @@ it("applies BPCS settings separately from channel changes and keeps invalid draf
   selectFile(picture);
   fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
   await screen.findByRole("heading", { name: "BPCS complexity segmentation" });
+  fireEvent.click(screen.getByRole("button", { name: /BPCS image settings/ }));
   fireEvent.change(screen.getByLabelText("Complexity threshold"), { target: { value: "0.45" } });
   fireEvent.click(screen.getByRole("button", { name: /Apply BPCS settings/ }));
   await waitFor(() => expect(api.analyse).toHaveBeenCalledTimes(2));
@@ -72,6 +73,7 @@ it("renders audio BPCS as unsupported while retaining statistical analysis", asy
   fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
   await screen.findByText(/BPCS analysis is available only for image inputs/);
   expect(screen.getByRole("heading", { name: /Chi-square/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /BPCS image settings/ }));
   expect(screen.getByRole("group", { name: "BPCS image settings" })).toBeDisabled();
   expect(screen.queryByAltText("Bit 0 complexity map")).not.toBeInTheDocument();
 });

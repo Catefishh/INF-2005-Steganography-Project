@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
-import { Icon, type IconName } from "./components";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Icon, Reveal, type IconName } from "./components";
 import { AnalysePage } from "./pages/AnalysePage";
 import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
@@ -38,11 +38,18 @@ export default function App() {
   const [vault, setVault] = useState<Vault>(EMPTY_VAULT);
   const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const lastPageRef = useRef<Page | null>(null);
 
   const pathname = usePathname();
   const hasKeys = Boolean(vault.privatePem || vault.publicPem);
   const route = resolveRoute(pathname, hasKeys);
   const current = PAGES.find((item) => item.id === route.page) ?? PAGES[0];
+
+  useEffect(() => {
+    if (lastPageRef.current !== null && lastPageRef.current !== route.page) headingRef.current?.focus();
+    lastPageRef.current = route.page;
+  }, [route.page]);
 
   // Keep the address bar honest: rewrite "/", trailing slashes and unknown paths to the
   // canonical path of the screen actually on show. Compares against the *current* pathname
@@ -138,25 +145,26 @@ export default function App() {
       <main className="main">
         <header className="topbar">
           <div>
-            <h1>{current.label}</h1>
+            <span className="topbar-context">{current.group} <span aria-hidden="true">/</span> {current.role}</span>
+            <h1 ref={headingRef} tabIndex={-1}>{current.label}</h1>
             <p>{current.lede}</p>
           </div>
         </header>
-        <div hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></div>
-        <div hidden={route.page !== "v2"}><V2Page /></div>
-        <div hidden={route.page !== "text"}><TextPage /></div>
-        <div hidden={route.page !== "hide"}>
+        <Reveal hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></Reveal>
+        <Reveal hidden={route.page !== "v2"}><V2Page /></Reveal>
+        <Reveal hidden={route.page !== "text"}><TextPage /></Reveal>
+        <Reveal hidden={route.page !== "hide"}>
           <HidePage vault={vault} onHandoff={setHandoff} goTo={goTo}
             showResult={route.page === "hide" && route.view === "result"}
             onShowResult={showEmbedResult} />
-        </div>
-        <div hidden={route.page !== "verify"}>
+        </Reveal>
+        <Reveal hidden={route.page !== "verify"}>
           <VerifyPage vault={vault} handoff={handoff} goTo={goTo}
             showResult={route.page === "verify" && route.view === "result"}
             onShowResult={showVerifyResult} />
-        </div>
-        <div hidden={route.page !== "analyse"}><AnalysePage handoff={handoff} /></div>
-        <div hidden={route.page !== "attacks"}><AttackPage vault={vault} handoff={handoff} goTo={goTo} /></div>
+        </Reveal>
+        <Reveal hidden={route.page !== "analyse"}><AnalysePage handoff={handoff} /></Reveal>
+        <Reveal hidden={route.page !== "attacks"}><AttackPage vault={vault} handoff={handoff} goTo={goTo} /></Reveal>
       </main>
     </div>
   );
