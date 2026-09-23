@@ -23,6 +23,10 @@ def test_desktop_serves_ui_and_api_and_closes_socket(tmp_path):
         client = build_opener(HTTPCookieProcessor())
         assert client.open(start_url, timeout=2).read() == b"desktop interface"
         assert b"stegloc-api" in client.open(origin + "/api/health", timeout=2).read()
+        assert client.open(origin + "/v2", timeout=2).read() == b"desktop interface"
+        assert client.open(origin + "/text", timeout=2).read() == b"desktop interface"
+        session = client.open(origin + "/api/v2/session", data=b"", timeout=2)
+        assert b'"ready"' in session.read()
         port = int(origin.rsplit(":", 1)[1])
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", port), timeout=1)

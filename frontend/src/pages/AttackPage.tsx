@@ -6,6 +6,7 @@ import {
 import { tamperMissing } from "../requirements";
 import { changedInputs, staleReason } from "../stale";
 import { errorText, type Handoff, type Vault } from "../util";
+import { RobustnessPanel } from "./RobustnessPanel";
 
 const STEGO_ACCEPT = "image/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,audio/wav";
 const STEGO_SLOT_ID = "tamper-file-slot";
@@ -234,6 +235,7 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
           </div>
         </>
       )}
+      <RobustnessPanel />
     </div>
   );
 }

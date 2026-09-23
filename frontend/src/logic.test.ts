@@ -42,7 +42,7 @@ function analyseWith(over: Partial<Analysis> = {}): Analysis {
 
 describe("routing", () => {
   it("maps every screen to its canonical path, and only two screens have a result view", () => {
-    expect(PATHS).toEqual({ keys: "/keys", hide: "/embed", verify: "/verify", analyse: "/inspect", attacks: "/tamper-tests" });
+    expect(PATHS).toEqual({ keys: "/keys", hide: "/embed", verify: "/verify", analyse: "/inspect", attacks: "/tamper-tests", v2: "/v2", text: "/text" });
     expect(pathFor("hide", "result")).toBe("/embed/result");
     expect(pathFor("verify", "result")).toBe("/verify/result");
     expect(pathFor("analyse", "result")).toBe("/inspect");
@@ -56,6 +56,8 @@ describe("routing", () => {
     expect(resolveRoute("/", true)).toEqual({ page: "hide", view: "form" });
     expect(resolveRoute("/nonsense", false)).toEqual({ page: "keys", view: "form" });
     expect(resolveRoute("/nonsense", true)).toEqual({ page: "hide", view: "form" });
+    expect(resolveRoute("/demo", false)).toEqual({ page: "keys", view: "form" });
+    expect(resolveRoute("/demo", true)).toEqual({ page: "hide", view: "form" });
   });
 
   it("tolerates trailing and doubled slashes", () => {

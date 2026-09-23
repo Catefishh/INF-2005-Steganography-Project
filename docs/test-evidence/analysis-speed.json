@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-23",
+  "command": ".\\.venv\\Scripts\\python.exe scripts\\benchmark-analysis.py",
+  "method": "median of three runs; fixed seed 2005; one bit plane, block size 16",
+  "results": [
+    {"side": 128, "reference_ms": 0.271, "vectorized_ms": 0.106, "speedup": 2.56},
+    {"side": 512, "reference_ms": 3.663, "vectorized_ms": 1.794, "speedup": 2.04},
+    {"side": 1024, "reference_ms": 14.6, "vectorized_ms": 9.284, "speedup": 1.57}
+  ]
+}

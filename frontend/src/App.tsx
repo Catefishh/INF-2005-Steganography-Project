@@ -5,6 +5,8 @@ import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
 import { KeysPage } from "./pages/KeysPage";
 import { VerifyPage } from "./pages/VerifyPage";
+import { V2Page } from "./pages/V2Page";
+import { TextPage } from "./pages/TextPage";
 import { isPlainLeftClick, navigate, pathFor, resolveRoute, usePathname } from "./router";
 import type { Handoff, Page, Vault } from "./util";
 
@@ -12,12 +14,16 @@ type Group = "Set up" | "Send and receive" | "Examine";
 
 /** The sidebar label, the page heading and the URL are the same string for every screen. */
 const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Group; lede: string }[] = [
+  { id: "v2", icon: "shield", label: "V2 Workbench", role: "New workflow", group: "Set up",
+    lede: "Protect and verify images, audio and uncompressed AVI with Ed25519 and a separate recovery file." },
   { id: "keys", icon: "key", label: "Keys", role: "Start here", group: "Set up",
     lede: "You need one key pair before you can embed or verify a file. It takes one click." },
   { id: "hide", icon: "shield", label: "Embed & Sign", role: "Sender", group: "Send and receive",
     lede: "Hide a message or a file inside a picture or a sound clip, and sign it so the receiver can tell it came from you." },
   { id: "verify", icon: "eye", label: "Extract & Verify", role: "Receiver", group: "Send and receive",
     lede: "Find out whether a file you received really came from the person who claims to have sent it, and read what is inside." },
+  { id: "text", icon: "eye", label: "Text Steganography", role: "Sender and receiver", group: "Send and receive",
+    lede: "Hide a signed, encrypted message in acrostics, whitespace, or zero-width text." },
   { id: "analyse", icon: "layers", label: "Inspect a file", role: "Analyst", group: "Examine",
     lede: "Look for signs that something is hidden in a file, without needing the password or any key." },
   { id: "attacks", icon: "zap", label: "Tamper tests", role: "Tester", group: "Examine",
@@ -137,6 +143,8 @@ export default function App() {
           </div>
         </header>
         <div hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></div>
+        <div hidden={route.page !== "v2"}><V2Page /></div>
+        <div hidden={route.page !== "text"}><TextPage /></div>
         <div hidden={route.page !== "hide"}>
           <HidePage vault={vault} onHandoff={setHandoff} goTo={goTo}
             showResult={route.page === "hide" && route.view === "result"}

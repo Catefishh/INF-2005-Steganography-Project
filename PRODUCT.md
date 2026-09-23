@@ -6,7 +6,7 @@
 
 web
 
-V1 is a locally hosted browser application backed by Python. The approved instrument-workbench interface remains deferred until the dashboard reference image is available.
+The application has a local React interface backed by Python, available in a browser or a packaged Windows desktop window.
 
 ## Users
 
@@ -43,7 +43,7 @@ The five-page INF2005 ACW1 assignment text and dashboard reference were supplied
 
 ## Implementation Status
 
-Tasks 1-6 implement the approved image/audio baseline, including media embedding, extraction, recovery, authenticity verification, bounded sessions, and cancellation-safe publication. The functional UI remains deferred.
+The original RSA/passphrase image/audio workflow, GUI, attack lab and Windows desktop distribution are present. V2 adds a separate Ed25519/recovery-file workflow, session-scoped jobs, image BPCS analysis and restricted AVI video carriers. V3 adds RS analysis, paired bit-plane and quality comparison, maximum usable payload capacity, secured text carriers and configurable image robustness. The legacy media protocols remain available for older files. See `docs/v2-protocol.md` for their format limits and the README for v3 features.
 
 ## Product Principles
 
