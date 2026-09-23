@@ -16,6 +16,7 @@ import { expectation, noFileReason, numberWord } from "./pages/AttackPage";
 import { relativeTime } from "./pages/VerifyPage";
 import { failedStep, skippedSteps, stepTone, stepsValue, verdictReading } from "./verdict";
 import { normalizeColumns, waveformColumns } from "./components";
+import { analysisExtras } from "./test/analysisFixture";
 
 /** A minimal Inspect result, with the parts a test cares about overridden. */
 function analyseWith(over: Partial<Analysis> = {}): Analysis {
@@ -24,6 +25,7 @@ function analyseWith(over: Partial<Analysis> = {}): Analysis {
     n_slots: 3686400, lossy_source: false, width: 1280, height: 960, mode: "RGB",
   };
   return {
+    ...analysisExtras,
     info,
     channel: 0,
     channel_names: ["Red", "Green", "Blue"],
@@ -275,40 +277,38 @@ describe("the Inspect evidence reading", () => {
     expect(chiCounts(analyseWith({ chi_square: [null, 0.99, null] }))).toMatchObject({ flagged: 1, total: 3 });
   });
 
-  it("calls an exact comparison with the original a finding, and names the figures", () => {
+  it("describes one-bit differences without asserting that data was hidden", () => {
     const reading = evidenceReading(analyseWith({ compare: EXACT_MATCH, chi_square: Array.from({ length: 64 }, () => 0.99), chi_square_overall: 1 }));
-    expect(reading.tone).toBe("warn");
-    expect(reading.headline).toBe("Something is hidden in this file");
+    expect(reading.headline).toBe("One-bit changes compared with the original");
     expect(reading.summary).toContain("5,204");
     expect(reading.summary).toContain("±1");
     expect(reading.needsOriginal).toBe(true);
   });
 
-  it("calls an identical file clean, and a large difference editing rather than hiding", () => {
+  it("describes an identical comparison and large differences without a detector verdict", () => {
     const clean = evidenceReading(analyseWith({ compare: { ...EXACT_MATCH, slots_changed: 0, bits_changed: 0, max_difference: 0, psnr_db: null, mse: 0 } }));
-    expect(clean.tone).toBe("good");
-    expect(clean.headline).toBe("This file has not been changed");
+    expect(clean.headline).toBe("No differences in the analysed values");
 
     const edited = evidenceReading(analyseWith({ compare: { ...EXACT_MATCH, slots_changed: 900, bits_changed: 3000, max_difference: 42 } }));
-    expect(edited.headline).toBe("This file has been edited since the original");
+    expect(edited.headline).toBe("Differences compared with the original");
     expect(edited.summary).toContain("±42");
   });
 
   it("refuses to conclude from the statistical test alone", () => {
     const flagged = evidenceReading(analyseWith({ chi_square: Array.from({ length: 64 }, () => 0.99), chi_square_overall: 1 }));
     expect(flagged.tone).toBe("flat");
-    expect(flagged.headline).toContain("cannot settle it");
+    expect(flagged.headline).toContain("Pair counts resemble LSB replacement");
     expect(flagged.summary).toContain("64 of 64");
     expect(flagged.summary).toContain("Supplying the original");
 
     const clean = evidenceReading(analyseWith());
-    expect(clean.tone).toBe("good");
-    expect(clean.summary).toContain("cannot prove a file is clean");
+    expect(clean.tone).toBe("flat");
+    expect(clean.summary).toContain("cannot rule out embedding");
   });
 
   it("stops describing audio as a picture", () => {
     expect(inspectCopy("audio").unit).toBe("sample");
-    expect(inspectCopy("audio").histogramAxis).toBe("sample value");
+    expect(inspectCopy("audio").histogramAxis).toBe("low-byte sample value");
     expect(inspectCopy("audio").planesNote).toContain("sound");
     expect(inspectCopy("image").planesNote).toContain("picture");
   });
@@ -322,9 +322,9 @@ describe("the Inspect evidence reading", () => {
     expect(inspectCopy("image").strideNote(2)).toBe("every 2nd pixel shown");
   });
 
-  it("labels the histogram axis for the real sample range instead of 0 to 255", () => {
+  it("labels the histogram axis for the analysed byte, even for deeper audio", () => {
     expect(valueRange({ kind: "image" } as CoverInfo)).toEqual({ min: 0, max: 255 });
-    expect(valueRange({ kind: "audio", bits: 16 } as CoverInfo)).toEqual({ min: 0, max: 65535 });
+    expect(valueRange({ kind: "audio", bits: 16 } as CoverInfo)).toEqual({ min: 0, max: 255 });
     expect(valueRange({ kind: "audio", bits: 8 } as CoverInfo)).toEqual({ min: 0, max: 255 });
   });
 

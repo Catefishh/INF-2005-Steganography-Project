@@ -7,7 +7,7 @@ INF2005 ACW1: a desktop and web GUI that hides a signed and encrypted verificati
 | **Keys** | Generate or load an RSA-2048 key pair (private key signs, public key verifies) |
 | **Embed & sign** (party A) | Drag in a cover and a payload (text or any file), choose 1-8 LSBs and the start location, then embed |
 | **Extract & verify** (party B) | Drag in the received stego file, enter the passphrase and public key, get a verdict |
-| **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
+| **Steganalysis** | Bit planes, histogram, descriptive Chi-Square, image-only BPCS, and cover/stego differences |
 | **Attack lab** | Runs up to 10 positive/negative scenarios and lets you download the tampered sample files |
 
 ## Run the packaged Windows app
@@ -79,7 +79,13 @@ Single-server alternative: `npm run build` inside `frontend`, then start only th
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
+Set-Location frontend
+npm test
+npm run build
+Set-Location ..
 ```
+
+Detailed steganalysis methods, response fields, limits, and benchmark reproduction are documented in [`docs/steganalysis.md`](docs/steganalysis.md). Run the repeatable benchmark with `.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks\modular.json` from the repository root.
 
 ## Demo flow (party A to party B)
 
@@ -182,7 +188,7 @@ backend/app/stego/lsb.py       LSB encode / decode (lecture style)
 backend/app/stego/covers.py    image and WAV cover objects -> slots
 backend/app/stego/security.py  SHA-256, RSA-PSS, PBKDF2, AES-GCM
 backend/app/stego/engine.py    hide / verify workflow and verdicts
-backend/app/stego/analysis.py  bit planes, histogram, chi-square, difference
+backend/app/stego/analysis/       modular bit planes, histogram, Chi-Square, BPCS, difference
 backend/app/stego/attacks.py   attack simulation module
 frontend/src/                  React GUI (pages/, components.tsx, api.ts)
 tests/                         pytest suite

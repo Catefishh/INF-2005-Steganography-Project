@@ -132,17 +132,100 @@ export interface Analysis {
   bit_planes: string[];
   chi_square: (number | null)[];
   chi_square_overall: number | null;
+  chi_square_details: ChiSquareDetails;
   histograms: number[][];
   lsb_composite: string | null;
-  compare: {
-    slots_changed: number;
-    bits_changed: number;
-    max_difference: number;
-    psnr_db: number | null;
-    mse: number;
-    changed_map: string;
-    amplified: string | null;
-  } | null;
+  compare: AnalysisComparison | null;
+  bpcs: BpcsResult;
+  durations_ms: AnalysisDurations;
+}
+
+export interface ChiSquareMeasurement {
+  sample_count: number;
+  valid_category_count: number;
+  degrees_of_freedom: number | null;
+  statistic: number | null;
+  p_value: number | null;
+  interpretable: boolean;
+  reason: string | null;
+}
+
+export interface ChiSquareSegment extends ChiSquareMeasurement {
+  index: number;
+  start: number;
+  end: number;
+}
+
+export interface ChiSquareDetails {
+  method: "westfeld-pfitzmann-pairs-of-values";
+  pair_count: number;
+  minimum_expected_count: number;
+  segment_count: number;
+  presentation_heuristic: number;
+  descriptive_only: true;
+  explanation: { high_p_value: string; limitations: string[] };
+  overall: ChiSquareMeasurement;
+  segments: ChiSquareSegment[];
+}
+
+export interface BpcsConfig {
+  channel: number;
+  block_size: number;
+  bit_plane_start: number;
+  bit_plane_end: number;
+  complexity_threshold: number;
+  partial_block_policy: "include-valid-adjacencies";
+}
+
+export interface BpcsMetrics {
+  block_count: number;
+  complex_blocks: number;
+  non_complex_blocks: number;
+  complex_percent: number;
+  transition_count: number;
+  possible_transition_count: number;
+  transition_ratio: number;
+  mean_complexity: number;
+  minimum_complexity: number;
+  maximum_complexity: number;
+  capacity_bits: number;
+  capacity_bytes_floor: number;
+  capacity_remainder_bits: number;
+}
+
+export interface BpcsPlane extends BpcsMetrics {
+  bit_plane: number;
+  block_rows: number;
+  block_columns: number;
+  complexity_map: string;
+  classification_map: string;
+  map_rows: number;
+  map_columns: number;
+  map_block_stride: number;
+}
+
+export interface BpcsSummary extends BpcsMetrics { selected_plane_count: number }
+export interface BpcsComparisonMetrics {
+  changed_blocks: number;
+  classification_flips: number;
+  flips_to_complex: number;
+  flips_to_non_complex: number;
+  mean_complexity_delta: number;
+  mean_absolute_complexity_delta: number;
+  capacity_bits_delta: number;
+  capacity_bytes_floor_delta: number;
+}
+export interface BpcsComparisonPlane extends BpcsComparisonMetrics { bit_plane: number }
+export interface BpcsComparison { summary: BpcsComparisonMetrics; planes: BpcsComparisonPlane[] }
+export type BpcsResult =
+  | { supported: true; reason: null; config: BpcsConfig; image: { width: number; height: number }; planes: BpcsPlane[]; summary: BpcsSummary; comparison: BpcsComparison | null }
+  | { supported: false; reason: string; config: BpcsConfig; image: null; planes: []; summary: null; comparison: null };
+
+export interface AnalysisDurations {
+  load: number; bit_planes: number; histogram: number; chi_square: number; bpcs: number; difference: number; total: number;
+}
+export interface AnalysisComparison {
+  slots_changed: number; bits_changed: number; max_difference: number; psnr_db: number | null; mse: number; changed_map: string; amplified: string | null;
 }
 
 export interface Scenario {

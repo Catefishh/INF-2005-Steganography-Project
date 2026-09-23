@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .stego import analysis, attacks, engine
+from .stego.analysis.bpcs import BPCSConfig
 from .stego.covers import CoverError, load_cover
 from .stego.security import (KeyFormatError, fingerprint, generate_rsa_keys, load_private_key,
                              load_public_key)
@@ -250,11 +251,27 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
 
     # ------------------------------------------------------------ analysis --
     @app.post("/api/analyse")
-    async def analyse(file: UploadFile = File(...), compare: UploadFile | None = File(None), channel: int = Form(0)):
+    async def analyse(
+        file: UploadFile = File(...),
+        compare: UploadFile | None = File(None),
+        channel: int = Form(0),
+        bpcs_channel: str | None = Form(None),
+        bpcs_block_size: str | None = Form(None),
+        bpcs_bit_plane_start: str | None = Form(None),
+        bpcs_bit_plane_end: str | None = Form(None),
+        bpcs_complexity_threshold: str | None = Form(None),
+    ):
         data = await _read(file, "File")
         other = await _read(compare, "Comparison file") if compare is not None and compare.filename else None
         try:
-            return await run_in_threadpool(analysis.analyse, data, other, channel)
+            config = BPCSConfig.from_values(
+                bpcs_channel,
+                bpcs_block_size,
+                bpcs_bit_plane_start,
+                bpcs_bit_plane_end,
+                bpcs_complexity_threshold,
+            )
+            return await run_in_threadpool(analysis.analyse, data, other, channel, config)
         except ValueError as exc:
             raise _bad_request(exc)
 

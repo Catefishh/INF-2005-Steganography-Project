@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { HideStep, LectureRow, VerdictName, VerifyStep } from "./api";
+import type { ChiSquareSegment, HideStep, LectureRow, VerdictName, VerifyStep } from "./api";
 import { missingDetail, missingHeading } from "./requirements";
 import { stepTone } from "./verdict";
 import { formatBytes } from "./util";
@@ -48,11 +48,11 @@ export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
 
-export function Panel({ step, title, subtitle, aside, children, className = "", id }: {
-  step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; id?: string;
+export function Panel({ step, title, subtitle, aside, children, className = "", id, "aria-busy": busy }: {
+  step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; id?: string; "aria-busy"?: boolean;
 }) {
   return (
-    <section className={`panel ${className}`} id={id}>
+    <section className={`panel ${className}`} id={id} aria-busy={busy}>
       <header className="panel-head">
         {step && <span className="panel-step">{step}</span>}
         <div className="panel-titles">
@@ -724,14 +724,16 @@ export function Histogram({ series, colors }: { series: number[][]; colors: stri
   );
 }
 
-export function ChiStrip({ values }: { values: (number | null)[] }) {
+export function ChiStrip({ values, segments, threshold = 0.95 }: { values: (number | null)[]; segments?: ChiSquareSegment[]; threshold?: number }) {
   return (
     <div className="chi" role="img" aria-label="Chi-square p-value per segment">
       {values.map((p, index) => (
-        <div key={index} className="chi-bar" title={p === null ? `Segment ${index + 1}: not enough data` : `Segment ${index + 1}: p = ${p.toFixed(4)}`}>
+        <div key={index} className="chi-bar" title={segments?.[index]
+          ? `Segment ${index + 1}: ${segments[index].sample_count} samples, ${segments[index].valid_category_count} valid pairs; ${p === null ? segments[index].reason : `p = ${p.toFixed(4)}`}`
+          : p === null ? `Segment ${index + 1}: not enough data` : `Segment ${index + 1}: p = ${p.toFixed(4)}`}>
           <span style={{
             height: `${Math.max(2, (p ?? 0) * 100)}%`,
-            background: p === null ? "var(--line)" : p >= 0.95 ? "var(--coral)" : p >= 0.5 ? "var(--amber)" : "var(--teal)",
+            background: p === null ? "var(--line)" : p >= threshold ? "var(--coral)" : p >= 0.5 ? "var(--amber)" : "var(--teal)",
           }} />
         </div>
       ))}

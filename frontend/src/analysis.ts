@@ -16,7 +16,7 @@ export interface EvidenceReading {
 }
 
 export interface ChiCounts {
-  /** Sections that scored 0.95 or above, the threshold the legend calls "looks embedded". */
+  /** Sections above the 0.95 presentation heuristic, never a detector verdict. */
   flagged: number;
   total: number;
   overall: number | null;
@@ -25,7 +25,7 @@ export interface ChiCounts {
 export function chiCounts(analysis: Analysis): ChiCounts {
   const values = analysis.chi_square;
   return {
-    flagged: values.filter((p) => p !== null && p >= 0.95).length,
+    flagged: values.filter((p) => p !== null && p >= analysis.chi_square_details.presentation_heuristic).length,
     total: values.length,
     overall: analysis.chi_square_overall,
   };
@@ -34,7 +34,7 @@ export function chiCounts(analysis: Analysis): ChiCounts {
 const fmt = (value: number) => value.toLocaleString();
 
 /**
- * What the page's own numbers are consistent with.
+ * Describe measured differences and pair counts without making a stego or authenticity verdict.
  *
  * The four inputs are the exact difference (when an original was supplied), the number of values
  * that moved, the largest single move, and the per-section statistical test. The strongest
@@ -50,32 +50,30 @@ export function evidenceReading(analysis: Analysis): EvidenceReading {
     const max = compare.max_difference;
     if (compare.slots_changed === 0) {
       return {
-        tone: "good",
+        tone: "flat",
         needsOriginal: true,
-        headline: "This file has not been changed",
-        summary: `Every one of the ${fmt(analysis.info.n_slots)} ${noun}s is identical to the original, so nothing was `
-          + "written into it. That is what a file that was never used to carry hidden data looks like.",
+        headline: "No differences in the analysed values",
+        summary: `The ${fmt(analysis.info.n_slots)} analysed ${noun}s match the supplied original. This does not establish the file's history or authenticity.`,
       };
     }
     if (max <= 1) {
       return {
-        tone: "warn",
+        tone: "flat",
         needsOriginal: true,
-        headline: "Something is hidden in this file",
+        headline: "One-bit changes compared with the original",
         summary: `Comparing it with the original shows ${fmt(compare.slots_changed)} ${noun}s changed by no more than ±1. `
-          + "That is what replacing the lowest bit looks like, and it is the strongest evidence on this page. "
+          + "This pattern is consistent with one-bit replacement, but does not establish its cause. "
           + (flaggedShare >= 0.5
-            ? "The statistical test agrees, though on its own it would not be reliable here."
-            : "The statistical test does not agree, which is normal when very little of the file was used."),
+            ? "Some pair counts also meet the statistical display heuristic."
+            : "The statistical display heuristic was not met in most sections."),
       };
     }
     return {
-      tone: "warn",
+      tone: "flat",
       needsOriginal: true,
-      headline: "This file has been edited since the original",
+      headline: "Differences compared with the original",
       summary: `${fmt(compare.slots_changed)} ${noun}s differ from the original by up to ±${max}. A change larger than ±1 `
-        + "is too big for one bit per value, so this looks like editing or re-saving rather than data hidden in the "
-        + "lowest bit.",
+        + "is not explained by single-bit LSB replacement alone. Other changes or embedding methods may also be present.",
     };
   }
 
@@ -84,29 +82,28 @@ export function evidenceReading(analysis: Analysis): EvidenceReading {
     return {
       tone: "flat",
       needsOriginal: false,
-      headline: "The statistical test flags this file, but cannot settle it",
+      headline: "Pair counts resemble LSB replacement in many sections",
       summary: `${chi.flagged} of ${chi.total} sections scored 0.95 or above. Very flat or very noisy files score like `
-        + "that whether or not anything is hidden in them, so this is a hint rather than a finding. Supplying the "
-        + "original would turn it into an exact answer.",
+        + "that whether or not anything is hidden in them. Supplying the original would allow a direct comparison, "
+        + "not an embedding verdict.",
     };
   }
   if (chi.flagged > 0) {
     return {
       tone: "flat",
       needsOriginal: false,
-      headline: "Part of this file looks like it carries data",
+      headline: "Pair counts resemble LSB replacement in some sections",
       summary: `${chi.flagged} of ${chi.total} sections scored 0.95 or above while the rest did not. A partial result is `
-        + "what hiding data in one region looks like, but a busy or unusually even region produces the same reading. "
-        + "Supplying the original would turn it into an exact answer.",
+        + "consistent with several causes, including natural texture or processing. Supplying the original would allow "
+        + "a direct comparison, not an embedding verdict.",
     };
   }
   return {
-    tone: "good",
+    tone: "flat",
     needsOriginal: false,
-    headline: "Nothing here points to hidden data",
-    summary: `No section of the file scored 0.95 or above on the statistical test. Hidden data usually pushes sections `
-      + "over that line, but this test cannot prove a file is clean. Supplying the original would turn it into an exact "
-      + "answer.",
+    headline: "No pair equalisation at the display threshold",
+    summary: `No section scored 0.95 or above. This does not establish that the file is clean and cannot rule out embedding. `
+      + "Supplying the original would allow a direct comparison of the analysed values.",
   };
 }
 
@@ -133,7 +130,7 @@ export function inspectCopy(kind: CoverInfo["kind"]): InspectCopy {
     return {
       unit: "sample",
       differenceTitle: "Exactly what changed",
-      histogramAxis: "sample value",
+      histogramAxis: "low-byte sample value",
       strideNote: (stride) => `every ${ordinal(stride)} sample shown`,
       planesNote: "The top bits carry the sound; the bottom bits look like static. Hidden data turns a region of the "
         + "bottom layers into even static.",
@@ -154,12 +151,8 @@ export function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
-/**
- * The range the histogram's x-axis really covers. Images are 0 to 255. Audio samples are wider,
- * so labelling them 0 to 255 would be wrong.
- */
-export function valueRange(info: CoverInfo): { min: number; max: number } {
-  if (info.kind === "audio" && info.bits) return { min: 0, max: (1 << info.bits) - 1 };
+/** The backend histograms uint8 RGB values or the low byte of each audio sample. */
+export function valueRange(_info: CoverInfo): { min: number; max: number } {
   return { min: 0, max: 255 };
 }
 

@@ -10,6 +10,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { api, type VerifyStep } from "./api";
 import { setFiles } from "./test/setup";
+import { analysisExtras } from "./test/analysisFixture";
 
 const IMAGE_INFO = {
   kind: "image" as const, format: "PNG", output_format: "PNG", descriptor: "RGB PNG 640x480",
@@ -73,6 +74,7 @@ beforeEach(() => {
     content: { id: "file-1", filename: "message.txt", media_type: "text/plain", size: 132, text: "Meet at the north gate at 19:00." },
   });
   vi.spyOn(api, "analyse").mockResolvedValue({
+    ...analysisExtras,
     info: IMAGE_INFO, channel: 0, channel_names: ["Red", "Green", "Blue"], stride: 2,
     bit_planes: Array.from({ length: 8 }, (_, bit) => `data:image/png;base64,plane${bit}`),
     chi_square: Array.from({ length: 64 }, () => 0.99), chi_square_overall: 1,
@@ -259,7 +261,7 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
   fireEvent.click(within(view()).getByRole("button", { name: /Inspect file/ }));
   await waitFor(() => expect(view().querySelector(".outcome")).toBeInTheDocument());
   expect(view().querySelector(".outcome")).toHaveTextContent("Reading of the evidence");
-  expect(within(view()).getByText(/not a certainty/)).toBeInTheDocument();
+  expect(within(view()).getByText(/cannot establish embedding or authenticity/)).toBeInTheDocument();
 
   vi.mocked(api.analyse).mockClear();
   fireEvent.click(within(view()).getByRole("button", { name: "Green" }));

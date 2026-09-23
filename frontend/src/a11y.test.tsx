@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api, type Analysis, type CoverInfo, type HideResponse, type Scenario, type VerifyResponse } from "./api";
 import { setFiles } from "./test/setup";
+import { analysisExtras } from "./test/analysisFixture";
 import { AnalysePage } from "./pages/AnalysePage";
 import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
@@ -25,6 +26,7 @@ const IMAGE_INFO: CoverInfo = {
 };
 
 const ANALYSIS: Analysis = {
+  ...analysisExtras,
   info: IMAGE_INFO, channel: 0, channel_names: ["Red", "Green", "Blue"], stride: 2,
   bit_planes: Array.from({ length: 8 }, () => "data:image/png;base64,x"),
   chi_square: Array.from({ length: 8 }, () => 0.2), chi_square_overall: 0.01,

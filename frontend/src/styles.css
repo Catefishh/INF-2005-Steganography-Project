@@ -567,6 +567,19 @@ details.advanced > :not(summary) { margin: 0 12px 12px; }
 .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
 .histogram { width: 100%; height: 160px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
 .axis { display: flex; justify-content: space-between; margin-top: -8px; font-size: 0.72rem; color: var(--muted); }
+.analysis-settings { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.analysis-settings legend { padding: 0 6px; font-size: 0.78rem; font-weight: 700; color: var(--muted); }
+.analysis-settings select, .analysis-settings input { min-width: 0; padding: 8px 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
+.analysis-settings label { min-width: 110px; }
+.bpcs-planes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.bpcs-planes figure { margin: 0; }
+.bpcs-maps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.bpcs-maps img { width: 100%; aspect-ratio: 1; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 8px; background: #000; }
+.bpcs-planes figcaption { margin-top: 5px; text-align: center; color: var(--muted); font-size: 0.76rem; }
+.analysis-empty { padding: 18px; border: 1px dashed var(--line-strong); border-radius: 10px; color: var(--muted); text-align: center; }
+.analysis-limitations { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+.analysis-timing { margin-top: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* ---------------------------------------------------------------- responsive */
 /* Two columns inside a full-width form column need about 460px each to hold a drop slot or a
@@ -606,4 +619,5 @@ details.advanced > :not(summary) { margin: 0 12px 12px; }
   .flow, .key-grid { grid-template-columns: minmax(0, 1fr); }
   .panel-head { flex-wrap: wrap; }
   .lsb-picker { grid-template-columns: repeat(4, 1fr); }
+  .bpcs-planes { grid-template-columns: minmax(0, 1fr); }
 }

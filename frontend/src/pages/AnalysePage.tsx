@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Analysis } from "../api";
-import { channelLabel, chiCounts, evidenceReading, inspectCopy, valueRange } from "../analysis";
-import { ActionBar, ChiStrip, DropZone, EmptyState, ErrorNote, Histogram, Icon, Metric, Outcome, Panel, Spinner } from "../components";
+import { channelLabel, evidenceReading, inspectCopy, valueRange } from "../analysis";
+import { ActionBar, DropZone, EmptyState, ErrorNote, Histogram, Icon, Metric, Outcome, Panel, Spinner } from "../components";
 import { inspectMissing } from "../requirements";
 import { errorText, type Handoff } from "../util";
+import { AnalysisTiming, BpcsSection, ChiSquareSection } from "./analyse/sections";
+import { appendBpcsForm, DEFAULT_BPCS_FORM, type BpcsForm, validateBpcsForm } from "./analyse/model";
 
 const IMAGE_COLORS = ["#e5483a", "#1f9d55", "#2f6fdb"];
 
@@ -14,33 +16,68 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
   const [suspect, setSuspect] = useState<File | null>(null);
   const [reference, setReference] = useState<File | null>(null);
   const [channel, setChannel] = useState(0);
+  const [draftBpcs, setDraftBpcs] = useState<BpcsForm>({ ...DEFAULT_BPCS_FORM });
+  const [appliedBpcs, setAppliedBpcs] = useState<BpcsForm>({ ...DEFAULT_BPCS_FORM });
+  const [bpcsError, setBpcsError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Analysis | null>(null);
   const outcomeRef = useRef<HTMLHeadingElement>(null);
+  const requestId = useRef(0);
 
   useEffect(() => {
     if (!handoff) return;
+    requestId.current += 1;
+    setBusy(false);
     setSuspect(handoff.stego);
     setReference(handoff.cover);
     setResult(null);
+    setError("");
+    setBpcsError("");
   }, [handoff]);
 
-  async function run(selected = channel) {
+  function changeFile(file: File | null, which: "suspect" | "reference") {
+    requestId.current += 1;
+    setBusy(false);
+    if (which === "suspect") setSuspect(file);
+    else setReference(file);
+    setResult(null);
+    setError("");
+    setBpcsError("");
+  }
+
+  function updateBpcs(key: keyof BpcsForm, value: string) {
+    setDraftBpcs((current) => ({ ...current, [key]: value }));
+    setBpcsError("");
+  }
+
+  async function run(selected = channel, settings = appliedBpcs, apply = false) {
     if (!suspect) return;
+    if (apply) {
+      const validation = validateBpcsForm(settings);
+      if (validation) {
+        setBpcsError(validation);
+        return;
+      }
+    }
+    const id = ++requestId.current;
     setBusy(true);
     setError("");
-    setResult(null);
     const form = new FormData();
     form.append("file", suspect, suspect.name);
     if (reference) form.append("compare", reference, reference.name);
     form.append("channel", String(selected));
+    appendBpcsForm(form, settings);
     try {
-      setResult(await api.analyse(form));
+      const next = await api.analyse(form);
+      if (id === requestId.current) {
+        setResult(next);
+        if (apply) setAppliedBpcs(settings);
+      }
     } catch (e) {
-      setError(errorText(e));
+      if (id === requestId.current) setError(errorText(e));
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
 
@@ -55,16 +92,37 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
   return (
     <div className="form-column">
       <Panel step="1" title="Files to compare"
-        subtitle="The file to inspect on its own. Add the original it was made from to get an exact answer instead of a statistical one.">
+        subtitle="Inspect a file alone or add a matching original to measure differences directly. These observations cannot prove embedding or authenticity.">
         <div className="columns">
           <DropZone label={<>File to inspect <span className="req">· required</span></>} id={SUSPECT_SLOT_ID}
             title="Drop the file here" hint="picture or WAV" accept="image/*,.wav" icon="eye" file={suspect}
-            onFile={(file) => { setSuspect(file); setResult(null); }} />
+            onFile={(file) => changeFile(file, "suspect")} />
           <DropZone label={<>Original, before anything was hidden <span className="opt">(optional)</span></>} id={REFERENCE_SLOT_ID}
-            title="Drop the original here" hint="same size — lets the app show exactly what changed"
+            title="Drop the original here" hint="same format and size — reveals measured differences"
             accept="image/*,.wav" icon="image" file={reference}
-            onFile={(file) => { setReference(file); setResult(null); }} />
+            onFile={(file) => changeFile(file, "reference")} />
         </div>
+        <fieldset className="analysis-settings" disabled={busy || result?.info.kind === "audio"}>
+          <legend>BPCS image settings</legend>
+          <div className="inline-fields">
+            <label>Channel<select value={draftBpcs.channel} onChange={(event) => updateBpcs("channel", event.target.value)}>
+              <option value="0">Red</option><option value="1">Green</option><option value="2">Blue</option>
+            </select></label>
+            <label>Block size<select value={draftBpcs.blockSize} onChange={(event) => updateBpcs("blockSize", event.target.value)}>
+              {[2, 4, 8, 16, 32, 64].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select></label>
+            <label>First plane<input type="number" min="0" max="7" value={draftBpcs.bitPlaneStart}
+              onChange={(event) => updateBpcs("bitPlaneStart", event.target.value)} /></label>
+            <label>Last plane<input type="number" min="0" max="7" value={draftBpcs.bitPlaneEnd}
+              onChange={(event) => updateBpcs("bitPlaneEnd", event.target.value)} /></label>
+            <label>Complexity threshold<input type="number" min="0" max="1" step="0.01" value={draftBpcs.complexityThreshold}
+              onChange={(event) => updateBpcs("complexityThreshold", event.target.value)} /></label>
+          </div>
+          <button type="button" className="btn ghost" disabled={!ready || busy}
+            onClick={() => void run(channel, draftBpcs, true)}>Apply BPCS settings and rerun</button>
+          <ErrorNote text={bpcsError} />
+        </fieldset>
+        {result?.info.kind === "audio" && <p className="field-hint">BPCS settings apply to images only.</p>}
         <ErrorNote text={error} />
       </Panel>
 
@@ -72,8 +130,8 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         heading={ready ? "Ready" : undefined}
         detail={ready
           ? reference
-            ? "The original is supplied, so the comparison will be exact."
-            : "Without the original the app can only report statistics, not an exact answer."
+            ? "The original is supplied, so differences can be measured directly."
+            : "Without the original the app reports statistical and visual patterns only."
           : undefined}>
         {(reasonId) => (
           <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}
@@ -83,14 +141,14 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         )}
       </ActionBar>
       <p className="sr-live" role="status" aria-live="polite">
-        {busy ? "Splitting the file into bit layers and running the statistical test." : ""}
+        {busy ? "Analysing bit layers, pair counts and image block complexity." : ""}
       </p>
 
       {!result && (
-        <EmptyState icon="layers" title="You will get five pieces of evidence">
+        <EmptyState icon="layers" title="Inspect patterns and measured differences">
           <p>
-            A reading of what the figures add up to, an exact map of what changed if you supply the original, a
-            statistical test per section of the file, the eight bit layers as images, and a value histogram.
+            Inspect value-pair statistics, the eight bit layers and a histogram. Images also include BPCS complexity
+            maps and capacity estimates. With an original, compare measured differences directly.
           </p>
           <p className="muted small">
             None of this needs the password or a key. It is what an outsider could work out from the file alone.
@@ -99,7 +157,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
       )}
 
       {result && <InspectResult analysis={result} busy={busy} channel={channel} outcomeRef={outcomeRef}
-        onChannel={(index) => { setChannel(index); void run(index); }} />}
+        onChannel={(index) => { setChannel(index); void run(index, appliedBpcs); }} />}
     </div>
   );
 }
@@ -118,7 +176,6 @@ function InspectResult({ analysis, busy, channel, outcomeRef, onChannel }: {
   const kind = analysis.info.kind;
   const copy = inspectCopy(kind);
   const reading = evidenceReading(analysis);
-  const chi = chiCounts(analysis);
   const compare = analysis.compare;
   const range = valueRange(analysis.info);
   const strideNote = analysis.stride > 1 ? ` (${copy.strideNote(analysis.stride)})` : "";
@@ -129,40 +186,14 @@ function InspectResult({ analysis, busy, channel, outcomeRef, onChannel }: {
         <Outcome tone={reading.tone === "flat" ? "flat" : reading.tone} icon={reading.tone === "good" ? "shield" : "alert"}
           label="Reading of the evidence" title={reading.headline} summary={reading.summary} headingRef={outcomeRef} />
         <p className="field-hint reading-note">
-          This reading is assembled from the figures on this page. It states what they are consistent with, not a certainty.
+          This reading describes the measured figures; it cannot establish embedding or authenticity.
         </p>
       </div>
 
       {compare && <DiffPanel analysis={analysis} />}
 
       <div className="columns">
-        <Panel title="Statistical test"
-          subtitle="Each bar is one section of the file, in the order data would be written. A high bar means the value pairs (2i, 2i+1) have been evened out, which is what writing random encrypted bits into the lowest bit does.">
-          <ChiStrip values={analysis.chi_square} />
-          <div className="legend">
-            <span><i style={{ background: "var(--teal)" }} /> under 0.5 — looks natural</span>
-            <span><i style={{ background: "var(--amber)" }} /> 0.5 to 0.95 — unclear</span>
-            <span><i style={{ background: "var(--coral)" }} /> 0.95 and over — looks embedded</span>
-          </div>
-          <div className="metrics two">
-            <Metric label="Per section" value={`${chi.flagged} of ${chi.total}`} tone={chi.flagged ? "warn" : "good"}
-              reading={`${chi.flagged === chi.total && chi.total > 0 ? "Every" : chi.flagged === 0 ? "No" : `${chi.flagged}`} section${chi.total === 1 ? "" : "s"} scored 0.95 or above when measured on its own.`} />
-            <Metric label="Whole file at once" value={chi.overall === null ? "not enough data" : chi.overall.toFixed(4)}
-              reading="The same test applied to the file as one block." />
-          </div>
-          {chi.flagged > 0 && (
-            <div className="note note-warn">
-              <Icon name="alert" size={16} />
-              <span>
-                <b>Read this one with care.</b> {chi.flagged} of {chi.total} sections are flagged, while the whole-file
-                figure is {chi.overall === null ? "not available" : chi.overall.toFixed(4)}. Very flat or very noisy files
-                make this test say "embedded" whether or not anything is. On 16-bit or deeper audio the lowest byte is
-                already noise-like, so the test is only indicative there.{" "}
-                {compare ? "The exact comparison above is the stronger signal." : "Supplying the original is what turns this into an exact answer."}
-              </span>
-            </div>
-          )}
-        </Panel>
+        <ChiSquareSection details={analysis.chi_square_details} busy={busy} />
 
         <Panel title="Bit layers"
           aside={
@@ -207,10 +238,12 @@ function InspectResult({ analysis, busy, channel, outcomeRef, onChannel }: {
             <figure className="composite">
               <img src={analysis.lsb_composite} alt="The lowest bit of red, green and blue, shown as a colour image" />
             </figure>
-            <p className="field-hint">The band where all three channels turn to even static is where the hidden data sits.</p>
+            <p className="field-hint">Even-looking regions can have several causes; use the maps as descriptive evidence.</p>
           </Panel>
         )}
       </div>
+      <BpcsSection result={analysis} busy={busy} />
+      <AnalysisTiming result={analysis} />
     </>
   );
 }
@@ -228,16 +261,16 @@ function DiffPanel({ analysis }: { analysis: Analysis }) {
         <Metric label="Values changed" value={<>{compare.slots_changed.toLocaleString()} <small>of {analysis.info.n_slots.toLocaleString()}</small></>}
           tone={compare.slots_changed ? "warn" : "good"}
           reading={compare.slots_changed
-            ? `${percent < 0.1 ? "Under 0.1" : percent.toFixed(1)}% of the file. ${oneBitPerValue ? "One bit per value, which is what hiding data changes." : `${compare.bits_changed.toLocaleString()} bits in total.`}`
+            ? `${percent < 0.1 ? "Under 0.1" : percent.toFixed(1)}% of the file. ${oneBitPerValue ? "One bit per value changed, consistent with LSB replacement but not proof of it." : `${compare.bits_changed.toLocaleString()} bits in total.`}`
             : "The file is identical to the original at every value."} />
         <Metric label="Largest change" value={`±${compare.max_difference}`}
           tone={compare.max_difference > 1 ? "bad" : ""}
           reading={compare.max_difference <= 1
-            ? "Consistent with one bit per value. Editing or re-saving gives much larger differences."
-            : "Too large for one bit per value, so this is editing or re-saving rather than hiding data."} />
+            ? "Consistent with one-bit replacement; other causes are possible."
+            : "Larger than single-bit replacement alone explains."} />
         <Metric label={analysis.info.kind === "audio" ? "Audible change" : "Visible change"}
           value={compare.psnr_db === null ? "None" : `${compare.psnr_db.toFixed(2)} dB`}
-          reading={`PSNR, with an MSE of ${compare.mse.toExponential(2)}. ${compare.psnr_db === null ? "The two files are identical." : compare.psnr_db >= 40 ? "Too small to notice." : "Large enough to see or hear."}`} />
+          reading={`PSNR, with an MSE of ${compare.mse.toExponential(2)}. ${compare.psnr_db === null ? "Analysed values match." : "Perceptibility depends on the carrier and viewing conditions."}`} />
       </div>
 
       <div className="planes two">
