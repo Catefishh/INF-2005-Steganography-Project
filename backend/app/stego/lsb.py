@@ -25,6 +25,94 @@ matches a step of the lecture version.
 """
 
 import numpy as np
+import hashlib
+import hmac
+import math
+
+
+class CapacityError(ValueError):
+    pass
+
+
+class NoFitError(CapacityError):
+    pass
+
+
+class PaddingError(ValueError):
+    pass
+
+
+def occupied_slots(length: int, depth: int, start: int):
+    check_n_lsb(depth)
+    if length < 0 or start < 0:
+        raise ValueError("length and start must be nonnegative")
+    return range(start, start + slots_needed(length, depth))
+
+
+def available_bytes(slots: int, start: int, depth: int) -> int:
+    check_n_lsb(depth)
+    if slots < 0 or start < 0:
+        raise ValueError("slots and start must be nonnegative")
+    return max(0, (slots - start) * depth // 8)
+
+
+def fits(slots: int, start: int, depth: int, length: int) -> bool:
+    check_n_lsb(depth)
+    return 0 <= start < slots and length >= 0 and start + slots_needed(length, depth) <= slots
+
+
+def suggest_start(key: bytes, salt: bytes, descriptor: str, depth: int, slots: int, length: int) -> int:
+    check_n_lsb(depth)
+    last = slots - slots_needed(length, depth)
+    if last < 0:
+        raise NoFitError("encrypted package does not fit")
+    if last == 0:
+        return 0
+    material = salt + descriptor.encode("utf-8") + bytes([depth]) + length.to_bytes(8, "big")
+    ceiling = ((1 << 256) // last) * last
+    for counter in range(256):
+        value = int.from_bytes(hmac.new(key, material + counter.to_bytes(2, "big"), hashlib.sha256).digest(), "big")
+        if value < ceiling:
+            return 1 + value % last
+    raise NoFitError("could not choose a start location")
+
+
+def mask_slots(slots: bytearray, length: int, depth: int, start: int) -> None:
+    if not fits(len(slots), start, depth, length):
+        raise CapacityError("occupied slots exceed carrier")
+    mask = 255 ^ ((1 << depth) - 1)
+    end = start + slots_needed(length, depth)
+    np.frombuffer(slots, dtype=np.uint8)[start:end] &= mask
+
+
+def embed(slots: bytearray, payload: bytes, depth: int, start: int = 0) -> None:
+    if not fits(len(slots), start, depth, len(payload)):
+        raise CapacityError("encrypted package does not fit from selected start")
+    bits = to_bits(payload)
+    padding = (-len(bits)) % depth
+    if padding:
+        bits = np.pad(bits, (0, padding))
+    groups = bits.reshape(-1, depth)
+    weights = 2 ** np.arange(depth - 1, -1, -1)
+    values = groups @ weights
+    mask = 255 ^ ((1 << depth) - 1)
+    target = np.frombuffer(slots, dtype=np.uint8)[start:start + len(values)]
+    target[:] = (target & mask) | values.astype(np.uint8)
+
+
+def extract(slots: bytearray, length: int, depth: int, start: int = 0) -> bytes:
+    if not fits(len(slots), start, depth, length):
+        raise CapacityError("extraction exceeds carrier")
+    count = slots_needed(length, depth)
+    if not count:
+        return b""
+    values = np.frombuffer(slots, dtype=np.uint8, count=count, offset=start) & ((1 << depth) - 1)
+    shifts = np.arange(depth - 1, -1, -1)
+    bits = ((values[:, None] >> shifts) & 1).reshape(-1)
+    tail = bits[length * 8:]
+    if tail.any():
+        raise PaddingError("nonzero padding in last carrier slot")
+    return np.packbits(bits[:length * 8]).tobytes()
 
 
 def to_bin(data):

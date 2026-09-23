@@ -22,6 +22,8 @@ export const PATHS: Record<Page, string> = {
   verify: "/verify",
   analyse: "/inspect",
   attacks: "/tamper-tests",
+  v2: "/v2",
+  text: "/text",
 };
 
 /** Only these two screens produce a result worth its own URL. */

@@ -27,6 +27,7 @@ class Job:
     session_id: str
     status: str = "queued"
     progress: int = 0
+    phase: str = "queued"
     result: dict | None = None
     error: dict | None = None
     cancel: threading.Event = field(default_factory=threading.Event)

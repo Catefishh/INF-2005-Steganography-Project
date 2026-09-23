@@ -21,7 +21,7 @@ def test_benchmark_reports_stable_semantics_and_writes_json(tmp_path):
     row = report["fixtures"][0]
     assert row["semantic_sha256"]
     assert row["wall_ms"]["median"] >= 0
-    assert set(row["durations_ms_median"]) == {"load", "bit_planes", "histogram", "chi_square", "bpcs", "difference", "total"}
+    assert set(row["durations_ms_median"]) == {"load", "bit_planes", "histogram", "chi_square", "bpcs", "rs", "difference", "total"}
     output = tmp_path / "report.json"
     assert main(["--repeat", "1", "--output", str(output)]) == 0
     assert json.loads(output.read_text())["fixtures"]

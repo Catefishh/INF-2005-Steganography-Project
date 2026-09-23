@@ -2,9 +2,11 @@
 
 from time import perf_counter
 
-from . import bit_planes, bpcs, chi_square, difference, histogram
+from . import bit_planes, bpcs, chi_square, histogram
 from .bpcs import BPCSConfig
 from .common import prepare_inputs
+from ..analysis_parts.rs import analyse as rs_analyse
+from ..analysis_parts.difference import compare as rich_compare
 
 
 def analyse(
@@ -39,8 +41,16 @@ def analyse(
     durations["bpcs"] = (perf_counter() - step_start) * 1000
 
     step_start = perf_counter()
-    comparison = difference.analyse(context, inputs.reference, previews["stride"])
+    rs_result = rs_analyse(context.image_channel(channel)) if context.cover.kind == "image" else None
+    durations["rs"] = (perf_counter() - step_start) * 1000
+
+    step_start = perf_counter()
+    comparison = (rich_compare(context.cover, inputs.reference.cover, previews["stride"])
+                  if inputs.reference else None)
     durations["difference"] = (perf_counter() - step_start) * 1000
+
+    reference_previews = (bit_planes.analyse(inputs.reference, channel) if inputs.reference else None)
+    reference_histograms = (histogram.analyse(inputs.reference, channel) if inputs.reference else None)
 
     result = {
         "info": context.cover.info(),
@@ -55,6 +65,9 @@ def analyse(
         "lsb_composite": previews["lsb_composite"],
         "compare": comparison,
         "bpcs": bpcs_result,
+        "rs": rs_result,
+        "reference_bit_planes": reference_previews["bit_planes"] if reference_previews else None,
+        "reference_histograms": reference_histograms,
     }
     durations["total"] = (perf_counter() - total_start) * 1000
     result["durations_ms"] = {name: round(duration, 3) for name, duration in durations.items()}

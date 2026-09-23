@@ -63,8 +63,12 @@ def test_legacy_image_analysis_contract():
     assert len(result["histograms"]) == 3
     assert all(len(histogram) == 256 for histogram in result["histograms"])
     assert result["lsb_composite"].startswith("data:image/png;base64,")
-    assert set(result["compare"]) == COMPARISON_FIELDS
+    assert COMPARISON_FIELDS <= result["compare"].keys()
     assert result["compare"]["slots_changed"] == 8
+    assert result["rs"]["groups"] > 0
+    assert result["compare"]["ssim"] is None  # The 10-pixel height is below SSIM's 11-pixel window.
+    assert len(result["reference_bit_planes"]) == 8
+    assert len(result["reference_histograms"]) == 3
 
 
 def test_legacy_audio_analysis_contract_without_comparison():
@@ -130,6 +134,7 @@ def test_service_assembles_default_bpcs_comparison_and_durations():
         "histogram",
         "chi_square",
         "bpcs",
+        "rs",
         "difference",
         "total",
     }

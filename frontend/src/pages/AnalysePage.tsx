@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Analysis } from "../api";
-import { channelLabel, evidenceReading, inspectCopy, valueRange } from "../analysis";
-import { ActionBar, DropZone, EmptyState, ErrorNote, Histogram, Icon, Metric, Outcome, Panel, Spinner } from "../components";
+import { ActionBar, DropZone, EmptyState, ErrorNote, Icon, Panel, Spinner } from "../components";
 import { inspectMissing } from "../requirements";
 import { errorText, type Handoff } from "../util";
-import { AnalysisTiming, BpcsSection, ChiSquareSection } from "./analyse/sections";
 import { appendBpcsForm, DEFAULT_BPCS_FORM, type BpcsForm, validateBpcsForm } from "./analyse/model";
-
-const IMAGE_COLORS = ["#e5483a", "#1f9d55", "#2f6fdb"];
+import { InspectResult } from "./analysis/Results";
 
 const SUSPECT_SLOT_ID = "inspect-file-slot";
 const REFERENCE_SLOT_ID = "inspect-reference-slot";
@@ -159,132 +156,5 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
       {result && <InspectResult analysis={result} busy={busy} channel={channel} outcomeRef={outcomeRef}
         onChannel={(index) => { setChannel(index); void run(index, appliedBpcs); }} />}
     </div>
-  );
-}
-
-/**
- * Results in the order of the strength of the evidence: the reading, then the exact difference,
- * then the statistical test, then the bit layers, then the histogram.
- */
-function InspectResult({ analysis, busy, channel, outcomeRef, onChannel }: {
-  analysis: Analysis;
-  busy: boolean;
-  channel: number;
-  outcomeRef: React.RefObject<HTMLHeadingElement | null>;
-  onChannel: (index: number) => void;
-}) {
-  const kind = analysis.info.kind;
-  const copy = inspectCopy(kind);
-  const reading = evidenceReading(analysis);
-  const compare = analysis.compare;
-  const range = valueRange(analysis.info);
-  const strideNote = analysis.stride > 1 ? ` (${copy.strideNote(analysis.stride)})` : "";
-
-  return (
-    <>
-      <div>
-        <Outcome tone={reading.tone === "flat" ? "flat" : reading.tone} icon={reading.tone === "good" ? "shield" : "alert"}
-          label="Reading of the evidence" title={reading.headline} summary={reading.summary} headingRef={outcomeRef} />
-        <p className="field-hint reading-note">
-          This reading describes the measured figures; it cannot establish embedding or authenticity.
-        </p>
-      </div>
-
-      {compare && <DiffPanel analysis={analysis} />}
-
-      <div className="columns">
-        <ChiSquareSection details={analysis.chi_square_details} busy={busy} />
-
-        <Panel title="Bit layers"
-          aside={
-            <div className="segmented">
-              {analysis.channel_names.map((name, index) => (
-                <button key={name} type="button" className={channel === index ? "on" : ""} disabled={busy}
-                  aria-pressed={channel === index}
-                  onClick={() => onChannel(index)}>{name}</button>
-              ))}
-            </div>
-          }>
-          <p className="field-hint">
-            {channelLabel(analysis)}{strideNote}. {copy.planesNote}
-          </p>
-          <div className="planes">
-            {[7, 6, 5, 4, 3, 2, 1, 0].map((bit) => (
-              <figure key={bit} className={bit < 2 ? "low" : ""}>
-                <img src={analysis.bit_planes[bit]} alt={`Bit plane ${bit}`} />
-                <figcaption>Bit {bit}{bit === 7 ? " · top" : bit === 0 ? " · bottom" : ""}</figcaption>
-              </figure>
-            ))}
-          </div>
-          {kind === "audio" && (
-            <p className="muted small">
-              Audio samples are laid out row by row as a square image, one pixel per sample of the chosen channel.
-            </p>
-          )}
-        </Panel>
-      </div>
-
-      <div className="columns">
-        <Panel title="Value histogram"
-          subtitle="Replacing the lowest bit makes neighbouring pairs of bars the same height. Look for the comb pattern flattening out.">
-          <Histogram series={analysis.histograms} colors={kind === "image" ? IMAGE_COLORS : ["#0fa3a3"]} />
-          <div className="axis">
-            <span>{range.min}</span><span>{copy.histogramAxis}</span><span>{range.max}</span>
-          </div>
-        </Panel>
-
-        {analysis.lsb_composite && (
-          <Panel title="Lowest bit of red, green and blue as one image">
-            <figure className="composite">
-              <img src={analysis.lsb_composite} alt="The lowest bit of red, green and blue, shown as a colour image" />
-            </figure>
-            <p className="field-hint">Even-looking regions can have several causes; use the maps as descriptive evidence.</p>
-          </Panel>
-        )}
-      </div>
-      <BpcsSection result={analysis} busy={busy} />
-      <AnalysisTiming result={analysis} />
-    </>
-  );
-}
-
-/** The panel that only an exact comparison can produce: what changed, where, and by how much. */
-function DiffPanel({ analysis }: { analysis: Analysis }) {
-  const compare = analysis.compare!;
-  const copy = inspectCopy(analysis.info.kind);
-  const percent = analysis.info.n_slots > 0 ? (compare.slots_changed / analysis.info.n_slots) * 100 : 0;
-  const oneBitPerValue = compare.slots_changed > 0 && compare.bits_changed === compare.slots_changed;
-
-  return (
-    <Panel title={copy.differenceTitle} subtitle="Every changed value, against the original you supplied.">
-      <div className="metrics">
-        <Metric label="Values changed" value={<>{compare.slots_changed.toLocaleString()} <small>of {analysis.info.n_slots.toLocaleString()}</small></>}
-          tone={compare.slots_changed ? "warn" : "good"}
-          reading={compare.slots_changed
-            ? `${percent < 0.1 ? "Under 0.1" : percent.toFixed(1)}% of the file. ${oneBitPerValue ? "One bit per value changed, consistent with LSB replacement but not proof of it." : `${compare.bits_changed.toLocaleString()} bits in total.`}`
-            : "The file is identical to the original at every value."} />
-        <Metric label="Largest change" value={`±${compare.max_difference}`}
-          tone={compare.max_difference > 1 ? "bad" : ""}
-          reading={compare.max_difference <= 1
-            ? "Consistent with one-bit replacement; other causes are possible."
-            : "Larger than single-bit replacement alone explains."} />
-        <Metric label={analysis.info.kind === "audio" ? "Audible change" : "Visible change"}
-          value={compare.psnr_db === null ? "None" : `${compare.psnr_db.toFixed(2)} dB`}
-          reading={`PSNR, with an MSE of ${compare.mse.toExponential(2)}. ${compare.psnr_db === null ? "Analysed values match." : "Perceptibility depends on the carrier and viewing conditions."}`} />
-      </div>
-
-      <div className="planes two">
-        <figure>
-          <img src={compare.changed_map} alt="The locations that changed" />
-          <figcaption>White marks every changed {copy.unit} — {compare.slots_changed.toLocaleString()} in total</figcaption>
-        </figure>
-        {compare.amplified && (
-          <figure>
-            <img src={compare.amplified} alt="The changed locations, brightened" />
-            <figcaption>The same locations, brightness multiplied 64× so a ±1 change becomes visible</figcaption>
-          </figure>
-        )}
-      </div>
-    </Panel>
   );
 }

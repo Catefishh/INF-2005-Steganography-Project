@@ -39,6 +39,15 @@
 }
 
 * { box-sizing: border-box; }
+.comparison-view { display: grid; gap: 12px; margin: 18px 0; }
+.comparison-images { position: relative; width: min(100%, 640px); overflow: hidden; background: var(--slate); }
+.comparison-images img { display: block; width: 100%; height: auto; }
+.comparison-images .comparison-stego, .comparison-images .comparison-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.comparison-images .comparison-overlay { mix-blend-mode: screen; filter: sepia(1) saturate(12) hue-rotate(310deg); pointer-events: none; }
+.comparison-view label { display: grid; gap: 5px; max-width: 640px; }
+.robust-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 18px; }
+.robust-card { display: grid; gap: 8px; align-content: start; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface-2); }
+.robust-card img { width: 100%; max-height: 180px; object-fit: contain; background: var(--slate); }
 body { margin: 0; background: var(--bg); }
 [hidden] { display: none !important; }
 button, input, textarea, select { font: inherit; color: inherit; }

@@ -1,14 +1,34 @@
 # Stegloc: LSB steganography with digital signatures
 
-INF2005 ACW1: a desktop and web GUI that hides a signed and encrypted verification payload inside an **image** or **WAV audio** cover using **LSB replacement**, then extracts it and verifies it with **SHA-256** and an **RSA digital signature**.
+INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement. The original workflow uses SHA-256 and RSA signatures. V2 adds Ed25519, a separate recovery file/code, and a restricted AVI video carrier.
 
 | Page | What it does |
 | --- | --- |
 | **Keys** | Generate or load an RSA-2048 key pair (private key signs, public key verifies) |
 | **Embed & sign** (party A) | Drag in a cover and a payload (text or any file), choose 1-8 LSBs and the start location, then embed |
 | **Extract & verify** (party B) | Drag in the received stego file, enter the passphrase and public key, get a verdict |
-| **Steganalysis** | Bit planes, histogram, descriptive Chi-Square, image-only BPCS, and cover/stego differences |
+| **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
 | **Attack lab** | Runs up to 10 positive/negative scenarios and lets you download the tampered sample files |
+| **V2 Workbench** | Ed25519 and separate `.stegloc` recovery file/code, session jobs, and uncompressed AVI video carriers |
+| **Text Steganography** | Signed, encrypted messages in acrostic, trailing-whitespace, or zero-width text |
+
+## V3 analysis and text
+
+**Inspect a file** now offers image-only RS statistics, paired cover/stego histograms and bit planes 0–7, an even/odd filter (bit 0: even black, odd white), and full-resolution luminance SSIM. Its before/after slider and change overlay show exactly where pixels differ. RS, histograms and chi-square are descriptive evidence; they cannot prove a message is present. MSE, PSNR and SSIM require a same-size original image. SSIM uses 11×11 windows, so it is unavailable below 11×11 pixels.
+
+**V2 Workbench** capacity estimates now show both raw LSB space and the maximum message bytes after security overhead for the chosen depth and start. The BPCS number in Inspect remains a separate theoretical estimate. The image robustness simulator in **Tamper tests** independently applies resize, center crop, JPEG round-trip, noise and brightness changes, then reports actual legacy or v2 verifier outcomes. Resize/crop have no direct image-quality comparison because dimensions change.
+
+**Text Steganography** (`/text`) uses existing Ed25519 keys and an independent v3 text format. Enter a message, select a method, generate an encrypted carrier, and download its text and `.stegloc-text` recovery material. Pass the code separately. Paste or import the carrier on the recipient side with the recovery file, code and public key. The hidden message and sender are authenticated; visible wording is not. Acrostic lines may be rewritten if the A–P initials and order remain exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The input message limit is 32 KiB and the resulting UTF-8 carrier limit is 2 MiB. See [the text format](docs/v3-text-protocol.md) for exact framing and limitations.
+
+For a source-code walkthrough and Q&A, use the [code guide](docs/code-guide.md). It maps each concept to the implementation, call flow, limits and tests.
+
+## V2 workbench
+
+Open **V2 Workbench** (or `/v2`) for the new workflow. Enter a password and generate an Ed25519 pair; save the encrypted private PEM and public PEM. Check the public-key fingerprint through a trusted channel. Select a PNG, 24-bit BMP, integer PCM WAV, or supported uncompressed AVI cover, then a text message or any content file. Check capacity, choose 1–8 LSBs and optionally a start, and protect. Download **both** the carrier and `.stegloc` recovery file. Send the generated recovery code separately.
+
+The recipient starts a fresh v2 session, loads the received carrier, `.stegloc` file, code and public key, then chooses **Extract and verify**. Only an Authentic result offers the recovered file. The v2 session supports polling, cancellation and reset. The previous RSA/passphrase screens remain available for existing `STG1` files; their key and recovery formats are different.
+
+V2 also adds image-only BPCS settings and complexity maps to **Inspect a file**, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Run `python scripts/benchmark-analysis.py` from a prepared environment to measure the vectorized BPCS algorithm against the scalar reference. See [v2 protocol and AVI limits](docs/v2-protocol.md) for accepted headers, size limits, security handoff and verification boundaries.
 
 ## Run the packaged Windows app
 
@@ -79,13 +99,7 @@ Single-server alternative: `npm run build` inside `frontend`, then start only th
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-Set-Location frontend
-npm test
-npm run build
-Set-Location ..
 ```
-
-Detailed steganalysis methods, response fields, limits, and benchmark reproduction are documented in [`docs/steganalysis.md`](docs/steganalysis.md). Run the repeatable benchmark with `.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks\modular.json` from the repository root.
 
 ## Demo flow (party A to party B)
 
@@ -166,6 +180,8 @@ slot 0 ... start ............ start+span ...... last 520 slots
 | BMP | BMP | Yes for standard 24-bit BMP |
 | PNG, JPEG, GIF, WEBP, TIFF, palette / 16-bit images | PNG | No: PNG re-compresses (pixels and dimensions are exact) |
 
+The v2 workbench accepts 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, and a single-stream uncompressed 24-bit AVI up to 64 MiB. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed. This stricter carrier contract belongs to v2 only. See [v2 protocol and AVI limits](docs/v2-protocol.md).
+
 MP3, AAC and MP4 cannot be covers because lossy codecs destroy LSBs. They can still be hidden as payloads.
 
 ## Limitations (be honest in the demo)
@@ -179,17 +195,22 @@ MP3, AAC and MP4 cannot be covers because lossy codecs destroy LSBs. They can st
 ## Project layout
 
 ```
-backend/app/main.py            FastAPI endpoints
+backend/app/main.py            FastAPI app setup, middleware and frontend serving
+backend/app/api/               HTTP routes, uploads, sessions and jobs
 backend/desktop.py             desktop window and internal server lifecycle
 desktop.py                     desktop launch entry point
 Stegloc.spec                   Windows folder distribution
 scripts/build-desktop.ps1      frontend and desktop build
 backend/app/stego/lsb.py       LSB encode / decode (lecture style)
-backend/app/stego/covers.py    image and WAV cover objects -> slots
+backend/app/stego/covers.py    legacy image/WAV cover objects -> slots
+backend/app/stego/carriers/    V2 image, WAV and AVI adapters
 backend/app/stego/security.py  SHA-256, RSA-PSS, PBKDF2, AES-GCM
-backend/app/stego/engine.py    hide / verify workflow and verdicts
-backend/app/stego/analysis/       modular bit planes, histogram, Chi-Square, BPCS, difference
+backend/app/stego/legacy_*.py  legacy record, capacity, sender, receiver and report
+backend/app/v2_*.py            V2 records, sender, receiver and verdict stages
+backend/app/stego/text_*.py    V3 signed text and carrier encoding
+backend/app/stego/analysis/    analysis coordinator and core analyzers
+backend/app/stego/analysis_parts/  focused statistical and visual analyzers
 backend/app/stego/attacks.py   attack simulation module
-frontend/src/                  React GUI (pages/, components.tsx, api.ts)
+frontend/src/                  React GUI (pages/, ui/, api/)
 tests/                         pytest suite
 ```
