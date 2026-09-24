@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .api.common import EstimateRequest, KeyInspectRequest, MAX_UPLOAD_BYTES, _read, _optional_int, _optional_float, _bad_request, _looks_like_text
-from .api import analysis as analysis_routes, files as file_routes, keys as key_routes, protection as protection_routes
+from .api import analysis as analysis_routes, files as file_routes, keys as key_routes, protection as protection_routes, v4_media, v4_jobs, v4_video
 from .stego.security import generate_rsa_keys
 from .v2_api import attach_v2
 from .v3_api import attach_v3
@@ -47,7 +47,7 @@ class FileStore:
 
 
 def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None = None) -> FastAPI:
-    app = FastAPI(title="Stegloc API", version="0.3.0")
+    app = FastAPI(title="Stegloc API", version="0.4.0")
     store = FileStore()
     app.state.store = store
     app.state.generate_rsa_keys = generate_rsa_keys
@@ -91,6 +91,9 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
 
     key_routes.attach(app)
     protection_routes.attach(app, store)
+    v4_media.attach(app, store)
+    v4_jobs.attach(app)
+    v4_video.attach(app, store)
     analysis_routes.attach(app, store)
     file_routes.attach(app, store)
 

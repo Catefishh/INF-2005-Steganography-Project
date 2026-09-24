@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonCommand = (Get-Command $Python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $npmCommand = (Get-Command npm.cmd -CommandType Application -ErrorAction Stop).Source
+& (Join-Path $PSScriptRoot "prepare-ffmpeg.ps1")
 
 Push-Location (Join-Path $projectRoot "frontend")
 try {

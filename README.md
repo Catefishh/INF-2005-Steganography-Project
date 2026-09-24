@@ -1,5 +1,15 @@
 # Stegloc: LSB steganography with digital signatures
 
+## V4 demonstration workflow
+
+1. Select an image or PCM WAV cover, or import MP3/MOV/MP4 and explicitly prepare a lossless cover. Video preparation selects a short silent segment and writes uncompressed AVI (64 MiB maximum). MP3 preparation writes PCM WAV. The Windows desktop build bundles FFmpeg and ffprobe; source runs require them on `PATH` or in `build/ffmpeg`.
+2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
+3. Extract and verify. Compare the signed expected payload digest with the decoded digest. A wrong manual start keeps the same file and offers immediate retry or the authenticated stored location.
+4. Inspect the prepared cover against the stego file with side-by-side, swipe, overlay, and heatmap views. For video, inspect individual frames and the timeline. For WAV, the strip shows changes across time and channels.
+5. Open Tamper tests. Choose **Encode and test** or **Test protected file** for image, WAV, AVI, or text carriers. Watch each case finish, including wrong-location correction and a controlled legacy payload-hash mismatch, then download the evidence ZIP. Passwords, recovery codes, private keys, and extracted plaintext are excluded from that ZIP.
+
+Prepared MOV/MP4 video uses the Ed25519 workflow with a separate recovery file and code. MP3 becomes WAV; MOV/MP4 becomes silent AVI. The downloaded stego format is the prepared lossless format. Working files live only for the current app session.
+
 INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement. The original workflow uses SHA-256 and RSA signatures. V2 adds Ed25519, a separate recovery file/code, and a restricted AVI video carrier.
 
 | Page | What it does |
@@ -179,7 +189,7 @@ slot 0 ... start ............ start+span ...... last 520 slots
 
 The v2 carrier protocol accepts 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, and a single-stream uncompressed 24-bit AVI up to 64 MiB. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed. This stricter carrier contract belongs to v2 only. See [v2 protocol and AVI limits](docs/v2-protocol.md).
 
-MP3, AAC and MP4 cannot be covers because lossy codecs destroy LSBs. They can still be hidden as payloads.
+Compressed MP3 covers are explicitly decoded to PCM WAV before embedding. MOV and MP4 covers are explicitly decoded to a selected, silent uncompressed AVI segment. The compressed source is never used as the LSB carrier, and a received stego file is never transcoded during verification. Arbitrary files, including MP3, MOV and MP4, can be hidden as byte-exact payloads.
 
 ## Limitations (be honest in the demo)
 

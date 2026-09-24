@@ -9,6 +9,7 @@ import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
 import { VerifyPage } from "./pages/VerifyPage";
 import type { Vault } from "./util";
+import * as jobs from "./api/jobs";
 
 const VAULT: Vault = {
   privatePem: "-----BEGIN PRIVATE KEY-----\nk\n-----END PRIVATE KEY-----",
@@ -188,6 +189,11 @@ describe("every screen — labels, busy state and heading order", () => {
   });
 
   it("Tamper tests, including the result", async () => {
+    vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+      if (path === "/api/v2/session") return {status: "ready"} as never;
+      if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+      return {status: "succeeded", phase: "complete", total: 1, cases: SCENARIOS, result: {cases: SCENARIOS}} as never;
+    });
     render(<AttackPage vault={VAULT} handoff={null} goTo={() => undefined} />);
     expectNoSkippedLevels(headingLevels(document.body));
 

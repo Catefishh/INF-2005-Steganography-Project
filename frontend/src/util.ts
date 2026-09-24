@@ -12,8 +12,14 @@ export interface Vault {
 
 /** Files passed from the sender page to the receiver / analysis / attack pages. */
 export interface Handoff {
+  id: string;
+  protocol?: "legacy" | "v2-video";
+  sourceCover?: File | null;
+  conversion?: {sourceName: string; start: number; duration: number; fps: number; maxWidth: number; maxHeight: number; output: string};
+  recovery?: File;
+  recoveryCode?: string;
   stego: File;
-  cover: File;
+  cover: File | null;
   passphrase: string;
   publicPem: string;
   serial: number;

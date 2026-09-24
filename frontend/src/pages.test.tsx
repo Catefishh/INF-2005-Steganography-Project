@@ -9,6 +9,7 @@ import { fireEvent, render, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { api, type VerifyStep } from "./api";
+import * as jobs from "./api/jobs";
 import { setFiles } from "./test/setup";
 import { analysisExtras } from "./test/analysisFixture";
 
@@ -272,13 +273,19 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
 });
 
 it("tester: leads with the count and keeps every damaged file downloadable", async () => {
+  const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+    if (path === "/api/v2/session") return {status: "ready"} as never;
+    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    return {status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}} as never;
+  });
   await appWithKeys();
   await screenNamed("Tamper tests");
   pick("Protected file", "stego_harbour.png");
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
   fireEvent.click(within(view()).getByRole("button", { name: /Run tamper tests/ }));
 
-  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 behaved correctly"));
+  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 completed cases behaved correctly"));
   expect(within(view()).getAllByText("as expected")).toHaveLength(2);
   expect(within(view()).getByRole("link", { name: /Save harbour_flip.png/ })).toBeInTheDocument();
   // A row with no file says why instead of printing a dash.

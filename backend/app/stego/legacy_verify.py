@@ -136,6 +136,8 @@ def verify(stego_data, passphrase, public_key_pem, start_slot=None, start_x=None
     except (struct.error, ValueError, KeyError, TypeError):
         return trace.result(Verdict.CANNOT_VERIFY, "The decrypted payload is not a valid record.", "decrypt")
     trace.record = record
+    trace.info["payload_hash"] = {"algorithm": "SHA-256", "scope": "decoded payload bytes",
+        "expected": expected_hash, "computed": None, "status": "not_reached", "expected_trusted": False}
     trace.ok("decrypt", f"authentication tag valid - record {len(record_json)} B, signature {len(signature)} B, "
                         f"payload {len(content):,} B")
 
@@ -151,10 +153,13 @@ def verify(stego_data, passphrase, public_key_pem, start_slot=None, start_x=None
             why = "The key matches the claimed signer, so the signed record itself was altered (forged)."
         return trace.result(Verdict.SIGNATURE_INVALID, f"RSA signature is not valid. {why}", "signature")
     trace.record_trusted = True
+    trace.info["payload_hash"]["expected_trusted"] = True
     trace.ok("signature", f"valid - SHA-256(record) {digest.hex()[:24]}... - signer {given[:16]}...")
 
     # 6. Payload hash
     actual_hash = sha256_hex(content)
+    trace.info["payload_hash"].update(computed=actual_hash,
+        status="match" if actual_hash == expected_hash and len(content) == expected_size else "mismatch")
     if actual_hash != expected_hash or len(content) != expected_size:
         return trace.result(Verdict.TAMPERED, f"Payload SHA-256 {actual_hash[:16]}... does not match the signed "
                                               f"value {str(expected_hash)[:16]}....", "payload_hash")

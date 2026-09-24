@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { motion } from "motion/react";
 import { missingDetail, missingHeading } from "../requirements";
 const ICONS = {
   key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
@@ -48,7 +49,8 @@ export function Panel({ step, title, subtitle, aside, children, className = "", 
   step?: string; title: string; subtitle?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; id?: string; "aria-busy"?: boolean;
 }) {
   return (
-    <section className={`panel ${className}`} id={id} aria-busy={busy}>
+    <motion.section className={`panel ${className}`} id={id} aria-busy={busy}
+      initial={{opacity: 0, y: 6}} animate={{opacity: 1, y: 0}} transition={{duration: 0.18}}>
       <header className="panel-head">
         {step && <span className="panel-step">{step}</span>}
         <div className="panel-titles">
@@ -58,7 +60,7 @@ export function Panel({ step, title, subtitle, aside, children, className = "", 
         {aside && <div className="panel-aside">{aside}</div>}
       </header>
       {children}
-    </section>
+    </motion.section>
   );
 }
 
@@ -123,7 +125,7 @@ export function Disclosure({ title, value, tone = "", defaultOpen = false, open,
   return (
     <div className={`disclose${isOpen ? " open" : ""}${tone ? ` ${tone}` : ""}`}>
       <button type="button" className="disclose-summary" aria-expanded={isOpen} aria-controls={bodyId} onClick={toggle}>
-        <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={16} />
+        <motion.span aria-hidden="true" animate={{rotate: isOpen ? 90 : 0}} transition={{duration: 0.15}}><Icon name="chevronRight" size={16} /></motion.span>
         <span className="disclose-title">{title}</span>
         {value !== undefined && <span className="disclose-value">{value}</span>}
       </button>
@@ -222,7 +224,8 @@ export function Outcome({ tone, icon, label, title, summary, actions, headingRef
   headingRef?: RefObject<HTMLHeadingElement | null>;
 }) {
   return (
-    <div className={`outcome ${tone}`} role="status" aria-live="polite">
+    <motion.div className={`outcome ${tone}`} role="status" aria-live="polite"
+      initial={{opacity: 0, y: 8}} animate={{opacity: 1, y: 0}} transition={{duration: 0.22}}>
       <span className="outcome-icon"><Icon name={icon} size={26} /></span>
       <div className="outcome-text">
         <span className="outcome-label">{label}</span>
@@ -230,7 +233,7 @@ export function Outcome({ tone, icon, label, title, summary, actions, headingRef
         {summary && <p>{summary}</p>}
       </div>
       {actions && <div className="outcome-actions">{actions}</div>}
-    </div>
+    </motion.div>
   );
 }
 

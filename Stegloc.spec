@@ -7,7 +7,8 @@ root = Path(SPECPATH)
 a = Analysis(
     [str(root / "desktop.py")],
     pathex=[str(root)],
-    datas=[(str(root / "frontend" / "dist"), "frontend/dist")],
+    datas=[(str(root / "frontend" / "dist"), "frontend/dist"),
+           (str(root / "build" / "ffmpeg"), "ffmpeg")],
     excludes=["PyQt5", "PyQt6", "PySide2", "PySide6", "tkinter", "gi", "wx"],
 )
 pyz = PYZ(a.pure)

@@ -19,7 +19,9 @@ from .security import decrypt, encrypt, generate_rsa_keys, sha256_hex
 
 def _scenario(key, title, change, expected, result, file=None):
     return {"id": key, "title": title, "change": change, "expected": expected, "verdict": result["verdict"],
-            "summary": result["summary"], "as_expected": result["verdict"] in expected, "file": file}
+            "summary": result["summary"], "as_expected": result["verdict"] in expected, "file": file,
+            "payload_hash": result.get("info", {}).get("payload_hash"),
+            "stages": [{"id": step["id"], "status": step["status"]} for step in result.get("steps", [])]}
 
 
 def _flip_slot_bit(stego, slot):
@@ -28,12 +30,22 @@ def _flip_slot_bit(stego, slot):
     return cover.export(), cover.location(slot)["text"]
 
 
-def run_suite(stego, passphrase, public_pem, original_cover=None):
+def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, check=None,
+              stop_on_failed_baseline=False, include_hash_mismatch=False):
     """Returns (scenarios, files) where files maps scenario id -> tampered bytes."""
-    scenarios, files = [], {}
+    class CaseList(list):
+        def append(self, case):
+            if check:
+                check()
+            super().append(case)
+            if on_case:
+                on_case(dict(case))
+    scenarios, files = CaseList(), {}
     base = verify(stego, passphrase, public_pem)
     scenarios.append(_scenario("baseline", "Unmodified stego file", "nothing - correct passphrase and public key",
                                [Verdict.AUTHENTIC], base))
+    if stop_on_failed_baseline and base["verdict"] != Verdict.AUTHENTIC:
+        return scenarios, files
     cover = load_cover(stego)
     ext = cover.extension
 
@@ -72,6 +84,10 @@ def run_suite(stego, passphrase, public_pem, original_cover=None):
     scenarios.append(_scenario("wrong_start", "Wrong start location", f"extract from slot {override:,} instead of "
                                f"{start:,} ({cover.location(override)['text']})", [Verdict.WRONG_START],
                                verify(stego, passphrase, public_pem, start_slot=override)))
+    if include_hash_mismatch:
+        scenarios.append(_scenario("corrected_start", "Corrected start location",
+                                   f"retry the same file at authenticated slot {start:,}", [Verdict.AUTHENTIC],
+                                   verify(stego, passphrase, public_pem, start_slot=start)))
 
     noisy = load_cover(stego)
     rng = np.random.default_rng(2005)
@@ -87,6 +103,18 @@ def run_suite(stego, passphrase, public_pem, original_cover=None):
     record_json, signature, content = _unpack(plain)
     if content:
         forged_content = bytes([content[0] ^ 0xFF]) + content[1:]
+        # Keep the signed record and signature intact, but re-encrypt changed plaintext.
+        # This reaches the payload SHA-256 check, unlike a raw LSB flip (AES-GCM fails first).
+        if include_hash_mismatch:
+            mismatch_package = encrypt(opened["keys"]["payload"], _pack(record_json, signature, forged_content), associated)
+            mismatch = load_cover(stego)
+            lsb.encode(mismatch.slots, mismatch_package, n_lsb, start)
+            mismatch_bytes = mismatch.export()
+            files["payload_hash_mismatch"] = ("payload_hash_mismatch" + ext, mismatch_bytes)
+            mismatch_result = verify(mismatch_bytes, passphrase, public_pem)
+            scenarios.append(_scenario("payload_hash_mismatch", "Signed SHA-256 mismatch",
+                                       "same-length plaintext changed; original signed digest retained and payload re-encrypted",
+                                       [Verdict.TAMPERED], mismatch_result, "payload_hash_mismatch"))
         record = json.loads(record_json)
         record["payload"]["sha256"] = sha256_hex(forged_content)
         forged_package = encrypt(opened["keys"]["payload"], _pack(canonical_json(record), signature, forged_content),

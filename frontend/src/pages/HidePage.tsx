@@ -7,9 +7,10 @@ import {
 import { differenceLabel, differenceReading, qualityReading, roomReading, touchedReading } from "../readings";
 import { embedMissing } from "../requirements";
 import { LONG_MESSAGE, SHORT_MESSAGE } from "../samples";
+import { VideoEmbed } from "./VideoWorkflow";
 import { errorText, formatBytes, shortHash, useDebounced, useObjectUrl, type Handoff, type Page, type Vault } from "../util";
 
-const COVER_ACCEPT = "image/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,audio/wav";
+const COVER_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi";
 
 const COVER_SLOT_ID = "embed-cover-slot";
 const PAYLOAD_SLOT_ID = "embed-payload-slot";
@@ -30,11 +31,21 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   onShowResult: (show: boolean) => void;
 }) {
   const [cover, setCover] = useState<File | null>(null);
+  const [sourceCover, setSourceCover] = useState<File | null>(null);
+  const [conversion, setConversion] = useState<Handoff["conversion"]>();
+  const [prepareBusy, setPrepareBusy] = useState(false);
+  const [segmentStart, setSegmentStart] = useState("0");
+  const [segmentDuration, setSegmentDuration] = useState("3");
+  const [segmentFps, setSegmentFps] = useState("24");
+  const [videoMaxWidth, setVideoMaxWidth] = useState("640");
+  const [videoMaxHeight, setVideoMaxHeight] = useState("360");
+  const [sourceDetails, setSourceDetails] = useState<{kind: string; duration: number; streams: {type: string; codec: string; width?: number; height?: number}[]} | null>(null);
   const [info, setInfo] = useState<CoverInfo | null>(null);
   const [coverError, setCoverError] = useState("");
   const [mode, setMode] = useState<"text" | "file">("text");
   const [text, setText] = useState("");
   const [payloadFile, setPayloadFile] = useState<File | null>(null);
+  const [payloadDigest, setPayloadDigest] = useState("");
   const [nLsb, setNLsb] = useState(1);
   const [startMode, setStartMode] = useState<"auto" | "manual">("auto");
   const [startX, setStartX] = useState("16");
@@ -57,6 +68,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   const labelId = `${useId()}team`;
   const keyPasswordId = `${useId()}keypw`;
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const submitted = useRef(0);
   const depthRef = useRef<HTMLDivElement>(null);
 
   const coverUrl = useObjectUrl(cover);
@@ -70,14 +82,71 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     setInfo(null);
     setCoverError("");
     if (!cover) return;
+    if (/\.avi$/i.test(cover.name)) return;
     let live = true;
     api.inspect(cover)
       .then((details) => live && setInfo(details))
-      .catch((e: unknown) => live && setCoverError(errorText(e)));
+      .catch((e: unknown) => {
+        if (!live) return;
+        void api.probeMedia(cover).then((details) => {
+          if (live) {setCover(null); setSourceDetails(details);}
+        }).catch(() => {if (live) setCoverError(errorText(e));});
+      });
     return () => {
       live = false;
     };
   }, [cover]);
+
+  async function selectCover(file: File | null) {
+    const revision = ++submitted.current;
+    setSourceCover(file);
+    setConversion(undefined);
+    setCover(null);
+    setInfo(null);
+    setResult(null);
+    setSourceDetails(null);
+    setCoverError("");
+    if (!file) return;
+    let compatibleHeader = false;
+    let detectedSuffix: ".avi" | ".wav" | null = null;
+    try {
+      const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+      const ascii = String.fromCharCode(...header);
+      compatibleHeader = ascii.startsWith("BM") || ascii.startsWith("GIF8") || ascii.startsWith("\xff\xd8") ||
+        ascii.startsWith("\x89PNG") || ascii.startsWith("II*\0") || ascii.startsWith("MM\0*") ||
+        ascii.startsWith("RIFF") && ["WAVE", "AVI ", "WEBP"].some((kind) => ascii.slice(8, 12) === kind);
+      if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "AVI ") detectedSuffix = ".avi";
+      if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WAVE") detectedSuffix = ".wav";
+    } catch { compatibleHeader = !/\.(mp3|mp4|mov)$/i.test(file.name); }
+    if (!compatibleHeader && /\.(png|bmp|jpe?g|gif|webp|tiff?|wav)$/i.test(file.name)) {
+      if (revision === submitted.current) setCover(file);
+    } else if (!compatibleHeader) {
+      try {
+        const details = await api.probeMedia(file);
+        if (revision === submitted.current) setSourceDetails(details);
+      } catch (error) { if (revision === submitted.current) setCoverError(errorText(error)); }
+    } else if (revision === submitted.current) setCover(detectedSuffix && !file.name.toLowerCase().endsWith(detectedSuffix)
+      ? new File([file], file.name.replace(/\.[^.]+$/, "") + detectedSuffix, {type: detectedSuffix === ".avi" ? "video/x-msvideo" : "audio/wav"})
+      : file);
+  }
+
+  async function prepareCover() {
+    if (!sourceCover) return;
+    const revision = ++submitted.current;
+    setPrepareBusy(true);
+    setCoverError("");
+    try {
+      const prepared = await api.prepareMedia(sourceCover, {
+        start: Number(segmentStart), duration: Number(segmentDuration), fps: Number(segmentFps),
+        max_width: Number(videoMaxWidth), max_height: Number(videoMaxHeight),
+      });
+      const file = await fetchAsFile(prepared.file);
+      if (revision === submitted.current) {setCover(file); setConversion({sourceName: sourceCover.name,
+        start: Number(segmentStart), duration: Number(segmentDuration), fps: Number(segmentFps),
+        maxWidth: Number(videoMaxWidth), maxHeight: Number(videoMaxHeight), output: prepared.conversion.output_format});}
+    } catch (error) { if (revision === submitted.current) setCoverError(errorText(error)); }
+    finally { if (revision === submitted.current) setPrepareBusy(false); }
+  }
 
   const payloadName = mode === "text" ? "message.txt" : payloadFile?.name ?? "";
   const payloadType = mode === "text" ? "text/plain" : payloadFile ? payloadFile.type || "application/octet-stream" : "";
@@ -85,6 +154,17 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     () => (mode === "text" ? new TextEncoder().encode(text).length : payloadFile?.size ?? 0),
     [mode, text, payloadFile],
   );
+  useEffect(() => {
+    let live = true;
+    setPayloadDigest("");
+    const bytes = mode === "text" ? new TextEncoder().encode(text) : payloadFile;
+    if (!bytes || (mode === "text" && !text)) return;
+    (async () => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes instanceof File ? await bytes.arrayBuffer() : bytes);
+      if (live) setPayloadDigest(Array.from(new Uint8Array(digest)).map((n) => n.toString(16).padStart(2, "0")).join(""));
+    })().catch(() => undefined);
+    return () => { live = false; };
+  }, [mode, text, payloadFile]);
 
   const pemForBits = useDebounced(privatePem, 400);
   useEffect(() => {
@@ -161,10 +241,16 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
       }
     }
     try {
+      const revision = submitted.current;
       const response = await api.hide(form);
+      if (revision !== submitted.current) return;
       setResult(response);
       setUsedCover(cover);
       onShowResult(true);
+      void fetchAsFile(response.stego).then((stego) => {
+        if (revision === submitted.current) onHandoff({ id: crypto.randomUUID(), stego, cover, sourceCover, conversion,
+          passphrase, publicPem: vault.publicPem, serial: Date.now() });
+      }).catch(() => undefined);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -176,7 +262,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     if (!result || !usedCover) return;
     try {
       const stego = await fetchAsFile(result.stego);
-      onHandoff({ stego, cover: usedCover, passphrase, publicPem: vault.publicPem, serial: Date.now() });
+      onHandoff({ id: crypto.randomUUID(), stego, cover: usedCover, sourceCover, conversion, passphrase, publicPem: vault.publicPem, serial: Date.now() });
       goTo(page);
     } catch (e) {
       setError(errorText(e));
@@ -220,6 +306,9 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   }, [showResult, hasResult, onShowResult]);
 
   // The result replaces the form rather than being appended below it.
+  if (cover && /\.avi$/i.test(cover.name)) {
+    return <VideoEmbed cover={cover} source={sourceCover} conversion={conversion} onHandoff={onHandoff} />;
+  }
   if (showResult && result && report) {
     return (
       <Reveal><EmbedResult report={report} stego={result.stego} usedCoverUrl={usedCoverUrl} stegoUrl={stegoUrl}
@@ -237,8 +326,30 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
               {info.lossy_source ? `${info.format} · will be saved as ${info.output_format}` : `${info.output_format} · stays lossless`}
             </span>
           )}>
-          <DropZone label="Cover file" id={COVER_SLOT_ID} title="Drop a picture or WAV here" hint="or click to browse"
-            accept={COVER_ACCEPT} icon="image" file={cover} onFile={(file) => { setCover(file); setResult(null); }} />
+          <DropZone label="Cover file" id={COVER_SLOT_ID} title="Drop an image, WAV, MP3, MP4 or MOV" hint="compressed media is prepared as a lossless cover"
+            accept={COVER_ACCEPT} icon="image" file={sourceCover} onFile={(file) => void selectCover(file)} />
+          {sourceDetails && <div className="conversion-panel">
+            <b>{sourceDetails.kind === "video" ? "Prepare silent AVI video" : "Prepare PCM WAV audio"}</b>
+            <p>{sourceDetails.streams.map((s) => `${s.type}: ${s.codec}${s.width ? ` ${s.width}×${s.height}` : ""}`).join(" · ")}</p>
+            {sourceDetails.kind === "video" && (() => {
+              const stream = sourceDetails.streams.find((s) => s.type === "video");
+              const scale = Math.min(1, Number(videoMaxWidth) / (stream?.width || 640), Number(videoMaxHeight) / (stream?.height || 360));
+              const width = Math.max(2, Math.floor((stream?.width || 640) * scale / 2) * 2);
+              const height = Math.max(2, Math.floor((stream?.height || 360) * scale / 2) * 2);
+              const estimate = width * height * 3 * Math.ceil(Number(segmentDuration || 0) * Number(segmentFps || 0)) + 4096;
+              return <p>Estimated AVI: {width}×{height}, about {formatBytes(estimate)}. Maximum: 64 MiB.</p>;
+            })()}
+            {sourceDetails.kind === "video" && <div className="btn-row">
+              <label>Start (s)<input type="number" min="0" step="0.1" value={segmentStart} onChange={(e) => setSegmentStart(e.target.value)} /></label>
+              <label>Duration (s)<input type="number" min="0.1" max="30" step="0.1" value={segmentDuration} onChange={(e) => setSegmentDuration(e.target.value)} /></label>
+              <label>Frames/s<input type="number" min="1" max="30" value={segmentFps} onChange={(e) => setSegmentFps(e.target.value)} /></label>
+              <label>Max width<input type="number" min="16" max="640" value={videoMaxWidth} onChange={(e) => setVideoMaxWidth(e.target.value)} /></label>
+              <label>Max height<input type="number" min="16" max="360" value={videoMaxHeight} onChange={(e) => setVideoMaxHeight(e.target.value)} /></label>
+            </div>}
+            <p>{sourceDetails.kind === "video" ? "Output: uncompressed AVI, up to 640×360 and 64 MiB. Audio is omitted." : "Output: 16-bit PCM WAV with the source sample rate and channels."}</p>
+            <button type="button" className="btn primary" onClick={() => void prepareCover()} disabled={prepareBusy}>{prepareBusy ? "Preparing…" : "Prepare cover"}</button>
+            {cover && <span className="chip good">Ready: {cover.name}</span>}
+          </div>}
           <ErrorNote text={coverError} />
           {info && coverUrl && (
             <div className="cover-preview">
@@ -302,6 +413,12 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
               hint="it is encrypted, signed and hidden byte for byte" icon="file" file={payloadFile}
               onFile={setPayloadFile} tone={overCapacity ? "bad" : ""} />
           )}
+
+          {hasPayload && <div className="hash-evidence"><div className="hash-heading"><h2>Payload SHA-256 before embedding</h2></div>
+            <p>{payloadName} · {payloadSize.toLocaleString()} bytes · {payloadType}</p>
+            <code>{payloadDigest || "Calculating…"}</code>
+            <p>Exact payload bytes will be preserved. Capacity includes encryption and signature overhead.</p>
+          </div>}
 
           {overCapacity && packageBytes !== null && capacity !== null && (
             <div className="note note-error" role="alert">

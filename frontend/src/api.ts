@@ -48,6 +48,15 @@ export async function fetchAsFile(stored: StoredFile): Promise<File> {
 }
 
 export const api = {
+  probeMedia(file: File) {
+    const form = new FormData(); form.append("file", file, file.name);
+    return postForm<{kind: string; duration: number; streams: {type: string; codec: string; width?: number; height?: number}[]}>("/api/v4/media/probe", form);
+  },
+  prepareMedia(file: File, options: {start: number; duration: number; fps: number; max_width: number; max_height: number}) {
+    const form = new FormData(); form.append("file", file, file.name);
+    for (const [name, value] of Object.entries(options)) form.append(name, String(value));
+    return postForm<{file: StoredFile; kind: string; conversion: {output_format: string}}>("/api/v4/media/prepare", form);
+  },
   inspect(file: File) {
     const form = new FormData();
     form.append("file", file, file.name);

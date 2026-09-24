@@ -1,5 +1,9 @@
 # UI reference and motion adoption
 
+## V4 update
+
+The v4 interface uses Watermelon UI's [dashboard gallery](https://ui.watermelon.sh/dashboards) as a layout reference for its navigation, compact status surfaces, and evidence cards. The dark glass styling is implemented in local CSS; no Watermelon code or runtime package is copied. [Motion for React](https://motion.dev/docs/react) is installed for navigation headings, panel entry, disclosures, the working-file strip, and arriving results. `MotionConfig reducedMotion="user"` follows the operating-system preference. Hash values, verdicts, and calculated metrics remain static. The earlier CSS-only decisions below describe the v3 release.
+
 Stegloc keeps React, Vite, and plain CSS. [Watermelon UI dashboards](https://ui.watermelon.sh/dashboards) informed the clearer section and role line above each screen and the distinction between current navigation and supporting status. Its [animated components catalog](https://ui.watermelon.sh/animated-components) was used for discovery of restrained state changes. These are catalog-level references; no Watermelon component source was copied, and Watermelon is not a runtime dependency. The existing cool surfaces, slate rail, and teal/coral/amber meanings remain Stegloc's own design.
 
 Two [Motion-Primitives](https://motion-primitives.com/docs) patterns were adapted locally:

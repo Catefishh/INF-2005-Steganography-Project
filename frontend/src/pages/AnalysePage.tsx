@@ -5,11 +5,12 @@ import { inspectMissing } from "../requirements";
 import { errorText, type Handoff } from "../util";
 import { appendBpcsForm, DEFAULT_BPCS_FORM, type BpcsForm, validateBpcsForm } from "./analyse/model";
 import { InspectResult } from "./analysis/Results";
+import { VideoInspect } from "./VideoInspect";
 
 const SUSPECT_SLOT_ID = "inspect-file-slot";
 const REFERENCE_SLOT_ID = "inspect-reference-slot";
 
-export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
+export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | null; onWorkingFile?: (file: File | null) => void }) {
   const [suspect, setSuspect] = useState<File | null>(null);
   const [reference, setReference] = useState<File | null>(null);
   const [channel, setChannel] = useState(0);
@@ -39,7 +40,7 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
   function changeFile(file: File | null, which: "suspect" | "reference") {
     requestId.current += 1;
     setBusy(false);
-    if (which === "suspect") setSuspect(file);
+    if (which === "suspect") { setSuspect(file); onWorkingFile?.(file); }
     else setReference(file);
     setResult(null);
     setError("");
@@ -96,6 +97,8 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
 
   const missing = inspectMissing({ hasFile: suspect !== null });
   const ready = missing.length === 0;
+
+  if (handoff && /\.avi$/i.test(handoff.stego.name)) return <VideoInspect handoff={handoff} />;
 
   return (
     <div className="form-column">
