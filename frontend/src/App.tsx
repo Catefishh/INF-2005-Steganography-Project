@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { Icon, Reveal, type IconName } from "./components";
+import { Sidebar, SidebarInset, SidebarMenu, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "./ui/sidebar";
 import { AnalysePage } from "./pages/AnalysePage";
 import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
@@ -98,9 +99,10 @@ export default function App() {
   }, []);
 
   return (
-    <MotionConfig reducedMotion="user"><div className="app">
-      <aside className={`rail${menuOpen ? " menu-open" : ""}`}>
+    <MotionConfig reducedMotion="user"><SidebarProvider>
+      <Sidebar className={menuOpen ? "menu-open" : ""}>
         <div className="rail-head">
+          <SidebarTrigger><Icon name="menu" size={18} /></SidebarTrigger>
           <button type="button" className="rail-toggle" aria-expanded={menuOpen} aria-controls="rail-nav"
             aria-label={menuOpen ? "Close the menu" : "Open the menu"} onClick={() => setMenuOpen(!menuOpen)}>
             <Icon name={menuOpen ? "x" : "menu"} size={20} />
@@ -125,8 +127,9 @@ export default function App() {
           {GROUPS.map((group) => (
             <Fragment key={group}>
               <span className="nav-group">{group}</span>
+              <SidebarMenu>
               {PAGES.filter((item) => item.group === group).map((item) => (
-                <a key={item.id} href={pathFor(item.id)} className={route.page === item.id ? "active" : ""}
+                <SidebarMenuItem key={item.id} href={pathFor(item.id)} title={item.label} className={route.page === item.id ? "active" : ""}
                   aria-current={route.page === item.id ? "page" : undefined}
                   onClick={(event) => {
                     if (!isPlainLeftClick(event)) return;
@@ -144,8 +147,9 @@ export default function App() {
                       {hasKeys ? "READY" : "NEEDED"}
                     </span>
                   )}
-                </a>
+                </SidebarMenuItem>
               ))}
+              </SidebarMenu>
             </Fragment>
           ))}
         </nav>
@@ -156,9 +160,9 @@ export default function App() {
           </div>
           <p>INF2005 · Cyber Security Fundamentals</p>
         </div>
-      </aside>
+      </Sidebar>
 
-      <main className="main">
+      <SidebarInset>
         <motion.header key={route.page} className="topbar" initial={{opacity: 0, y: 6}} animate={{opacity: 1, y: 0}} transition={{duration: 0.2}}>
           <div>
             <span className="topbar-context">{current.group} <span aria-hidden="true">/</span> {current.role}</span>
@@ -188,7 +192,7 @@ export default function App() {
         </Reveal>
         <Reveal hidden={route.page !== "analyse"}><AnalysePage key={workspaceEpoch} handoff={handoff} onWorkingFile={replaceWorkingFile} /></Reveal>
         <Reveal hidden={route.page !== "attacks"}><AttackPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} onHandoff={setHandoff} goTo={goTo} /></Reveal>
-      </main>
-    </div></MotionConfig>
+      </SidebarInset>
+    </SidebarProvider></MotionConfig>
   );
 }

@@ -55,4 +55,7 @@ test("shows resize and crop metrics with their comparison basis", async () => {
   expect(screen.getByText("Image area retained: 80.7%")).toBeInTheDocument();
   expect(screen.getByText("MSE 0.000 · PSNR ∞ dB · SSIM 1.0000")).toBeInTheDocument();
   expect(screen.getByText("Comparison: Retained center region only; missing area excluded.")).toBeInTheDocument();
+  expect(await screen.findByRole("table", { name: "PSNR by transformation data" })).toHaveTextContent("cropUnavailable");
+  expect(screen.getByRole("button", { name: "Pop out PSNR by transformation" })).toBeInTheDocument();
+  expect(screen.getByRole("table", { name: "PSNR by transformation data" })).toHaveTextContent("resize37.21");
 });

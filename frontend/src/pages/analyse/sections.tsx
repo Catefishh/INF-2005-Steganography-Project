@@ -1,5 +1,7 @@
 import type { Analysis, BpcsMetrics, ChiSquareDetails } from "../../api";
-import { ChartViewer, ChiStrip, Disclosure, Icon, Panel, Stat } from "../../components";
+import { Disclosure, Icon, Panel, Stat } from "../../components";
+import { EvidenceAreaChart, EvidenceBarChart } from "../../ui/lazyEvidenceChart";
+import { ChartViewer } from "../../ui/chartViewer";
 
 function Capacity({ metrics }: { metrics: BpcsMetrics }) {
   return <>{metrics.capacity_bits.toLocaleString()} bits ({metrics.capacity_bytes_floor.toLocaleString()} whole bytes + {metrics.capacity_remainder_bits} bits)</>;
@@ -24,6 +26,17 @@ export function BpcsSection({ result, busy }: { result: Analysis; busy: boolean 
             <Stat label="Complex blocks" value={`${bpcs.summary.complex_blocks.toLocaleString()} of ${bpcs.summary.block_count.toLocaleString()}`} sub={`${bpcs.summary.complex_percent.toFixed(1)}% of selected blocks`} />
             <Stat label="Transitions" value={`${bpcs.summary.transition_count.toLocaleString()} / ${bpcs.summary.possible_transition_count.toLocaleString()}`} />
             <Stat label="Theoretical capacity" value={<Capacity metrics={bpcs.summary} />} sub="Valid pixels of complex blocks; embedding overhead is not deducted." />
+          </div>
+          <div className="evidence-card">
+            <p className="field-hint">Complex blocks in each selected bit plane · descriptive distribution, not a detection verdict.</p>
+            <ChartViewer title="Complex blocks by plane" snapshot={{ kind: "bar", title: "Complex blocks by plane",
+              unit: "%", max: 100,
+              points: bpcs.planes.map((plane) => ({ label: `Bit ${plane.bit_plane}`, value: plane.complex_percent })),
+              notes: ["Complex block percentages are descriptive measurements, not a detection verdict."],
+            }}>
+              <EvidenceBarChart label="Complex blocks by plane" unit="%" max={100}
+                points={bpcs.planes.map((plane) => ({ label: `Bit ${plane.bit_plane}`, value: plane.complex_percent }))} />
+            </ChartViewer>
           </div>
           <div className="bpcs-planes">
             {bpcs.planes.map((plane) => (
@@ -53,7 +66,13 @@ export function ChiSquareSection({ details, busy }: { details: ChiSquareDetails;
   return (
     <Panel title="Chi-square pairs-of-values" aria-busy={busy}
       subtitle="Each bar covers one section in embedding order. Equalised neighbouring values can result from random LSB replacement or other causes.">
-      <ChartViewer title="Chi-square p-values by section" footer={<>
+      <ChartViewer title="Chi-square p-values by section" snapshot={{ kind: "chi-square", title: "Chi-square p-values by section",
+        threshold: details.presentation_heuristic,
+        points: details.segments.map((segment, index) => ({ label: `Section ${index + 1}`,
+          value: segment.interpretable ? segment.p_value : null })),
+        notes: [details.explanation.high_p_value, ...details.explanation.limitations,
+          `${details.presentation_heuristic.toFixed(2)} is a presentation heuristic, not a universal detection threshold.`],
+      }} footer={<>
         {interpretable === 0 && <p className="field-hint">No section has enough value pairs for a reliable p-value. Try a larger file; the whole-channel result below may still be interpretable.</p>}
         <div className="legend">
           <span><i style={{ background: "var(--teal)" }} /> p &lt; 0.5</span>
@@ -61,7 +80,10 @@ export function ChiSquareSection({ details, busy }: { details: ChiSquareDetails;
           <span><i style={{ background: "var(--coral)" }} /> p ≥ {details.presentation_heuristic.toFixed(2)} presentation heuristic</span>
         </div>
       </>}>
-        <ChiStrip values={details.segments.map((segment) => segment.p_value)} segments={details.segments} threshold={details.presentation_heuristic} />
+        <EvidenceAreaChart label="Chi-square p-values" unit="p" max={1}
+          points={details.segments.map((segment, index) => ({
+            label: `Section ${index + 1}`, value: segment.interpretable ? segment.p_value : null,
+          }))} />
       </ChartViewer>
       <div className="stats">
         <Stat label="Whole channel p" value={details.overall.p_value === null ? "not interpretable" : details.overall.p_value.toFixed(4)} />

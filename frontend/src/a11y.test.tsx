@@ -92,6 +92,19 @@ beforeEach(() => {
 });
 
 describe("application shell", () => {
+  it("collapses the desktop sidebar without losing named destinations or current route", async () => {
+    render(<App />);
+    const trigger = screen.getByRole("button", { name: "Collapse sidebar" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("link", { name: /Inspect a file/ })).toHaveAttribute("title", "Inspect a file");
+    fireEvent.click(screen.getByRole("link", { name: /Inspect a file/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Inspect a file", level: 1 })).toHaveFocus());
+    expect(document.querySelector('#rail-nav a[aria-current="page"]')).toHaveAttribute("href", "/inspect");
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("moves focus to the new screen heading and leaves one current destination", async () => {
     window.history.replaceState(null, "", "/keys");
     render(<App />);

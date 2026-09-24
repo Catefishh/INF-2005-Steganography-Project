@@ -1,6 +1,6 @@
 # Stegloc: LSB steganography with digital signatures
 
-## V4 demonstration workflow
+## Demonstration workflow
 
 1. Select an image or PCM WAV cover, or import MP3/MOV/MP4 and explicitly prepare a lossless cover. Video preparation selects a short silent segment and writes uncompressed AVI (64 MiB maximum). MP3 preparation writes PCM WAV. The Windows desktop build bundles FFmpeg and ffprobe; source runs require them on `PATH` or in `build/ffmpeg`.
 2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
@@ -10,7 +10,7 @@
 
 Prepared MOV/MP4 video uses the Ed25519 workflow with a separate recovery file and code. MP3 becomes WAV; MOV/MP4 becomes silent AVI. The downloaded stego format is the prepared lossless format. Working files live only for the current app session.
 
-INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement. The original workflow uses SHA-256 and RSA signatures. V2 adds Ed25519, a separate recovery file/code, and a restricted AVI video carrier.
+INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement. It supports SHA-256/RSA signing and an Ed25519 media protocol with a separate recovery file/code and restricted AVI video carrier.
 
 | Page | What it does |
 | --- | --- |
@@ -21,7 +21,7 @@ INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside 
 | **Tamper tests** | Runs live positive/negative cases for media and text, with downloadable evidence and variants |
 | **Text Steganography** | Signed, encrypted messages in acrostic, trailing-whitespace, or zero-width text |
 
-## V3 analysis and text
+## Analysis and text
 
 **Inspect a file** now offers image-only RS statistics, paired cover/stego histograms and bit planes 0–7, an even/odd filter (bit 0: even black, odd white), and full-resolution luminance SSIM. Its before/after slider and change overlay show exactly where pixels differ. RS, histograms and chi-square are descriptive evidence; they cannot prove a message is present. MSE, PSNR and SSIM require a same-size original image. SSIM uses 11×11 windows, so it is unavailable below 11×11 pixels.
 
@@ -31,11 +31,15 @@ The BPCS number in Inspect is a theoretical estimate. The image robustness simul
 
 For a source-code walkthrough and Q&A, use the [code guide](docs/code-guide.md). It maps each concept to the implementation, call flow, limits and tests.
 
-## V2 protocol
+## Supported protocol formats
 
-The v2 API retains Ed25519 protection and verification for existing integrations. It uses a separate `.stegloc` recovery file and code; its key and recovery formats differ from the RSA/passphrase screens for `STG1` files. The dedicated V2 Workbench page has been removed from the interface.
+Stegloc supports the original RSA/passphrase `STG1` format, the v2 Ed25519 media protocol and the v3 signed text format in one application. The v2 API retains Ed25519 protection and verification for existing integrations. It uses a separate `.stegloc` recovery file and code; its key and recovery formats differ from the RSA/passphrase screens for `STG1` files.
 
-The protocol also provides image-only BPCS settings and complexity maps in **Inspect a file**, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Run `python scripts/benchmark-analysis.py` from a prepared environment to measure the vectorized BPCS algorithm against the scalar reference. See [v2 protocol and AVI limits](docs/v2-protocol.md) for accepted headers, size limits, security handoff and verification boundaries.
+Inspect a file also provides image-only BPCS settings and complexity maps, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Use `python scripts/benchmark-analysis.py` for the focused BPCS algorithm comparison, or `python -m scripts.benchmark_analysis` for the full deterministic analysis benchmark. See [v2 protocol and AVI limits](docs/v2-protocol.md) for accepted headers, size limits, security handoff and verification boundaries.
+
+## Desktop studio interface
+
+The application uses a workflow-first collapsible sidebar with transparent frosted glass. The active file and its digest remain visible across screens; the Inspect workspace presents descriptive chi-square and BPCS charts, while the image robustness simulator under Tamper tests compares measured PSNR values. Use **Pop out graph** to open a separate graph-only Stegloc window (or browser tab) with a larger plot, zoom and measured-value details. The source analysis must remain available in the main window. Sidebar components follow the local [shadcn sidebar pattern](https://ui.shadcn.com/blocks/sidebar); measured charts adapt [shadcn area charts](https://ui.shadcn.com/charts/area) using Recharts. Watermelon UI remains a visual reference and Motion for React handles short, reduced-motion-aware transitions. Fonts and chart code are included in the packaged frontend for offline use. Details: [UI adoption](docs/ui-library-adoption.md).
 
 ## Run the packaged Windows app
 

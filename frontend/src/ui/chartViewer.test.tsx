@@ -1,40 +1,41 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import { ChartViewer } from "./chartViewer";
+import { registerGraph, unregisterGraph } from "./graphHandoff";
 
-const originalShowModal = HTMLDialogElement.prototype.showModal;
-const originalClose = HTMLDialogElement.prototype.close;
+vi.mock("./graphHandoff", () => ({ registerGraph: vi.fn(() => "dc912f0d-7498-4d50-acb0-444395fd772d"),
+  updateGraph: vi.fn(), unregisterGraph: vi.fn() }));
 
-beforeEach(() => {
-  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
-  HTMLDialogElement.prototype.close = function () {
-    this.open = false;
-    this.dispatchEvent(new Event("close"));
-  };
-});
+const snapshot = { kind: "histogram" as const, title: "Test histogram", series: [[1, 2, 3]],
+  colors: ["#006194"], min: "0", max: "255", axis: "Channel value", notes: ["Descriptive only."] };
 
-afterEach(() => {
-  HTMLDialogElement.prototype.showModal = originalShowModal;
-  HTMLDialogElement.prototype.close = originalClose;
-});
+afterEach(() => { delete window.pywebview; vi.restoreAllMocks(); });
 
-it("zooms a graph, opens it in a larger view, and returns focus on close", async () => {
-  render(<ChartViewer title="Test histogram"><svg role="img" aria-label="Test data" /></ChartViewer>);
-
-  const zoomIn = screen.getByRole("button", { name: "Zoom in Test histogram" });
-  const popOut = screen.getByRole("button", { name: "Pop out Test histogram" });
-  fireEvent.click(zoomIn);
+it("opens a separate browser graph tab while preserving source zoom", () => {
+  const popup = vi.spyOn(window, "open").mockReturnValue({ closed: false } as Window);
+  render(<ChartViewer title="Test histogram" snapshot={snapshot}><svg role="img" aria-label="Test data" /></ChartViewer>);
+  fireEvent.click(screen.getByRole("button", { name: "Zoom in Test histogram" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pop out Test histogram" }));
+  expect(registerGraph).toHaveBeenCalledWith(snapshot);
+  expect(popup).toHaveBeenCalledWith("/graph/dc912f0d-7498-4d50-acb0-444395fd772d", "_blank", expect.any(String));
   expect(screen.getByLabelText("Test histogram zoom level")).toHaveTextContent("150%");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
 
-  fireEvent.click(popOut);
-  const dialog = await screen.findByRole("dialog", { name: "Test histogram" });
-  expect(within(dialog).getByRole("img", { name: "Test data" })).toBeInTheDocument();
-  expect(within(dialog).getByLabelText("Test histogram zoom level")).toHaveTextContent("150%");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Zoom in Test histogram" }));
-  expect(within(dialog).getByLabelText("Test histogram zoom level")).toHaveTextContent("200%");
-
-  fireEvent.click(within(dialog).getByRole("button", { name: "Close enlarged graph" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(popOut).toHaveFocus();
-  expect(screen.getByLabelText("Test histogram zoom level")).toHaveTextContent("200%");
+it("calls the desktop window bridge and reports a blocked popup", async () => {
+  window.pywebview = { api: { open_graph: vi.fn().mockResolvedValue(true), close_graph: vi.fn() } };
+  const view = render(<ChartViewer title="Test histogram" snapshot={snapshot}><svg role="img" /></ChartViewer>);
+  const trigger = screen.getByRole("button", { name: "Pop out Test histogram" });
+  fireEvent.click(trigger);
+  expect(window.pywebview.api.open_graph).toHaveBeenCalledWith(expect.any(String), "Test histogram");
+  trigger.blur();
+  window.dispatchEvent(new CustomEvent("stegloc-graph-closed", { detail: "dc912f0d-7498-4d50-acb0-444395fd772d" }));
+  expect(trigger).toHaveFocus();
+  view.unmount();
+  expect(unregisterGraph).not.toHaveBeenCalled();
+  delete window.pywebview;
+  vi.spyOn(window, "open").mockReturnValue(null);
+  render(<ChartViewer title="Test histogram" snapshot={snapshot}><svg role="img" /></ChartViewer>);
+  fireEvent.click(screen.getByRole("button", { name: "Pop out Test histogram" }));
+  expect(screen.getByRole("alert")).toHaveTextContent(/could not open/i);
 });

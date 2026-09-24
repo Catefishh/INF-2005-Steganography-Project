@@ -8,11 +8,54 @@ import socket
 import sys
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from urllib.parse import urlencode
 
 FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+
+
+class GraphWindowBridge:
+    """Expose only graph window creation and closing to the local WebView UI."""
+
+    def __init__(self, webview, bootstrap_url):
+        self.webview = webview
+        self.bootstrap_url = bootstrap_url
+        self.windows = {}
+        self.lock = threading.Lock()
+
+    def open_graph(self, graph_id, title):
+        try:
+            if str(uuid.UUID(graph_id)) != graph_id or not isinstance(title, str):
+                return False
+            label = title[:80] if title.strip() else "Graph detail"
+            url = f"{self.bootstrap_url}?{urlencode({'next': f'/graph/{graph_id}'})}"
+            window = self.webview.create_window(f"Stegloc — {label}", url, width=1180, height=840,
+                                                min_size=(760, 520), text_select=True, zoomable=True, js_api=self)
+            with self.lock:
+                self.windows[graph_id] = window
+            if hasattr(window, "events") and hasattr(window.events, "closed"):
+                window.events.closed += lambda *args: self._forget(graph_id)
+            return True
+        except (TypeError, ValueError):
+            return False
+        except Exception:
+            logging.getLogger(__name__).exception("Unable to open graph window")
+            return False
+
+    def close_graph(self, graph_id):
+        with self.lock:
+            window = self.windows.pop(graph_id, None)
+        if window is None:
+            return False
+        window.destroy()
+        return True
+
+    def _forget(self, graph_id):
+        with self.lock:
+            self.windows.pop(graph_id, None)
 
 
 @contextmanager
@@ -69,8 +112,9 @@ def main():
 
         webview.settings["ALLOW_DOWNLOADS"] = True
         with local_server() as url:
+            graph_bridge = GraphWindowBridge(webview, url)
             window = webview.create_window("Stegloc", url, width=1440, height=940, min_size=(960, 640),
-                                           text_select=True, zoomable=True)
+                                           text_select=True, zoomable=True, js_api=graph_bridge)
             if sys.platform == "win32":
                 # pywebview can silently fall back to Internet Explorer without WebView2.
                 window.events.initialized += lambda renderer: renderer == "edgechromium"
