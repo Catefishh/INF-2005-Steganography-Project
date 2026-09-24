@@ -46,6 +46,7 @@ def _check_origin(request: Request) -> None:
 
 def _job_info(ident: str, job: Job) -> dict:
     return {"id": ident, "status": job.status, "progress": job.progress, "phase": job.phase,
+            "cases": list(job.cases), "completed": len(job.cases), "total": job.total_cases,
             "result": job.result if job.status == "succeeded" else None,
             "error": job.error if job.status == "failed" else None}
 
@@ -83,6 +84,10 @@ def _launch(request: Request, operation: str, work):
             job.phase = "cancelled"
         except (ValueError, RecoveryError, CapacityError, ImageError, AudioError, VideoError) as exc:
             job.error = {"message": str(exc)}
+            job.status = "failed"
+            job.phase = "failed"
+        except HTTPException as exc:
+            job.error = {"message": str(exc.detail)}
             job.status = "failed"
             job.phase = "failed"
         except Exception:

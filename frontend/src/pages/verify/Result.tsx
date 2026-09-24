@@ -8,6 +8,7 @@ import { verifyMissing } from "../../requirements";
 import { changedInputs, staleReason } from "../../stale";
 import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Page, type Vault } from "../../util";
 import { failedStep, skippedSteps, stepsValue, verdictReading } from "../../verdict";
+import { HashEvidence } from "../../ui/hashEvidence";
 
 export function VerifyResult({ result, stegoName, overrideUsed, passphrase, onPassphrase, busy, outcomeRef, onCheckAgain, onEdit, onInspect, onOverrideOff }: {
   result: VerifyResponse;
@@ -44,6 +45,8 @@ export function VerifyResult({ result, stegoName, overrideUsed, passphrase, onPa
             <Icon name="refresh" size={15} /> Turn the override off and check again
           </button>
         ) : undefined} />
+
+      {result.info.payload_hash && <HashEvidence evidence={result.info.payload_hash} />}
 
       {content && record && (
         <div className="columns">

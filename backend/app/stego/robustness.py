@@ -1,8 +1,11 @@
 """Independent, deterministic image transformations for recovery demonstrations."""
 import io
+import math
 
 import numpy as np
 from PIL import Image, ImageEnhance
+
+from .analysis_parts.quality import ssim
 
 
 def transform(data: bytes, operation: str, value: float) -> tuple[bytes, str]:
@@ -38,3 +41,33 @@ def transform(data: bytes, operation: str, value: float) -> tuple[bytes, str]:
     output = io.BytesIO()
     image.save(output, format="PNG")
     return output.getvalue(), ".png"
+
+
+def quality_metrics(original, changed, operation: str) -> dict:
+    """Compare matching pixels, with the comparison basis explicit for size edits."""
+    if operation == "resize":
+        restored = Image.fromarray(changed.rgb).resize(
+            (original.width, original.height), Image.Resampling.LANCZOS
+        )
+        reference, observed = original.rgb, np.asarray(restored)
+        basis = "Resized result restored to original dimensions"
+    elif operation == "crop":
+        left = (original.width - changed.width) // 2
+        top = (original.height - changed.height) // 2
+        reference = original.rgb[top:top + changed.height, left:left + changed.width]
+        observed = changed.rgb
+        basis = "Retained center region only; missing area excluded"
+    else:
+        reference, observed = original.rgb, changed.rgb
+        basis = "Full image"
+
+    delta = reference.astype(np.float64) - observed.astype(np.float64)
+    mse = float(np.mean(delta * delta))
+    return {
+        "mse": mse,
+        "psnr_db": None if mse == 0 else 10 * math.log10(255 * 255 / mse),
+        "ssim": ssim(reference, observed),
+        "basis": basis,
+        "retained_area_percent": 100 * changed.width * changed.height / (original.width * original.height)
+        if operation == "crop" else None,
+    }

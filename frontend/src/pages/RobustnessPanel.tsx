@@ -32,12 +32,22 @@ export function RobustnessPanel() {
     finally { setPhase(""); }
   }
 
+  async function importPublicKey(file: File | undefined) {
+    if (!file) return;
+    setError("");
+    try {
+      if (file.size > 32768) throw new Error("Public key file is too large (maximum 32 KB).");
+      setPublicKey(await file.text());
+    } catch (cause) { setError(errorText(cause)); }
+  }
+
   return <Panel title="Image robustness simulator" subtitle="Each image edit starts from the same protected file; no edits are chained.">
     <div className="field"><label htmlFor="robust-stego">Protected image</label><input id="robust-stego" type="file" accept="image/png,image/bmp" onChange={(event) => setStego(event.target.files?.[0] ?? null)} /></div>
     <div className="field"><label htmlFor="robust-protocol">Verification workflow</label><select id="robust-protocol" value={protocol} onChange={(event) => setProtocol(event.target.value)}><option value="legacy">Legacy RSA/passphrase</option><option value="v2">V2 Ed25519/recovery file</option></select></div>
     {protocol === "legacy" && <div className="field"><label htmlFor="robust-password">Passphrase</label><input id="robust-password" type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} /></div>}
     {protocol === "v2" && <><div className="field"><label htmlFor="robust-recovery">Recovery file</label><input id="robust-recovery" type="file" onChange={(event) => setRecovery(event.target.files?.[0] ?? null)} /></div>
       <div className="field"><label htmlFor="robust-code">Recovery code</label><input id="robust-code" value={code} onChange={(event) => setCode(event.target.value)} /></div></>}
+    <div className="field"><label htmlFor="robust-public-file">Upload public key PEM</label><input id="robust-public-file" type="file" accept=".pem" onChange={(event) => void importPublicKey(event.target.files?.[0])} /></div>
     <div className="field"><label htmlFor="robust-public">Public key PEM</label><textarea id="robust-public" value={publicKey} onChange={(event) => setPublicKey(event.target.value)} /></div>
     <div className="columns">{Object.entries(values).map(([name, value]) => <div className="field" key={name}><label htmlFor={`robust-${name}`}>{name} {name === "jpeg" ? "quality" : name === "noise" ? "sigma" : "factor"}</label>
       <input id={`robust-${name}`} type="number" step={name === "jpeg" || name === "noise" ? "1" : "0.01"} value={value}
@@ -47,7 +57,11 @@ export function RobustnessPanel() {
     {result && <><p className="field-hint">Unmodified baseline: {result.baseline_verdict}. {result.note}</p>
       <div className="robust-grid">{result.scenarios.map((row) => <div className="robust-card" key={row.operation}>
         <h3>{row.operation} · {row.value}</h3>{row.preview && <img src={row.preview} alt={`${row.operation} transformed image`} />}
-        <p>Verification: {row.verdict}</p><p>{row.metrics ? `MSE ${row.metrics.mse.toFixed(3)} · PSNR ${row.metrics.psnr_db === null ? "∞" : row.metrics.psnr_db.toFixed(2)} dB · SSIM ${row.metrics.ssim?.toFixed(4) ?? "unavailable"}` : "Direct quality metrics unavailable: dimensions changed."}</p>
+        <p>Verification: {row.verdict}</p>
+        <p>Size: {row.original_dimensions.join(" × ")} → {row.result_dimensions.join(" × ")}</p>
+        {row.metrics.retained_area_percent !== null && <p>Image area retained: {row.metrics.retained_area_percent.toFixed(1)}%</p>}
+        <p>MSE {row.metrics.mse.toFixed(3)} · PSNR {row.metrics.psnr_db === null ? "∞" : row.metrics.psnr_db.toFixed(2)} dB · SSIM {row.metrics.ssim?.toFixed(4) ?? "unavailable"}</p>
+        <p className="field-hint">Comparison: {row.metrics.basis}.</p>
         <a href={artifactUrl(row.file.id)} download={row.file.filename}>Download transformed PNG</a>
       </div>)}</div></>}
   </Panel>;

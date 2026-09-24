@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 
@@ -9,6 +10,7 @@ from ..stego.carriers.video import inspect_video
 from ..stego.protocol import MAX_CONTENT_BYTES
 from ..stego.v2_security import load_signing_key, load_verification_key
 from ..workflows import estimate, protect_audio, protect_video, verify_audio, verify_image, verify_video
+from ..v2_results import Verdict
 
 from .session_jobs import _read, _session, _check_origin, _launch
 
@@ -85,7 +87,10 @@ def attach(app: FastAPI) -> None:
             sidecar = registry.artifact(session, result.sidecar, "recovery.stegloc", "application/octet-stream", "sidecar")
             return {"carrier": {"id": output, "filename": "stego" + extension, "size": len(result.carrier)},
                     "recovery": {"id": sidecar, "filename": "recovery.stegloc", "size": len(result.sidecar)},
-                    "recovery_code": result.recovery_code, "record": result.record, "media_kind": kind}
+                    "recovery_code": result.recovery_code, "record": result.record, "media_kind": kind,
+                    "payload_hash": {"algorithm": "SHA-256", "scope": "original payload bytes",
+                        "expected": hashlib.sha256(content).hexdigest(), "computed": hashlib.sha256(content).hexdigest(),
+                        "status": "match", "expected_trusted": True}}
 
         return _launch(request, "protect", work)
 
@@ -113,6 +118,11 @@ def attach(app: FastAPI) -> None:
                 name = Path(info["filename"]).name
                 ident = request.app.state.registry.artifact(session, result.content, name, info["media_type"], "content")
                 content_file = {"id": ident, "filename": name, "size": len(result.content), "media_type": info["media_type"]}
-            return {"verdict": result.overall.value, "stages": result.stages, "record": result.record, "content": content_file}
+            return {"verdict": result.overall.value, "stages": result.stages, "record": result.record, "content": content_file,
+                    "payload_hash": {"algorithm": "SHA-256", "scope": "decoded payload bytes",
+                        "expected": result.record["content"]["sha256"] if result.record else None,
+                        "computed": hashlib.sha256(result.content).hexdigest() if result.content is not None else None,
+                        "status": "match" if result.content is not None else "not_reached",
+                        "expected_trusted": result.overall is Verdict.AUTHENTIC}}
 
         return _launch(request, "verify", work)

@@ -9,6 +9,7 @@ import { fireEvent, render, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { api, type VerifyStep } from "./api";
+import * as jobs from "./api/jobs";
 import { setFiles } from "./test/setup";
 import { analysisExtras } from "./test/analysisFixture";
 
@@ -109,7 +110,6 @@ async function goTo(linkName: RegExp, heading: string) {
 }
 
 const SCREENS: [RegExp, string][] = [
-  [/V2 Workbench/, "V2 Workbench"],
   [/^Keys/, "Keys"],
   [/Embed & Sign/, "Embed & Sign"],
   [/Extract & Verify/, "Extract & Verify"],
@@ -144,14 +144,15 @@ async function appWithKeys() {
   await waitFor(() => expect(within(view()).getByRole("button", { name: /Save both keys/ })).toBeInTheDocument());
 }
 
-it("offers all seven destinations, each with its own heading", async () => {
+it("offers the six active destinations, each with its own heading", async () => {
   render(<App />);
   for (const [linkName, heading] of SCREENS) {
     await goTo(linkName, heading);
     expect(document.querySelector(".topbar h1")).toHaveTextContent(heading);
   }
   // Screens stay mounted so a file and a password survive the walk between them.
-  expect(document.querySelectorAll(".main > div")).toHaveLength(7);
+  expect(document.querySelectorAll(".main > div")).toHaveLength(6);
+  expect(document.querySelector('#rail-nav a[href="/v2"]')).toBeNull();
 });
 
 it("keys: generates a pair, then guards replacing it", async () => {
@@ -188,6 +189,28 @@ it("sender: blocks until it has what it needs, then embeds and offers the downlo
   expect(primaries[0]).toHaveAttribute("download", "stego_harbour.png");
 });
 
+it("keeps the embedded file across receiving, inspection and tamper screens until cleared", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "Exact message"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "session password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("stego_harbour.png"));
+  await screenNamed("Extract & Verify");
+  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  await waitFor(() => expect(within(view()).getByLabelText("Shared password")).toHaveValue("session password"));
+  await screenNamed("Inspect a file");
+  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  await screenNamed("Tamper tests");
+  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  fireEvent.click(within(document.querySelector(".working-strip") as HTMLElement).getByRole("button", {name: "Clear workspace"}));
+  await waitFor(() => expect(document.querySelector(".working-strip")).toBeNull());
+  expect(within(view()).queryByText("stego_harbour.png")).toBeNull();
+});
+
 it("sender: says so when the payload will not fit, and offers the ways out", async () => {
   vi.spyOn(api, "estimate").mockResolvedValue({ package_bytes: 922757 });
   await appWithKeys();
@@ -209,8 +232,7 @@ it("receiver: reads the message, and reading the override panel does not arm it"
   pick("File to check", "stego_harbour.png");
   await waitFor(() => expect(within(view()).getByText("places to look in")).toBeInTheDocument());
 
-  // The password is deliberately not carried over from the sender screen.
-  expect(view().querySelector(".field-hint")).toHaveTextContent("Not carried over from Embed & Sign on purpose");
+  expect(view().querySelector(".field-hint")).toHaveTextContent("Session credentials stay loaded");
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
 
   // Opening the panel must not turn the override on: this was the worst trap in the audit.
@@ -272,13 +294,19 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
 });
 
 it("tester: leads with the count and keeps every damaged file downloadable", async () => {
+  const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+    if (path === "/api/v2/session") return {status: "ready"} as never;
+    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    return {status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}} as never;
+  });
   await appWithKeys();
   await screenNamed("Tamper tests");
   pick("Protected file", "stego_harbour.png");
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
   fireEvent.click(within(view()).getByRole("button", { name: /Run tamper tests/ }));
 
-  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 behaved correctly"));
+  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 completed cases behaved correctly"));
   expect(within(view()).getAllByText("as expected")).toHaveLength(2);
   expect(within(view()).getByRole("link", { name: /Save harbour_flip.png/ })).toBeInTheDocument();
   // A row with no file says why instead of printing a dash.

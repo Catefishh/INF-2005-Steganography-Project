@@ -35,6 +35,8 @@ it("uses the new Inspect layout to show descriptive BPCS and Chi-Square results"
   fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
   await waitFor(() => expect(screen.getByText(/Theoretical capacity/)).toBeInTheDocument());
   expect(screen.getByRole("heading", { name: "BPCS complexity segmentation" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Pop out Chi-square p-values by section" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Pop out Inspected value histogram" })).toBeInTheDocument();
   expect(screen.getByText(/does not prove embedding/)).toBeInTheDocument();
   expect(screen.getByText(/presentation heuristic/)).toBeInTheDocument();
   expect(document.querySelector(".outcome")?.textContent).not.toMatch(/Something is hidden|has not been changed|looks embedded/);
@@ -45,6 +47,7 @@ it("applies BPCS settings separately from channel changes and keeps invalid draf
   selectFile(picture);
   fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
   await screen.findByRole("heading", { name: "BPCS complexity segmentation" });
+  fireEvent.click(screen.getByRole("button", { name: /BPCS image settings/ }));
   fireEvent.change(screen.getByLabelText("Complexity threshold"), { target: { value: "0.45" } });
   fireEvent.click(screen.getByRole("button", { name: /Apply BPCS settings/ }));
   await waitFor(() => expect(api.analyse).toHaveBeenCalledTimes(2));
@@ -72,6 +75,7 @@ it("renders audio BPCS as unsupported while retaining statistical analysis", asy
   fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
   await screen.findByText(/BPCS analysis is available only for image inputs/);
   expect(screen.getByRole("heading", { name: /Chi-square/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /BPCS image settings/ }));
   expect(screen.getByRole("group", { name: "BPCS image settings" })).toBeDisabled();
   expect(screen.queryByAltText("Bit 0 complexity map")).not.toBeInTheDocument();
 });
@@ -111,4 +115,25 @@ it("ignores an outdated response and releases busy when the file is replaced", a
   expect(screen.getByRole("button", { name: "Inspect file" })).toBeEnabled();
   pending.resolve(baseResult);
   await waitFor(() => expect(screen.queryByRole("heading", { name: "BPCS complexity segmentation" })).not.toBeInTheDocument());
+});
+
+it("keeps the selected bit-plane images in view when changing channels", async () => {
+  const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  const scroll = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scroll });
+  try {
+    render(<AnalysePage handoff={null} />);
+    selectFile(picture);
+    fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
+    const outcome = await screen.findByRole("heading", { name: /Pair counts resemble/ });
+    const focus = vi.spyOn(outcome, "focus");
+    vi.mocked(api.analyse).mockResolvedValueOnce({ ...baseResult, channel: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Green" }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledOnce());
+    expect(scroll.mock.instances[0]).toHaveClass("planes");
+    expect(focus).not.toHaveBeenCalled();
+  } finally {
+    if (original) Object.defineProperty(Element.prototype, "scrollIntoView", original);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  }
 });

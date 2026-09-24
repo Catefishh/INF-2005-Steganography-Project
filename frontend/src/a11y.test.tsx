@@ -9,6 +9,7 @@ import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
 import { VerifyPage } from "./pages/VerifyPage";
 import type { Vault } from "./util";
+import * as jobs from "./api/jobs";
 
 const VAULT: Vault = {
   privatePem: "-----BEGIN PRIVATE KEY-----\nk\n-----END PRIVATE KEY-----",
@@ -80,6 +81,7 @@ function expectNoSkippedLevels(levels: number[]) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/keys");
   vi.spyOn(api, "inspect").mockResolvedValue(IMAGE_INFO);
   vi.spyOn(api, "estimate").mockResolvedValue({ package_bytes: 916 });
   vi.spyOn(api, "inspectKey").mockResolvedValue({ type: "private", encrypted: false, bits: 2048, fingerprint: "f" });
@@ -90,6 +92,17 @@ beforeEach(() => {
 });
 
 describe("application shell", () => {
+  it("moves focus to the new screen heading and leaves one current destination", async () => {
+    window.history.replaceState(null, "", "/keys");
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: /Inspect a file/ }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Inspect a file", level: 1 })).toHaveFocus());
+    const current = document.querySelectorAll('#rail-nav a[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveAttribute("href", "/inspect");
+    expect(screen.queryByRole("button", { name: "Generate a key pair" })).not.toBeInTheDocument();
+  });
+
   it("marks exactly one nav item current, and marks it on the screen on show", () => {
     render(<App />);
     const current = document.querySelectorAll('#rail-nav a[aria-current="page"]');
@@ -176,6 +189,11 @@ describe("every screen — labels, busy state and heading order", () => {
   });
 
   it("Tamper tests, including the result", async () => {
+    vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+      if (path === "/api/v2/session") return {status: "ready"} as never;
+      if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+      return {status: "succeeded", phase: "complete", total: 1, cases: SCENARIOS, result: {cases: SCENARIOS}} as never;
+    });
     render(<AttackPage vault={VAULT} handoff={null} goTo={() => undefined} />);
     expectNoSkippedLevels(headingLevels(document.body));
 

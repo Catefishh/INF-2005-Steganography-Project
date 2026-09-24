@@ -1,5 +1,15 @@
 # Stegloc: LSB steganography with digital signatures
 
+## V4 demonstration workflow
+
+1. Select an image or PCM WAV cover, or import MP3/MOV/MP4 and explicitly prepare a lossless cover. Video preparation selects a short silent segment and writes uncompressed AVI (64 MiB maximum). MP3 preparation writes PCM WAV. The Windows desktop build bundles FFmpeg and ffprobe; source runs require them on `PATH` or in `build/ffmpeg`.
+2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
+3. Extract and verify. Compare the signed expected payload digest with the decoded digest. A wrong manual start keeps the same file and offers immediate retry or the authenticated stored location.
+4. Inspect the prepared cover against the stego file with side-by-side, swipe, overlay, and heatmap views. For video, inspect individual frames and the timeline. For WAV, the strip shows changes across time and channels.
+5. Open Tamper tests. Choose **Encode and test** or **Test protected file** for image, WAV, AVI, or text carriers. Watch each case finish, including wrong-location correction and a controlled legacy payload-hash mismatch, then download the evidence ZIP. Passwords, recovery codes, private keys, and extracted plaintext are excluded from that ZIP.
+
+Prepared MOV/MP4 video uses the Ed25519 workflow with a separate recovery file and code. MP3 becomes WAV; MOV/MP4 becomes silent AVI. The downloaded stego format is the prepared lossless format. Working files live only for the current app session.
+
 INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement. The original workflow uses SHA-256 and RSA signatures. V2 adds Ed25519, a separate recovery file/code, and a restricted AVI video carrier.
 
 | Page | What it does |
@@ -8,27 +18,24 @@ INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside 
 | **Embed & sign** (party A) | Drag in a cover and a payload (text or any file), choose 1-8 LSBs and the start location, then embed |
 | **Extract & verify** (party B) | Drag in the received stego file, enter the passphrase and public key, get a verdict |
 | **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
-| **Attack lab** | Runs up to 10 positive/negative scenarios and lets you download the tampered sample files |
-| **V2 Workbench** | Ed25519 and separate `.stegloc` recovery file/code, session jobs, and uncompressed AVI video carriers |
+| **Tamper tests** | Runs live positive/negative cases for media and text, with downloadable evidence and variants |
 | **Text Steganography** | Signed, encrypted messages in acrostic, trailing-whitespace, or zero-width text |
 
 ## V3 analysis and text
 
 **Inspect a file** now offers image-only RS statistics, paired cover/stego histograms and bit planes 0–7, an even/odd filter (bit 0: even black, odd white), and full-resolution luminance SSIM. Its before/after slider and change overlay show exactly where pixels differ. RS, histograms and chi-square are descriptive evidence; they cannot prove a message is present. MSE, PSNR and SSIM require a same-size original image. SSIM uses 11×11 windows, so it is unavailable below 11×11 pixels.
 
-**V2 Workbench** capacity estimates now show both raw LSB space and the maximum message bytes after security overhead for the chosen depth and start. The BPCS number in Inspect remains a separate theoretical estimate. The image robustness simulator in **Tamper tests** independently applies resize, center crop, JPEG round-trip, noise and brightness changes, then reports actual legacy or v2 verifier outcomes. Resize/crop have no direct image-quality comparison because dimensions change.
+The BPCS number in Inspect is a theoretical estimate. The image robustness simulator in **Tamper tests** independently applies resize, center crop, JPEG round-trip, noise and brightness changes, then reports actual legacy or v2 verifier outcomes. Resize/crop have no direct image-quality comparison because dimensions change.
 
 **Text Steganography** (`/text`) uses existing Ed25519 keys and an independent v3 text format. Enter a message, select a method, generate an encrypted carrier, and download its text and `.stegloc-text` recovery material. Pass the code separately. Paste or import the carrier on the recipient side with the recovery file, code and public key. The hidden message and sender are authenticated; visible wording is not. Acrostic lines may be rewritten if the A–P initials and order remain exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The input message limit is 32 KiB and the resulting UTF-8 carrier limit is 2 MiB. See [the text format](docs/v3-text-protocol.md) for exact framing and limitations.
 
 For a source-code walkthrough and Q&A, use the [code guide](docs/code-guide.md). It maps each concept to the implementation, call flow, limits and tests.
 
-## V2 workbench
+## V2 protocol
 
-Open **V2 Workbench** (or `/v2`) for the new workflow. Enter a password and generate an Ed25519 pair; save the encrypted private PEM and public PEM. Check the public-key fingerprint through a trusted channel. Select a PNG, 24-bit BMP, integer PCM WAV, or supported uncompressed AVI cover, then a text message or any content file. Check capacity, choose 1–8 LSBs and optionally a start, and protect. Download **both** the carrier and `.stegloc` recovery file. Send the generated recovery code separately.
+The v2 API retains Ed25519 protection and verification for existing integrations. It uses a separate `.stegloc` recovery file and code; its key and recovery formats differ from the RSA/passphrase screens for `STG1` files. The dedicated V2 Workbench page has been removed from the interface.
 
-The recipient starts a fresh v2 session, loads the received carrier, `.stegloc` file, code and public key, then chooses **Extract and verify**. Only an Authentic result offers the recovered file. The v2 session supports polling, cancellation and reset. The previous RSA/passphrase screens remain available for existing `STG1` files; their key and recovery formats are different.
-
-V2 also adds image-only BPCS settings and complexity maps to **Inspect a file**, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Run `python scripts/benchmark-analysis.py` from a prepared environment to measure the vectorized BPCS algorithm against the scalar reference. See [v2 protocol and AVI limits](docs/v2-protocol.md) for accepted headers, size limits, security handoff and verification boundaries.
+The protocol also provides image-only BPCS settings and complexity maps in **Inspect a file**, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Run `python scripts/benchmark-analysis.py` from a prepared environment to measure the vectorized BPCS algorithm against the scalar reference. See [v2 protocol and AVI limits](docs/v2-protocol.md) for accepted headers, size limits, security handoff and verification boundaries.
 
 ## Run the packaged Windows app
 
@@ -177,12 +184,14 @@ slot 0 ... start ............ start+span ...... last 520 slots
 | Cover | Output | Size preserved? |
 | --- | --- | --- |
 | PCM WAV 8/16/24/32-bit, any channel count (incl. WAVE_FORMAT_EXTENSIBLE) | WAV, patched in place | **Yes, byte-identical length** |
+| MP3 audio source | Prepared 16-bit PCM WAV, then WAV stego | Conversion changes the source format; embedding preserves the prepared WAV length |
+| MP4 or MOV video source | Selected silent uncompressed 24-bit AVI segment, then AVI stego | Conversion changes the source format; embedding preserves the prepared AVI length |
 | BMP | BMP | Yes for standard 24-bit BMP |
 | PNG, JPEG, GIF, WEBP, TIFF, palette / 16-bit images | PNG | No: PNG re-compresses (pixels and dimensions are exact) |
 
-The v2 workbench accepts 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, and a single-stream uncompressed 24-bit AVI up to 64 MiB. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed. This stricter carrier contract belongs to v2 only. See [v2 protocol and AVI limits](docs/v2-protocol.md).
+The v2 carrier protocol accepts 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, and a single-stream uncompressed 24-bit AVI up to 64 MiB. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed. This stricter carrier contract belongs to v2 only. See [v2 protocol and AVI limits](docs/v2-protocol.md).
 
-MP3, AAC and MP4 cannot be covers because lossy codecs destroy LSBs. They can still be hidden as payloads.
+Compressed MP3 covers are explicitly decoded to PCM WAV before embedding. MOV and MP4 covers are explicitly decoded to a selected, silent uncompressed AVI segment. The compressed source is never used as the LSB carrier, and a received stego file is never transcoded during verification. Arbitrary files, including MP3, MOV and MP4, can be hidden as byte-exact payloads.
 
 ## Limitations (be honest in the demo)
 

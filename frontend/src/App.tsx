@@ -1,11 +1,11 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
-import { Icon, type IconName } from "./components";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { Icon, Reveal, type IconName } from "./components";
 import { AnalysePage } from "./pages/AnalysePage";
 import { AttackPage } from "./pages/AttackPage";
 import { HidePage } from "./pages/HidePage";
 import { KeysPage } from "./pages/KeysPage";
 import { VerifyPage } from "./pages/VerifyPage";
-import { V2Page } from "./pages/V2Page";
 import { TextPage } from "./pages/TextPage";
 import { isPlainLeftClick, navigate, pathFor, resolveRoute, usePathname } from "./router";
 import type { Handoff, Page, Vault } from "./util";
@@ -14,8 +14,6 @@ type Group = "Set up" | "Send and receive" | "Examine";
 
 /** The sidebar label, the page heading and the URL are the same string for every screen. */
 const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Group; lede: string }[] = [
-  { id: "v2", icon: "shield", label: "V2 Workbench", role: "New workflow", group: "Set up",
-    lede: "Protect and verify images, audio and uncompressed AVI with Ed25519 and a separate recovery file." },
   { id: "keys", icon: "key", label: "Keys", role: "Start here", group: "Set up",
     lede: "You need one key pair before you can embed or verify a file. It takes one click." },
   { id: "hide", icon: "shield", label: "Embed & Sign", role: "Sender", group: "Send and receive",
@@ -37,12 +35,37 @@ const EMPTY_VAULT: Vault = { privatePem: "", publicPem: "", privateFingerprint: 
 export default function App() {
   const [vault, setVault] = useState<Vault>(EMPTY_VAULT);
   const [handoff, setHandoff] = useState<Handoff | null>(null);
+  const [workspaceDigest, setWorkspaceDigest] = useState("");
+  const [workspaceEpoch, setWorkspaceEpoch] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const lastPageRef = useRef<Page | null>(null);
 
   const pathname = usePathname();
   const hasKeys = Boolean(vault.privatePem || vault.publicPem);
   const route = resolveRoute(pathname, hasKeys);
   const current = PAGES.find((item) => item.id === route.page) ?? PAGES[0];
+
+  useEffect(() => {
+    const file = handoff?.stego;
+    if (!file) { setWorkspaceDigest(""); return; }
+    let live = true;
+    file.arrayBuffer().then((bytes) => crypto.subtle.digest("SHA-256", bytes))
+      .then((digest) => { if (live) setWorkspaceDigest(Array.from(new Uint8Array(digest)).map((n) => n.toString(16).padStart(2, "0")).join("")); })
+      .catch(() => { if (live) setWorkspaceDigest(""); });
+    return () => { live = false; };
+  }, [handoff?.id]);
+
+  function replaceWorkingFile(file: File | null) {
+    setHandoff(file ? { id: crypto.randomUUID(), stego: file, cover: null,
+      passphrase: "", publicPem: vault.publicPem, serial: Date.now() } : null);
+    if (!file) setWorkspaceEpoch((value) => value + 1);
+  }
+
+  useEffect(() => {
+    if (lastPageRef.current !== null && lastPageRef.current !== route.page) headingRef.current?.focus();
+    lastPageRef.current = route.page;
+  }, [route.page]);
 
   // Keep the address bar honest: rewrite "/", trailing slashes and unknown paths to the
   // canonical path of the screen actually on show. Compares against the *current* pathname
@@ -75,7 +98,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="app">
+    <MotionConfig reducedMotion="user"><div className="app">
       <aside className={`rail${menuOpen ? " menu-open" : ""}`}>
         <div className="rail-head">
           <button type="button" className="rail-toggle" aria-expanded={menuOpen} aria-controls="rail-nav"
@@ -136,28 +159,36 @@ export default function App() {
       </aside>
 
       <main className="main">
-        <header className="topbar">
+        <motion.header key={route.page} className="topbar" initial={{opacity: 0, y: 6}} animate={{opacity: 1, y: 0}} transition={{duration: 0.2}}>
           <div>
-            <h1>{current.label}</h1>
+            <span className="topbar-context">{current.group} <span aria-hidden="true">/</span> {current.role}</span>
+            <h1 ref={headingRef} tabIndex={-1}>{current.label}</h1>
             <p>{current.lede}</p>
           </div>
-        </header>
-        <div hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></div>
-        <div hidden={route.page !== "v2"}><V2Page /></div>
-        <div hidden={route.page !== "text"}><TextPage /></div>
-        <div hidden={route.page !== "hide"}>
-          <HidePage vault={vault} onHandoff={setHandoff} goTo={goTo}
+        </motion.header>
+        <AnimatePresence initial={false}>{handoff && <motion.section className="working-strip" role="status"
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
+          <div><b>Working file</b> <span>{handoff.stego.name} · {handoff.stego.name.split(".").pop()?.toUpperCase()} · {(handoff.stego.size / 1024).toFixed(1)} KiB</span>
+            {handoff.sourceCover && handoff.sourceCover !== handoff.cover && <span>Prepared from {handoff.sourceCover.name}</span>}
+            <code title={workspaceDigest}>{workspaceDigest || "Calculating SHA-256…"}</code></div>
+          <label className="btn ghost sm">Replace file<input type="file" hidden onChange={(event) => replaceWorkingFile(event.target.files?.[0] ?? null)} /></label>
+          <button className="btn ghost sm" type="button" onClick={() => replaceWorkingFile(null)}>Clear workspace</button>
+        </motion.section>}</AnimatePresence>
+        <Reveal hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></Reveal>
+        <Reveal hidden={route.page !== "text"}><TextPage key={workspaceEpoch} /></Reveal>
+        <Reveal hidden={route.page !== "hide"}>
+          <HidePage key={workspaceEpoch} vault={vault} onHandoff={setHandoff} goTo={goTo}
             showResult={route.page === "hide" && route.view === "result"}
             onShowResult={showEmbedResult} />
-        </div>
-        <div hidden={route.page !== "verify"}>
-          <VerifyPage vault={vault} handoff={handoff} goTo={goTo}
+        </Reveal>
+        <Reveal hidden={route.page !== "verify"}>
+          <VerifyPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo}
             showResult={route.page === "verify" && route.view === "result"}
             onShowResult={showVerifyResult} />
-        </div>
-        <div hidden={route.page !== "analyse"}><AnalysePage handoff={handoff} /></div>
-        <div hidden={route.page !== "attacks"}><AttackPage vault={vault} handoff={handoff} goTo={goTo} /></div>
+        </Reveal>
+        <Reveal hidden={route.page !== "analyse"}><AnalysePage key={workspaceEpoch} handoff={handoff} onWorkingFile={replaceWorkingFile} /></Reveal>
+        <Reveal hidden={route.page !== "attacks"}><AttackPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} onHandoff={setHandoff} goTo={goTo} /></Reveal>
       </main>
-    </div>
+    </div></MotionConfig>
   );
 }

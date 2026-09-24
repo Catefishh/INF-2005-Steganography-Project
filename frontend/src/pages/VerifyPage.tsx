@@ -7,6 +7,7 @@ import {
 import { verifyMissing } from "../requirements";
 import { changedInputs, staleReason } from "../stale";
 import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Page, type Vault } from "../util";
+import { VideoVerify } from "./VideoWorkflow";
 import { failedStep, skippedSteps, stepsValue, verdictReading } from "../verdict";
 
 const STEGO_ACCEPT = "image/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,audio/wav";
@@ -30,15 +31,16 @@ export function relativeTime(from: number, now: number = Date.now()): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export const OVERRIDE_HINT = "Not carried over from Embed & Sign on purpose — a real receiver has to type it in.";
+export const OVERRIDE_HINT = "Session credentials stay loaded while you navigate. Replace them when checking a file from another sender.";
 
 /** Shown only while the override is armed, so an active override can never be missed. */
 const OVERRIDE_WARNING = "With it on, the hidden data is read from the place you type here instead of the place "
   + "stored in the file. Normal checks will fail. Turn it off to check a file properly.";
 
-export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
+export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, onShowResult }: {
   vault: Vault;
   handoff: Handoff | null;
+  onWorkingFile?: (file: File | null) => void;
   goTo: (page: Page) => void;
   /** True when the route asks for /verify/result. */
   showResult: boolean;
@@ -46,6 +48,7 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
   onShowResult: (show: boolean) => void;
 }) {
   const [stego, setStego] = useState<File | null>(null);
+  const requestRevision = useRef(0);
   const [info, setInfo] = useState<CoverInfo | null>(null);
   const [fromHandoff, setFromHandoff] = useState(false);
   const [passphrase, setPassphrase] = useState("");
@@ -57,6 +60,8 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
   const [overrideX, setOverrideX] = useState("0");
   const [overrideY, setOverrideY] = useState("0");
   const [overrideSeconds, setOverrideSeconds] = useState("0.000");
+  const [overrideSlot, setOverrideSlot] = useState("");
+  const [attempts, setAttempts] = useState<{location: string; verdict: string}[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<VerifyResponse | null>(null);
@@ -70,7 +75,10 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
 
   useEffect(() => {
     if (!handoff) return;
+    requestRevision.current += 1;
     setStego(handoff.stego);
+    setPassphrase(handoff.passphrase);
+    if (handoff.publicPem) setPublicPem(handoff.publicPem);
     setFromHandoff(true);
     setResult(null);
   }, [handoff]);
@@ -126,15 +134,16 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
   });
   const ready = missing.length === 0;
 
-  async function submit() {
+  async function submit(useOverride = override) {
     if (!stego) return;
+    const requestId = ++requestRevision.current;
     // Snapshot before the await: state read after it belongs to a later render.
-    const sentOverride = override;
-    const sentStart = info?.kind === "audio" ? `s:${overrideSeconds}` : `xy:${overrideX},${overrideY}`;
+    const sentOverride = useOverride;
+    const sentStart = overrideSlot !== "" ? `slot:${overrideSlot}` : info?.kind === "audio" ? `s:${overrideSeconds}` : `xy:${overrideX},${overrideY}`;
     const snapshot = [stego.name, passphrase, publicPem, sentOverride ? sentStart : "from the password"];
     setBusy(true);
     setError("");
-    setResult(null);
+    if (!showResult) setResult(null);
     setResultInputs(null);
     setStaleDismissed(false);
     const form = new FormData();
@@ -142,7 +151,8 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
     form.append("passphrase", passphrase);
     form.append("public_key", publicPem);
     if (sentOverride) {
-      if (info?.kind === "audio") {
+      if (overrideSlot !== "") form.append("start_slot", overrideSlot);
+      else if (info?.kind === "audio") {
         form.append("start_seconds", overrideSeconds);
       } else {
         form.append("start_x", overrideX);
@@ -151,13 +161,15 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
     }
     try {
       const response = await api.verify(form);
+      if (requestId !== requestRevision.current) return;
       setResult(response);
       setResultInputs(snapshot);
+      setAttempts((before) => [...before, { location: sentOverride ? sentStart : "authenticated stored location", verdict: response.verdict }]);
       onShowResult(true);
     } catch (e) {
-      setError(errorText(e));
+      if (requestId === requestRevision.current) setError(errorText(e));
     } finally {
-      setBusy(false);
+      if (requestId === requestRevision.current) setBusy(false);
     }
   }
 
@@ -179,7 +191,11 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
   /** Back to the form, with the override already off so a re-run reads the file's own start. */
   function overrideOff() {
     setOverride(false);
-    onShowResult(false);
+    void submit(false);
+  }
+
+  if (handoff && /\.avi$/i.test(handoff.stego.name)) {
+    return <VideoVerify handoff={handoff} onWorkingFile={onWorkingFile} />;
   }
 
   if (showResult && result) {
@@ -189,12 +205,26 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
           <StaleBanner reason={staleReason(changed)} busy={busy} onRerun={() => void submit()}
             onDismiss={() => setStaleDismissed(true)} />
         )}
-        <div className={`result-column${stale ? " stale" : ""}`}>
+        <div className={`reveal result-column${stale ? " stale" : ""}`}>
           <VerifyResult result={result} stegoName={stego?.name ?? "the file"}
             overrideUsed={resultInputs !== null && resultInputs[3] !== "from the password"}
             passphrase={passphrase} onPassphrase={setPassphrase} busy={busy}
             outcomeRef={outcomeRef} onCheckAgain={() => void submit()} onEdit={() => onShowResult(false)}
             onInspect={() => goTo("analyse")} onOverrideOff={overrideOff} />
+          {result.verdict === "Wrong Start Location" && <div className="retry-panel">
+            <h2>Retry on this file</h2>
+            <p>The working file and credentials stay loaded. Enter a corrected location or use the authenticated stored location.</p>
+            <div className="btn-row">
+              <label>Exact slot<input type="number" min="0" value={overrideSlot} onChange={(e) => setOverrideSlot(e.target.value)} /></label>
+              {info?.kind === "audio" ? <label>Time (seconds)<input type="number" min="0" step="0.001" value={overrideSeconds} onChange={(e) => { setOverrideSeconds(e.target.value); setOverrideSlot(""); }} /></label> : <>
+                <label>X<input type="number" min="0" value={overrideX} onChange={(e) => { setOverrideX(e.target.value); setOverrideSlot(""); }} /></label>
+                <label>Y<input type="number" min="0" value={overrideY} onChange={(e) => { setOverrideY(e.target.value); setOverrideSlot(""); }} /></label>
+              </>}
+            </div>
+            <div className="btn-row"><button type="button" className="btn primary" disabled={busy} onClick={() => { setOverride(true); void submit(true); }}>Retry extraction</button>
+              <button type="button" className="btn ghost" disabled={busy} onClick={overrideOff}>Use stored location and retry</button></div>
+          </div>}
+          {attempts.length > 1 && <details><summary>Previous attempts ({attempts.length})</summary><ol>{attempts.map((attempt, i) => <li key={i}>{attempt.location}: {attempt.verdict}</li>)}</ol></details>}
         </div>
       </>
     );
@@ -220,7 +250,7 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
         )}
         <DropZone label="File to check" id={STEGO_SLOT_ID} title="Drop the protected picture or sound clip"
           hint="or click to browse" accept={STEGO_ACCEPT} icon="eye" file={stego}
-          onFile={(file) => { setStego(file); setFromHandoff(false); setResult(null); }} />
+          onFile={(file) => { requestRevision.current += 1; setStego(file); onWorkingFile?.(file); setFromHandoff(false); setResult(null); setAttempts([]); }} />
         {info?.kind === "audio" && stegoUrl && (
           <MediaPreview url={stegoUrl} mime="audio/wav" name={stego?.name ?? "received file"} />
         )}
@@ -317,8 +347,8 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
             )}
             <small className="field-hint">
               {info?.header
-                ? `The file says the hidden data starts at ${info.header.text}. The app reads from there unless this switch is on.`
-                : "The real start point appears here once the file has loaded."}
+                ? `The header is at ${info.header.text}; it is not the payload start. The authenticated payload start becomes available after unlocking.`
+                : "The payload start becomes available after unlocking the file."}
             </small>
           </div>
         </Disclosure>
@@ -343,7 +373,7 @@ export function VerifyPage({ vault, handoff, goTo, showResult, onShowResult }: {
                 <Icon name="x" size={15} /> Turn the override off
               </button>
             )}
-            <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={submit}
+          <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void submit()}
               aria-describedby={reasonId} aria-busy={busy}>
               {busy ? <Spinner /> : <Icon name="eye" />} {busy ? "Checking…" : "Check file"}
             </button>

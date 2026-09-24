@@ -8,6 +8,7 @@ export function DiffPanel({ analysis }: { analysis: Analysis }) {
   const compare = analysis.compare!;
   const [split, setSplit] = useState(50);
   const [opacity, setOpacity] = useState(55);
+  const [mode, setMode] = useState<"swipe" | "side" | "heatmap" | "overlay">("swipe");
   const copy = inspectCopy(analysis.info.kind);
   const percent = analysis.info.n_slots > 0 ? (compare.slots_changed / analysis.info.n_slots) * 100 : 0;
   const oneBitPerValue = compare.slots_changed > 0 && compare.bits_changed === compare.slots_changed;
@@ -38,13 +39,23 @@ export function DiffPanel({ analysis }: { analysis: Analysis }) {
       </div>
 
       {compare.original_preview && compare.stego_preview && <div className="comparison-view">
+        <div className="segmented" aria-label="Comparison view">
+          {(["swipe", "side", "heatmap", "overlay"] as const).map((choice) =>
+            <button key={choice} type="button" className={mode === choice ? "on" : ""} aria-pressed={mode === choice}
+              onClick={() => setMode(choice)}>{choice === "side" ? "Side by side" : choice[0].toUpperCase() + choice.slice(1)}</button>)}
+        </div>
+        {mode === "side" ? <div className="planes two"><figure><img src={compare.original_preview} alt="Original cover" /><figcaption>Before</figcaption></figure>
+          <figure><img src={compare.stego_preview} alt="Protected carrier" /><figcaption>After</figcaption></figure></div> :
         <div className="comparison-images">
           <img src={compare.original_preview} alt="Original cover image" />
-          <img className="comparison-stego" src={compare.stego_preview} alt="Stego image" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
-          <img className="comparison-overlay" src={compare.changed_map} alt="Changed pixels highlighted" style={{ opacity: opacity / 100 }} />
-        </div>
-        <label>Before/after split: {split}% <input type="range" min="0" max="100" value={split} onChange={(event) => setSplit(Number(event.target.value))} /></label>
-        <label>Change overlay: {opacity}% <input type="range" min="0" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label>
+          {mode === "swipe" && <img className="comparison-stego" src={compare.stego_preview} alt="Stego image" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />}
+          {mode === "overlay" && <><img className="comparison-stego" src={compare.stego_preview} alt="Stego image" />
+            <img className="comparison-overlay" src={compare.changed_map} alt="Changed pixels highlighted" style={{ opacity: opacity / 100 }} /></>}
+          {mode === "heatmap" && <img className="comparison-stego" src={compare.heatmap ?? compare.amplified ?? compare.changed_map} alt="Amplified difference heatmap" />}
+        </div>}
+        {mode === "swipe" && <label>Before/after split: {split}% <input type="range" min="0" max="100" value={split} onChange={(event) => setSplit(Number(event.target.value))} /></label>}
+        {mode === "overlay" && <label>Change overlay: {opacity}% <input type="range" min="0" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label>}
+        {mode === "heatmap" && <p>Dark = no pixel difference; orange/red = a larger channel change, amplified 64× for visibility. Statistics use full-resolution values.</p>}
       </div>}
 
       <div className="planes two">
@@ -59,6 +70,8 @@ export function DiffPanel({ analysis }: { analysis: Analysis }) {
           </figure>
         )}
       </div>
+      {compare.audio_change_strip && <figure><img src={compare.audio_change_strip} alt="Changes across time and channels" />
+        <figcaption>{compare.audio_change_note}</figcaption></figure>}
     </Panel>
   );
 }

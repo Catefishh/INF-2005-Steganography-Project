@@ -6,7 +6,9 @@ import {
 import { tamperMissing } from "../requirements";
 import { changedInputs, staleReason } from "../stale";
 import { errorText, type Handoff, type Vault } from "../util";
+import { artifactUrl, requestJson, type Job } from "../api/jobs";
 import { RobustnessPanel } from "./RobustnessPanel";
+import { TextShowcase } from "./TextShowcase";
 
 const STEGO_ACCEPT = "image/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,audio/wav";
 const STEGO_SLOT_ID = "tamper-file-slot";
@@ -20,54 +22,113 @@ const NEEDS_ORIGINAL = new Set(["clean_cover", "wrong_start", "flip_payload_bit"
 /** The test that should come back clean. */
 const POSITIVE_ID = "baseline";
 
-export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Handoff | null; goTo: (page: "keys") => void }) {
+export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: { vault: Vault; handoff: Handoff | null; onWorkingFile?: (file: File | null) => void; onHandoff?: (value: Handoff) => void; goTo: (page: "keys") => void }) {
   const [stego, setStego] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
+  const [mode, setMode] = useState<"test" | "encode">("test");
+  const [media, setMedia] = useState<"binary" | "text">("binary");
+  const [payload, setPayload] = useState<File | null>(null);
+  const [privateKey, setPrivateKey] = useState("");
+  const [keyPassword, setKeyPassword] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [publicPem, setPublicPem] = useState("");
+  const [recovery, setRecovery] = useState<File | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState("");
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [jobId, setJobId] = useState("");
+  const [jobPhase, setJobPhase] = useState("");
+  const [jobTotal, setJobTotal] = useState(0);
   const [error, setError] = useState("");
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<Scenario | null>(null);
   const [resultInputs, setResultInputs] = useState<string[] | null>(null);
   const [staleDismissed, setStaleDismissed] = useState(false);
   const outcomeRef = useRef<HTMLHeadingElement>(null);
+  const publishedFile = useRef<File | null>(null);
+  const requestRevision = useRef(0);
 
   useEffect(() => {
     if (!handoff) return;
+    if (handoff.stego === publishedFile.current) return;
+    requestRevision.current += 1;
     setStego(handoff.stego);
     setCover(handoff.cover);
     setPassphrase(handoff.passphrase);
+    setRecovery(handoff.recovery ?? null);
+    setRecoveryCode(handoff.recoveryCode ?? "");
     if (handoff.publicPem) setPublicPem(handoff.publicPem);
     setScenarios(null);
+    setSelectedVariant(null);
     setResultInputs(null);
   }, [handoff]);
 
+  useEffect(() => { if (vault.privatePem) setPrivateKey(vault.privatePem); }, [vault.privatePem]);
+
   useEffect(() => {
-    if (vault.publicPem) setPublicPem(vault.publicPem);
-  }, [vault.publicPem]);
+    if (vault.publicPem && !/\.avi$/i.test(stego?.name ?? "")) setPublicPem(vault.publicPem);
+  }, [vault.publicPem, stego?.name]);
 
   async function run() {
-    if (!stego) return;
+    if (mode === "test" && !stego || mode === "encode" && (!cover || !payload)) return;
+    const requestId = ++requestRevision.current;
     // Snapshot before the await, so the staleness comparison is against what was really sent.
-    const snapshot = [stego.name, cover?.name ?? "", passphrase, publicPem];
+    const snapshot = [stego?.name ?? "", cover?.name ?? "", passphrase, publicPem];
     setBusy(true);
     setError("");
     setScenarios(null);
     setResultInputs(null);
     setStaleDismissed(false);
     const form = new FormData();
-    form.append("stego", stego, stego.name);
+    form.append("mode", mode);
+    if (mode === "test" && stego) form.append("stego", stego, stego.name);
     if (cover) form.append("cover", cover, cover.name);
+    if (handoff?.conversion) form.append("conversion_settings", JSON.stringify(handoff.conversion));
+    if (mode === "encode" && payload) {form.append("payload", payload); form.append("private_key", privateKey);
+      form.append("key_password", keyPassword); form.append("depth", "3");}
     form.append("passphrase", passphrase);
     form.append("public_key", publicPem);
+    if (recovery) form.append("recovery", recovery);
+    if (recoveryCode) form.append("recovery_code", recoveryCode);
     try {
-      setScenarios((await api.attacks(form)).scenarios);
+      await requestJson("/api/v2/session", { method: "POST" });
+      const started = await requestJson<Job<{cases: Scenario[]; generated?: {id: string; filename: string}; generated_recovery?: {id: string; filename: string}; recovery_code?: string}>>("/api/v4/jobs/showcase", { method: "POST", body: form });
+      if (requestId !== requestRevision.current) return;
+      setJobId(started.id);
+      for (let attempt = 0; attempt < 1200; attempt++) {
+        const state = await requestJson<Job<{cases: Scenario[]; generated?: {id: string; filename: string}; generated_recovery?: {id: string; filename: string}; recovery_code?: string}> & {cases: Scenario[]; total: number}>(`/api/v2/jobs/${encodeURIComponent(started.id)}`);
+        if (requestId !== requestRevision.current) return;
+        setJobPhase(state.phase); setJobTotal(state.total); setScenarios(state.cases);
+        if (state.status === "succeeded") {
+          setScenarios(state.result?.cases ?? state.cases);
+          if (state.result?.generated) {
+            const artifact = state.result.generated;
+            const response = await fetch(artifactUrl(artifact.id));
+            if (response.ok) {const file = new File([await response.blob()], artifact.filename);
+              publishedFile.current = file; setStego(file);
+              let recoveryFile: File | undefined;
+              if (state.result.generated_recovery) {
+                const sidecar = state.result.generated_recovery;
+                const sidecarResponse = await fetch(artifactUrl(sidecar.id));
+                if (sidecarResponse.ok) recoveryFile = new File([await sidecarResponse.blob()], sidecar.filename);
+              }
+              if (onHandoff) onHandoff({id: crypto.randomUUID(), stego: file, cover, passphrase, publicPem,
+                recovery: recoveryFile, recoveryCode: state.result.recovery_code,
+                protocol: isVideo ? "v2-video" : "legacy", serial: Date.now()});
+              else onWorkingFile?.(file);
+            }
+          }
+          break;
+        }
+        if (state.status === "failed") throw new Error(state.error?.message || "Showcase failed");
+        if (state.status === "cancelled") break;
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
       setResultInputs(snapshot);
     } catch (e) {
-      setError(errorText(e));
+      if (requestId === requestRevision.current) setError(errorText(e));
     } finally {
-      setBusy(false);
+      if (requestId === requestRevision.current) setBusy(false);
     }
   }
 
@@ -76,8 +137,12 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
   const stale = scenarios !== null && changed.length > 0 && !staleDismissed;
 
   const usingVaultKey = Boolean(vault.publicPem) && publicPem === vault.publicPem;
+  const isVideo = /\.avi$/i.test((mode === "encode" ? cover : stego)?.name ?? "");
   const hasPublicKey = publicPem.trim().length > 0;
-  const missing = tamperMissing({ hasFile: stego !== null, hasPassphrase: passphrase.length > 0, hasPublicKey });
+  const missing = mode === "encode" ? [!cover && "prepared cover", !payload && "payload", !privateKey && "private key",
+    !hasPublicKey && "public key", !isVideo && !passphrase && "passphrase", isVideo && !keyPassword && "key password"].filter(Boolean) as string[] :
+    isVideo ? [!stego && "protected AVI", !recovery && "recovery file", !recoveryCode && "recovery code", !hasPublicKey && "Ed25519 public key"].filter(Boolean) as string[] :
+    tamperMissing({ hasFile: stego !== null, hasPassphrase: passphrase.length > 0, hasPublicKey });
   const ready = missing.length === 0;
 
   const passed = scenarios?.filter((s) => s.as_expected).length ?? 0;
@@ -90,25 +155,38 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
     if (scenarios) outcomeRef.current?.focus();
   }, [scenarios]);
 
+  if (media === "text") return <TextShowcase back={() => setMedia("binary")} onWorkingFile={onWorkingFile} />;
+
   return (
     <div className="form-column">
+      <button type="button" className="btn ghost sm" onClick={() => setMedia("text")}>Text carrier tests</button>
+      <div className="segmented" role="group" aria-label="Showcase mode">
+        <button type="button" className={mode === "test" ? "active" : ""} onClick={() => setMode("test")}>Test protected file</button>
+        <button type="button" className={mode === "encode" ? "active" : ""} onClick={() => setMode("encode")}>Encode and test</button>
+      </div>
       <Panel step="1" title="The protected file to attack"
         subtitle="Start from a file that currently passes the check. Each test changes one thing and runs the normal checker on the result.">
         <div className="columns">
-          <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
+          {mode === "test" && <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
             title="Drop the protected file" hint="picture or WAV produced by Embed & Sign"
-            accept={STEGO_ACCEPT} icon="shield" file={stego}
-            onFile={(file) => { setStego(file); setScenarios(null); }} />
-          <DropZone label={<>Original, before anything was hidden <span className="opt">(optional)</span></>} id={COVER_SLOT_ID}
+            accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="shield" file={stego}
+            onFile={(file) => { requestRevision.current += 1; setStego(file); onWorkingFile?.(file); setScenarios(null); }} />}
+          <DropZone label={<>Original cover <span className="opt">{mode === "test" ? "(optional)" : "· required"}</span></>} id={COVER_SLOT_ID}
             title="Drop the original here" hint="adds the tests that attack the original file"
-            accept={STEGO_ACCEPT} icon="image" file={cover}
+            accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="image" file={cover}
             onFile={(file) => { setCover(file); setScenarios(null); }} />
+          {mode === "encode" && <label>Payload file<input type="file" onChange={(event) => setPayload(event.target.files?.[0] ?? null)} /></label>}
         </div>
       </Panel>
 
       <Panel step="2" title="What the checker will be given">
-        <PassphraseField value={passphrase} onChange={setPassphrase}
+        {!isVideo && <PassphraseField value={passphrase} onChange={setPassphrase}
           hint="Carried over from Embed & Sign, because the tests need a password that works in order to prove the failures are caused by the damage and nothing else." />
+        }
+        {isVideo && mode === "test" && <div className="inline-fields"><label>Recovery file<input type="file" accept=".stegloc" onChange={(e) => setRecovery(e.target.files?.[0] ?? null)} /></label>
+          <label>Recovery code<input value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} /></label></div>}
+        {mode === "encode" && <div className="inline-fields"><label>Private signing key<textarea value={privateKey} onChange={(event) => setPrivateKey(event.target.value)} /></label>
+          <label>Key password<input type="password" value={keyPassword} onChange={(event) => setKeyPassword(event.target.value)} /></label></div>}
 
         <div className="field">
           <span className="field-label">Sender's public key</span>
@@ -162,15 +240,18 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
         {(reasonId) => (
           <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={run}
             aria-describedby={reasonId} aria-busy={busy}>
-            {busy ? <Spinner /> : <Icon name="zap" />} {busy ? "Running the tests…" : "Run tamper tests"}
+            {busy ? <Spinner /> : <Icon name="zap" />} {busy ? "Running the tests…" : mode === "encode" ? "Encode and test" : "Run tamper tests"}
           </button>
         )}
       </ActionBar>
       <p className="sr-live" role="status" aria-live="polite">
-        {busy ? "Damaging the file one way at a time and running the checker on each result." : ""}
+        {busy ? `Running ${jobPhase}: ${scenarios?.length ?? 0} of ${jobTotal || "?"} cases complete.` : ""}
       </p>
 
-      {scenarios && (
+      {busy && jobId && <button type="button" className="btn ghost" onClick={() => void requestJson(`/api/v2/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" })}>Cancel suite</button>}
+      {jobId && <a className="btn ghost" href={`/api/v4/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-v4-evidence.zip">Download evidence ZIP</a>}
+
+      {scenarios && scenarios.length > 0 && (
         <>
           {stale && (
             <StaleBanner reason={staleReason(changed)} busy={busy} onRerun={run} onDismiss={() => setStaleDismissed(true)} />
@@ -179,7 +260,7 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
             <Outcome tone={passed === scenarios.length ? "good" : "bad"}
               icon={passed === scenarios.length ? "shield" : "alert"}
               label="Result"
-              title={`${passed} of ${scenarios.length} behaved correctly`}
+              title={`${passed} of ${scenarios.length} completed cases behaved correctly`}
               headingRef={outcomeRef}
               summary={
                 <>
@@ -216,13 +297,18 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
                           : <div className="attack-bad">expected {scenario.expected.join(" or ")}</div>}
                         <Disclosure title="Why">
                           <p className="small">{scenario.summary}</p>
+                          {scenario.elapsed_ms !== undefined && <p className="small">Elapsed: {scenario.elapsed_ms.toLocaleString()} ms</p>}
+                          {scenario.stages && <p className="small">Stages: {scenario.stages.map((stage) => `${stage.id} ${stage.status}`).join(" · ")}</p>}
+                          {scenario.payload_hash && <div className="hash-evidence"><b>Payload SHA-256 · {scenario.payload_hash.status}</b>
+                            <p>Signed expected: <code>{scenario.payload_hash.expected ?? "Not reached"}</code> {scenario.payload_hash.expected_trusted ? "(trusted)" : "(not yet trusted)"}</p>
+                            <p>Computed decoded: <code>{scenario.payload_hash.computed ?? "Not reached"}</code></p></div>}
                         </Disclosure>
                       </td>
                       <td>
                         {scenario.file ? (
-                          <a className="btn ghost sm" href={fileUrl(scenario.file.id, true)} download={scenario.file.filename}>
+                          <div className="btn-row"><a className="btn ghost sm" href={artifactUrl(scenario.file.id)} download={scenario.file.filename}>
                             <Icon name="download" size={13} /> Save {scenario.file.filename}
-                          </a>
+                          </a><button type="button" className="btn ghost sm" onClick={() => setSelectedVariant(scenario)}>Examine variant</button></div>
                         ) : (
                           <span className="muted small">{noFileReason(scenario, Boolean(cover))}</span>
                         )}
@@ -232,6 +318,11 @@ export function AttackPage({ vault, handoff, goTo }: { vault: Vault; handoff: Ha
                 </tbody>
               </table>
             </div>
+            {selectedVariant?.file && <Panel title="Selected tampered variant" subtitle="The baseline working file remains unchanged.">
+              <p>{selectedVariant.file.filename} · {selectedVariant.file.size.toLocaleString()} bytes</p>
+              <p>Expected: {selectedVariant.expected.join(" or ")}. Observed: {selectedVariant.verdict}.</p>
+              <a className="btn ghost" href={artifactUrl(selectedVariant.file.id)} download={selectedVariant.file.filename}>Download this variant</a>
+            </Panel>}
           </div>
         </>
       )}

@@ -78,6 +78,7 @@ export interface HideStep {
 }
 
 export interface HideReport {
+  payload_hash?: import("../ui/hashEvidence").HashEvidenceData;
   cover: CoverInfo;
   stego_size: number;
   size_unchanged: boolean;
@@ -118,7 +119,8 @@ export interface VerifyResponse {
   verdict: VerdictName;
   summary: string;
   steps: VerifyStep[];
-  info: { cover?: CoverInfo; header?: Location; start?: Location; n_lsb?: number; package_bytes?: number; span_slots?: number };
+  info: { cover?: CoverInfo; header?: Location; start?: Location; n_lsb?: number; package_bytes?: number; span_slots?: number;
+    payload_hash?: import("../ui/hashEvidence").HashEvidenceData };
   record: SignedRecord | null;
   record_trusted: boolean;
   content: StoredFile | null;
@@ -231,6 +233,8 @@ export interface AnalysisDurations {
 }
 export interface AnalysisComparison {
   slots_changed: number; bits_changed: number; max_difference: number; psnr_db: number | null; mse: number; changed_map: string; amplified: string | null;
+  heatmap?: string;
+  audio_change_strip?: string; audio_change_note?: string;
   pixels_changed?: number; ssim?: number | null; original_preview?: string; stego_preview?: string;
 }
 
@@ -243,6 +247,9 @@ export interface Scenario {
   summary: string;
   as_expected: boolean;
   file: StoredFile | null;
+  payload_hash?: {expected?: string | null; computed?: string | null; status?: string; expected_trusted?: boolean} | null;
+  stages?: {id: string; status: string}[];
+  elapsed_ms?: number;
 }
 
 export interface KeyInfo {

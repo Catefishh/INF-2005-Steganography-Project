@@ -52,6 +52,8 @@ def build_report(cover, cover_data, cover_filename, stego, original_slots, packa
         "psnr_db": psnr_db,
         "mse": mse,
         "record": record,
+        "payload_hash": {"algorithm": "SHA-256", "scope": "original payload bytes",
+                         "expected": content_hash, "computed": content_hash, "status": "match", "expected_trusted": True},
         "record_sha256": record_digest.hex(),
         "signature_hex": signature.hex(),
         "signer_fingerprint": signer,

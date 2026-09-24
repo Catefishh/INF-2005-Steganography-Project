@@ -12,11 +12,12 @@ import { AnalysisTiming, BpcsSection, ChiSquareSection } from "../analyse/sectio
  * Results in the order of the strength of the evidence: the reading, then the exact difference,
  * then the statistical test, then the bit layers, then the histogram.
  */
-export function InspectResult({ analysis, busy, channel, outcomeRef, onChannel }: {
+export function InspectResult({ analysis, busy, channel, outcomeRef, planesRef, onChannel }: {
   analysis: Analysis;
   busy: boolean;
   channel: number;
   outcomeRef: React.RefObject<HTMLHeadingElement | null>;
+  planesRef: React.RefObject<HTMLDivElement | null>;
   onChannel: (index: number) => void;
 }) {
   const kind = analysis.info.kind;
@@ -39,7 +40,7 @@ export function InspectResult({ analysis, busy, channel, outcomeRef, onChannel }
         {kind === "image" && analysis.rs && <RsPanel rs={analysis.rs} />}
         <ChiSquareSection details={analysis.chi_square_details} busy={busy} />
 
-        <BitPlanesPanel analysis={analysis} busy={busy} channel={channel} onChannel={onChannel} />
+        <BitPlanesPanel analysis={analysis} busy={busy} channel={channel} planesRef={planesRef} onChannel={onChannel} />
       </div>
 
       <BpcsSection result={analysis} busy={busy} />

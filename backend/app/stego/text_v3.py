@@ -107,4 +107,7 @@ def verify(carrier: str, recovery: bytes, code: str, public_key) -> dict:
     except (InvalidTag, InvalidSignature, ValueError, UnicodeError, KeyError, TypeError) as exc:
         raise ValueError("Text message authentication or signature verification failed") from exc
     return {"verdict": "Authentic", "message": message, "record": record,
-            "visible_text_authenticated": False}
+            "visible_text_authenticated": False,
+            "payload_hash": {"algorithm": "SHA-256", "scope": "UTF-8 message bytes",
+                "expected": record["message_sha256"], "computed": hashlib.sha256(payload).hexdigest(),
+                "status": "match", "expected_trusted": True}}

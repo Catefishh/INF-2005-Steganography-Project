@@ -1,4 +1,4 @@
-/** Session jobs shared by the V2, text and robustness screens. */
+/** Session jobs used by text and robustness workflows. */
 export type Job<T> = {
   id: string;
   status: string;
@@ -43,14 +43,6 @@ export async function pollJob<T>(id: string, options: {
   }
   if (options.timeout) throw new Error(options.timeout);
   return null;
-}
-
-export async function runV2Job<T>(path: string, form: FormData,
-  update: (phase: string, id: string) => void): Promise<T> {
-  const started = await requestJson<Job<T>>(path, { method: "POST", body: form });
-  update(started.phase, started.id);
-  return (await pollJob(started.id, { attempts: 2400, onUpdate: update,
-    failed: "Processing failed", cancelled: "Processing was cancelled", timeout: "Processing timed out" }))!;
 }
 
 export async function runTextJob<T>(path: string, form: FormData,

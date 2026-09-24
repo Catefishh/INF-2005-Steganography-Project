@@ -12,6 +12,7 @@ export function TextPage() {
   const [method, setMethod] = useState("acrostic");
   const [message, setMessage] = useState("");
   const [visible, setVisible] = useState("");
+  const [generatedVisible, setGeneratedVisible] = useState("");
   const [carrier, setCarrier] = useState("");
   const [recovery, setRecovery] = useState<File | null>(null);
   const [code, setCode] = useState("");
@@ -46,7 +47,7 @@ export function TextPage() {
     } catch (cause) { setError(errorText(cause)); }
   }
   async function protect() {
-    setError(""); setStatus("Preparing text carrier"); setProtected(null); setVerified(null);
+    setError(""); setStatus("Preparing text carrier"); setProtected(null); setVerified(null); setGeneratedVisible("");
     try {
       await session();
       const form = new FormData();
@@ -55,6 +56,7 @@ export function TextPage() {
       setProtected(result); setCode(result.recovery_code);
       const produced = await generatedText(result.carrier.id);
       setCarrier(produced);
+      if (method === "acrostic") setGeneratedVisible(produced);
       setGeneratedInitials(method === "acrostic" ? produced.split("\n").map((line) => line[0] || "").join("") : "");
       const sidecar = await recoveryFile(result.recovery);
       if (sidecar) setRecovery(sidecar);
@@ -86,8 +88,9 @@ export function TextPage() {
     || carrier.split("\n").map((line) => line[0] || "").join("") === generatedInitials;
 
   return <div className="form-column">
-    <CarrierForm method={method} onMethod={(value) => { setMethod(value); setEstimate(null); }}
-      message={message} onMessage={setMessage} visible={visible} onVisible={setVisible}
+    <CarrierForm method={method} onMethod={(value) => { setMethod(value); setEstimate(null); setGeneratedVisible(""); }}
+      message={message} onMessage={(value) => { setMessage(value); setGeneratedVisible(""); }}
+      visible={method === "acrostic" ? generatedVisible : visible} onVisible={setVisible}
       onImport={(file) => void importText(file, setVisible)} onEstimate={() => void previewCapacity()} estimate={estimate} />
     <Panel title="Sender keys and protection">
       <div className="field"><label htmlFor="text-password">Key password</label><input id="text-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></div>
@@ -106,6 +109,11 @@ export function TextPage() {
       {!acrosticValid && <p className="note note-warn">The acrostic line count or initials changed. Restore them before export.</p>}
       <button type="button" className="btn ghost" disabled={!carrier || !acrosticValid} onClick={() => downloadText("stegloc-text-edited.txt", carrier)}>Save edited carrier</button>
       {carrier && <p className="field-hint">Diagnostic: {diagnostic}. Hidden message and sender are authenticated; visible wording is not.</p>}
+      {carrier && <details><summary>Before and after text characters</summary>
+        <div className="columns"><section><h3>Visible text before</h3><pre className="raw-json">{visible || "(generated acrostic text)"}</pre></section>
+          <section><h3>Carrier after</h3><pre className="raw-json">{carrier.replaceAll("\u200b", "[U+200B]").replaceAll("\u200c", "[U+200C]").replace(/ +$/gm, (spaces) => "·".repeat(spaces.length)).replace(/\t+$/gm, (tabs) => "→".repeat(tabs.length))}</pre></section></div>
+        <p>Trailing spaces appear as ·, tabs as →, and zero-width symbols by code point. Visible wording is not authenticated.</p>
+      </details>}
       <div className="field"><label htmlFor="text-recovery">Recovery material</label><input id="text-recovery" type="file" accept=".stegloc-text" onChange={(event) => setRecovery(event.target.files?.[0] ?? null)} /></div>
       <div className="field"><label htmlFor="text-code">Recovery code</label><input id="text-code" value={code} onChange={(event) => setCode(event.target.value)} /></div>
       <button type="button" className="btn primary" disabled={!carrier || !recovery || !code || !publicKey || Boolean(status)} onClick={() => void verify()}>Extract and verify</button>

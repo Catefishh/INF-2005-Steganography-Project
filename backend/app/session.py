@@ -30,6 +30,8 @@ class Job:
     phase: str = "queued"
     result: dict | None = None
     error: dict | None = None
+    cases: list[dict] = field(default_factory=list)
+    total_cases: int = 0
     cancel: threading.Event = field(default_factory=threading.Event)
 
 

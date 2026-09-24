@@ -8,6 +8,7 @@ import { differenceLabel, differenceReading, qualityReading, roomReading, touche
 import { embedMissing } from "../../requirements";
 import { LONG_MESSAGE, SHORT_MESSAGE } from "../../samples";
 import { errorText, formatBytes, shortHash, useDebounced, useObjectUrl, type Handoff, type Page, type Vault } from "../../util";
+import { HashEvidence } from "../../ui/hashEvidence";
 
 
 export function EmbedResult({ report, stego, usedCoverUrl, stegoUrl, team, onEdit, onHandOff }: {
@@ -72,6 +73,7 @@ export function EmbedResult({ report, stego, usedCoverUrl, stegoUrl, team, onEdi
         } />
 
       <InputStrip
+        
         items={[
           { label: "Cover", value: report.cover.filename ?? "-", icon: kind === "audio" ? "music" : "image" },
           { label: "Hidden", value: `${record.payload?.filename} · ${formatBytes(record.payload?.size ?? 0)}` },
@@ -84,6 +86,8 @@ export function EmbedResult({ report, stego, usedCoverUrl, stegoUrl, team, onEdi
             <Icon name="pen" size={14} /> Edit and run again
           </button>
         } />
+
+      {report.payload_hash && <HashEvidence evidence={report.payload_hash} title="Payload SHA-256 before embedding" />}
 
       <div className="metrics">
         <Metric label="Quality" value={quality.value} reading={quality.reading} tone={quality.tone} />

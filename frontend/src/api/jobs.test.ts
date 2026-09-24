@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { pollJob, runTextJob, runV2Job, type Job } from "./jobs";
+import { pollJob, runTextJob, type Job } from "./jobs";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -7,24 +7,24 @@ function response<T>(value: Job<T>) {
   return { ok: true, json: async () => value } as Response;
 }
 
-it("reports a V2 job's phases and returns its result", async () => {
+it("reports a text job's phase and returns its result", async () => {
   const fetch = vi.spyOn(globalThis, "fetch");
   fetch.mockResolvedValueOnce(response({ id: "a/b", status: "queued", phase: "queued", result: null, error: null }));
   fetch.mockResolvedValueOnce(response({ id: "a/b", status: "succeeded", phase: "complete", result: { file: "ready" }, error: null }));
   const phases: string[] = [];
-  const result = await runV2Job<{ file: string }>("/api/v2/jobs/protect", new FormData(),
+  const result = await runTextJob<{ file: string }>("/api/v3/jobs/text/protect", new FormData(),
     (phase) => phases.push(phase));
   expect(result.file).toBe("ready");
-  expect(phases).toEqual(["queued", "complete"]);
+  expect(phases).toEqual(["complete"]);
   expect(fetch.mock.calls[1][0]).toBe("/api/v2/jobs/a%2Fb");
 });
 
-it("keeps the V2 cancellation message and text job failure reason", async () => {
+it("reports cancellation and text job failure reasons", async () => {
   const fetch = vi.spyOn(globalThis, "fetch");
-  fetch.mockResolvedValueOnce(response({ id: "cancel", status: "queued", phase: "queued", result: null, error: null }));
   fetch.mockResolvedValueOnce(response({ id: "cancel", status: "cancelled", phase: "cancelled", result: null,
     error: { message: "internal detail" } }));
-  await expect(runV2Job("/api/v2/jobs/protect", new FormData(), () => undefined))
+  await expect(pollJob("cancel", { attempts: 1, onUpdate: () => undefined,
+    failed: "Processing failed", cancelled: "Processing was cancelled" }))
     .rejects.toThrow("Processing was cancelled");
 
   fetch.mockResolvedValueOnce(response({ id: "text", status: "queued", phase: "queued", result: null, error: null }));
