@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+desktop and web
 
 The application has a local React interface backed by Python, available in a browser or a packaged Windows desktop window.
 
@@ -14,7 +14,7 @@ INF2005 student team members demonstrating their implementation, markers reprodu
 
 ## Product Purpose
 
-Hide a verification record and user-supplied content in image and audio carriers through LSB replacement, then extract the content and verify its digital signature and integrity. Include video-inside-video as a later v1 extension after the mandatory workflows pass.
+Hide a verification record and user-supplied content in image, audio and supported video carriers, then extract the content and verify its digital signature and integrity. Present the workflows in one accessible desktop-first studio.
 
 ## Operating Context
 
@@ -31,19 +31,19 @@ Hide a verification record and user-supplied content in image and audio carriers
 - Exact byte-length preservation for compatible BMP and WAV carriers, with a separately labelled variable-size PNG export path.
 - Recovery uses an encrypted `.stegloc` sidecar and a separate randomly generated recovery code.
 - Confidentiality uses AES-256-GCM; Ed25519 and SHA-256 provide signing and integrity evidence.
-- Restricted uncompressed AVI remains a later milestone after the mandatory image/audio baseline.
+- Restricted uncompressed AVI is supported through the Ed25519 media workflow.
 
 ## Brand Commitments
 
-Follow the user's supplied instrument-dashboard reference: pale cool surfaces, dark slate navigation, cyan/turquoise, coral, restrained amber, fine technical linework, and prominent media/signal visualizations. Keep controls readable during a classroom demonstration.
+Follow the supplied Luminous Spatial Glass direction: pale cool canvas, translucent navigation, opaque technical evidence, sky-cyan controls, slate type, and restrained semantic warning/error colors. Keep controls readable during a classroom demonstration.
 
 ## Evidence On Hand
 
-The five-page INF2005 ACW1 assignment text and dashboard reference were supplied in the conversation. Required sample text is preserved in `docs/reference/assignment-excerpts.md`; the dashboard image must be saved to `docs/reference/dashboard-reference.png` before visual implementation. Actual test evidence and team contribution percentages must be produced by the team.
+The INF2005 assignment excerpts remain in `docs/reference/assignment-excerpts.md`. The current interface follows the supplied Luminous Spatial Glass specification and the adopted component patterns documented in `docs/ui-library-adoption.md`. Protocol formats and analysis limitations are documented separately.
 
 ## Implementation Status
 
-The original RSA/passphrase image/audio workflow, GUI, attack lab and Windows desktop distribution are present. The V2 API retains Ed25519/recovery-file protection, session-scoped jobs, image BPCS analysis and restricted AVI video carriers; its standalone Workbench page has been removed. V3 adds RS analysis, paired bit-plane and quality comparison, maximum usable payload capacity, secured text carriers and configurable image robustness. The legacy media protocols remain available for older files. See `docs/v2-protocol.md` for their format limits and the README for v3 features.
+The app combines the RSA/passphrase image/audio workflow, Ed25519 recovery-file media protocol, signed text protocol, attack lab, descriptive steganalysis and Windows desktop distribution. The interface is a single workflow-first studio. Protocol identifiers remain versioned for compatibility; they are not separate product releases. See `docs/v2-protocol.md`, `docs/v3-text-protocol.md`, and the README for format limits and current workflows.
 
 ## Product Principles
 

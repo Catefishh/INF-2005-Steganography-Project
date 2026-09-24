@@ -1,25 +1,24 @@
-# UI reference and motion adoption
+# UI libraries and interaction patterns
 
-## V4 update
+Stegloc is a React 19 / Vite desktop-first app with locally owned CSS. The supplied Luminous Spatial Glass design provides the light canvas, typography, contrast and elevation rules. Translucent glass frames navigation and the workspace; forms, charts and evidence remain on high-opacity surfaces.
 
-The v4 interface uses Watermelon UI's [dashboard gallery](https://ui.watermelon.sh/dashboards) as a layout reference for its navigation, compact status surfaces, and evidence cards. The dark glass styling is implemented in local CSS; no Watermelon code or runtime package is copied. [Motion for React](https://motion.dev/docs/react) is installed for navigation headings, panel entry, disclosures, the working-file strip, and arriving results. `MotionConfig reducedMotion="user"` follows the operating-system preference. Hash values, verdicts, and calculated metrics remain static. The earlier CSS-only decisions below describe the v3 release.
+## Component provenance
 
-The v4 browser pass covered the 639 px narrow layout, including its mobile menu and evidence surfaces. A stretched grid row initially left excessive space below the mobile rail; `align-content: start` corrected it. Keyboard focus and reduced-motion rules are retained, while the packaged Windows build includes pinned FFmpeg and ffprobe binaries plus redistribution notices.
-
-Stegloc keeps React, Vite, and plain CSS. [Watermelon UI dashboards](https://ui.watermelon.sh/dashboards) informed the clearer section and role line above each screen and the distinction between current navigation and supporting status. Its [animated components catalog](https://ui.watermelon.sh/animated-components) was used for discovery of restrained state changes. These are catalog-level references; no Watermelon component source was copied, and Watermelon is not a runtime dependency. The existing cool surfaces, slate rail, and teal/coral/amber meanings remain Stegloc's own design.
-
-Two [Motion-Primitives](https://motion-primitives.com/docs) patterns were adapted locally:
-
-| Reference | Local use | Adaptation |
+| Source | Local adoption | Dependency |
 | --- | --- | --- |
-| [Disclosure](https://motion-primitives.com/docs/disclosure) | Shared `Disclosure` in `frontend/src/ui/layout.tsx`; embed and verification options, BPCS settings, analysis timings | Existing semantic button, `aria-expanded`, `aria-controls`, and `hidden` body remain. CSS animates only an opened body. Closing hides controls immediately. |
-| [Animated Group](https://motion-primitives.com/docs/animated-group) | Shared `Reveal` in `frontend/src/ui/layout.tsx`; active screens and embed/inspect results | A single short CSS arrival indicates newly shown content. Content mounts immediately, can receive focus immediately, and keeps its normal DOM order. No stagger or delayed verdict. |
+| [shadcn sidebar blocks](https://ui.shadcn.com/blocks/sidebar) | `frontend/src/ui/sidebar.tsx` provides provider, sidebar, inset, trigger and menu composition, adapted to the existing History API and plain CSS | Local React components; no Tailwind or shadcn CLI |
+| [shadcn area charts](https://ui.shadcn.com/charts/area) | `frontend/src/ui/evidenceChart.tsx` wraps Recharts for chi-square segments, BPCS complexity and robustness measurements | `recharts` |
+| [Watermelon UI dashboards](https://ui.watermelon.sh/dashboards) | Visual reference for workflow hierarchy, status surfaces and evidence cards | No Watermelon runtime or copied component source |
+| [Motion for React](https://motion.dev/docs/react) | Page and result entry, sidebar, disclosure and working-file transitions | `motion` |
+| [Plus Jakarta Sans](https://fontsource.org/fonts/plus-jakarta-sans) | Bundled Latin 400–700 weights, with local system fallbacks | `@fontsource/plus-jakarta-sans` |
 
-Motion-Primitives' [source repository](https://github.com/ibelick/motion-primitives) is [MIT licensed](https://github.com/ibelick/motion-primitives/blob/main/LICENCE.md). Its published examples use Motion and Tailwind. The local adaptations use neither source code nor Tailwind classes; CSS and existing tokens cover these two behaviors, so `motion` is not installed. The only copied idea is the interaction pattern. If a future component needs Motion's interruption or layout sequencing, review the upstream source, license, dependencies, keyboard behavior, and reduced-motion path again before adding it.
+The original interactive ChartViewer remains for high-density histograms and image evidence. Its pop-out now opens a dedicated authenticated pywebview window (or a browser tab), rendered by `frontend/src/ui/GraphWindow.tsx` at `/graph/<id>`. Only typed graph measurements move between windows via a same-origin, session-only channel; graph data is not stored on the server. The sidebar uses a more transparent frosted plate with opaque active navigation and an opaque fallback without backdrop-filter support.
 
-The CSS in `frontend/src/styles.css` limits arrival to 180 ms and disclosure to 150 ms. It disables both under `prefers-reduced-motion: reduce`; the brand wave keeps its existing animation unless reduced motion is requested. Routing keeps inactive screens under `hidden`, which removes their controls from keyboard and accessibility navigation while preserving form state. Navigation moves focus to the new page heading. Result headings retain their own immediate focus and live announcement; verdict colors, wording, and analysis values do not animate.
+Recharts is loaded on demand through `frontend/src/ui/lazyEvidenceChart.tsx` when measured results first appear. Area and bar charts plot measured values only. Null and uninterpretable measurements read **Unavailable**, not zero. Accessible compact tables present the same values without chart interactions; long tables open on demand. Charts do not animate computed readings or claim to establish embedding or authenticity.
 
-## Install and verify
+`MotionConfig reducedMotion="user"` follows system preferences. CSS arrival effects and transitions have a `prefers-reduced-motion` fallback. Verdicts, hashes and measured values remain immediately available to assistive technology. Collapsed navigation keeps named links and browser-native title tooltips. Route focus and inactive-page behavior remain in `App.tsx`.
+
+## Reproduce the build
 
 From `frontend`:
 
@@ -32,16 +31,8 @@ npm run build
 From the repository root, with the documented Python environment:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_desktop.py -q
+.\.venv\Scripts\python.exe -m pytest -q
 .\scripts\build-desktop.ps1
 ```
 
-For a browser smoke pass, start the API and Vite servers with the commands in `README.md`, then visit the Vite URL. Check the shell, Embed & Sign, Extract & Verify, and Inspect a file at desktop and narrow widths, with keyboard navigation and reduced motion enabled.
-
-The Watermelon catalog's full dashboard templates, Motion-Primitives transition panels, in-view effects, and animated chart values are deferred. They would add complexity or suggest changing evidence when Stegloc's data is static. Revisit these references only for a concrete workflow need; keep upstream URLs and dependency decisions in this file when doing so.
-
-## Verification on 2026-09-23
-
-- Frontend: `npm test -- --run` passed 77 tests; `npm run build` passed.
-- Desktop: `tests/test_desktop.py` passed 9 tests; `scripts/build-desktop.ps1` built `dist/Stegloc/Stegloc.exe` with the generated frontend assets.
-- Browser: the narrow-width app shell, mobile menu, Embed & Sign, Extract & Verify, and Inspect a file were exercised at `127.0.0.1:5173`. The current page heading received focus after navigation, and optional settings opened with accessible expanded state. Desktop-width and emulated reduced-motion browser checks were unavailable in the in-app browser; the CSS media query and desktop layout were reviewed in source.
+For environments where pytest cannot access its default Windows temp directory, pass `--basetemp` pointing at a writable directory. For visual review, exercise each workflow in the packaged desktop app, toggle the sidebar, inspect charts with missing measurements, navigate with a keyboard and enable reduced motion.

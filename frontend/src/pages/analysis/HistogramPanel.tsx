@@ -13,10 +13,14 @@ export function HistogramPanel({ analysis }: { analysis: Analysis }) {
   return (
         <Panel title="Value histogram"
           subtitle="Replacing the lowest bit makes neighbouring pairs of bars the same height. Look for the comb pattern flattening out.">
-          <ChartViewer title="Inspected value histogram">
+          <ChartViewer title="Inspected value histogram" snapshot={{ kind: "histogram", title: "Inspected value histogram",
+            series: analysis.histograms, colors, min: String(range.min), max: String(range.max), axis: copy.histogramAxis,
+            notes: ["Replacing the lowest bit can flatten neighbouring pairs of bars. The pattern is descriptive evidence, not proof of embedding."] }}>
             <Histogram series={analysis.histograms} colors={colors} />{axis}
           </ChartViewer>
-          {analysis.reference_histograms && <ChartViewer title="Original reference histogram">
+          {analysis.reference_histograms && <ChartViewer title="Original reference histogram" snapshot={{ kind: "histogram", title: "Original reference histogram",
+            series: analysis.reference_histograms, colors, min: String(range.min), max: String(range.max), axis: copy.histogramAxis,
+            notes: ["Compare with the inspected file to assess measured changes. A histogram alone cannot establish authenticity."] }}>
             <Histogram series={analysis.reference_histograms} colors={colors} />{axis}
           </ChartViewer>}
         </Panel>

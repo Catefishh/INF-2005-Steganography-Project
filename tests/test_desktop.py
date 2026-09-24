@@ -14,6 +14,44 @@ import pytest
 from backend import desktop
 
 
+def test_graph_bridge_opens_only_local_graph_windows_and_can_close_each():
+    opened = []
+
+    def make_window(*args, **kwargs):
+        window = SimpleNamespace(destroy=lambda: opened.append("closed"))
+        opened.append((args, kwargs))
+        return window
+
+    bridge = desktop.GraphWindowBridge(SimpleNamespace(create_window=make_window),
+                                       "http://127.0.0.1:12345/_desktop/secret")
+    graph_id = "dc912f0d-7498-4d50-acb0-444395fd772d"
+    assert bridge.open_graph("../../api/health", "Bad") is False
+    assert bridge.open_graph(graph_id, "Value histogram") is True
+    assert "next=%2Fgraph%2F" in opened[0][0][1]
+    assert opened[0][1]["js_api"] is bridge
+    assert bridge.close_graph(graph_id) is True
+    assert opened[-1] == "closed"
+    assert bridge.close_graph(graph_id) is False
+
+
+def test_graph_bridge_forgets_windows_closed_with_the_title_bar():
+    class ClosedEvent:
+        callback = None
+
+        def __iadd__(self, callback):
+            self.callback = callback
+            return self
+
+    closed = ClosedEvent()
+    window = SimpleNamespace(events=SimpleNamespace(closed=closed), destroy=lambda: None)
+    bridge = desktop.GraphWindowBridge(SimpleNamespace(create_window=lambda *a, **k: window),
+                                       "http://127.0.0.1:12345/_desktop/secret")
+    graph_id = "dc912f0d-7498-4d50-acb0-444395fd772d"
+    assert bridge.open_graph(graph_id, "Histogram")
+    closed.callback()
+    assert bridge.close_graph(graph_id) is False
+
+
 def test_desktop_serves_ui_and_api_and_closes_socket(tmp_path):
     (tmp_path / "index.html").write_text("desktop interface", encoding="utf-8")
     with desktop.local_server(tmp_path) as start_url:

@@ -1,6 +1,6 @@
 # V2 workflow and recovery format
 
-V2 is the product workflow. Its sidecar wire format uses the independent `stegloc-v1` record and `STLC\x01` recovery-file version. This does not replace the older `STG1` in-carrier header described in [protocol.md](protocol.md). The older RSA/passphrase screens and `/api` endpoints remain available for previously protected files. A v2 file must be verified with the v2 recovery file, code and Ed25519 public key.
+V2 is a supported Ed25519 media protocol within the Stegloc application. Its sidecar wire format uses the independent `stegloc-v1` record and `STLC\x01` recovery-file version. This does not replace the older `STG1` in-carrier header described in [protocol.md](protocol.md). The RSA/passphrase screens and `/api` endpoints remain available for previously protected files. A v2 file must be verified with the v2 recovery file, code and Ed25519 public key.
 
 ## Sender and recipient
 

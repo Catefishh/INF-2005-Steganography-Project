@@ -4,6 +4,8 @@ import { errorText } from "../util";
 
 import { runRobustness, type Result } from "../api/robustness";
 import { artifactUrl } from "../api/jobs";
+import { EvidenceBarChart } from "../ui/lazyEvidenceChart";
+import { ChartViewer } from "../ui/chartViewer";
 
 export function RobustnessPanel() {
   const [stego, setStego] = useState<File | null>(null);
@@ -55,6 +57,18 @@ export function RobustnessPanel() {
     <button type="button" className="btn primary" disabled={!stego || !publicKey || Boolean(phase)} onClick={() => void run()}>Run image transformations</button>
     {phase && <p role="status">{phase}</p>}<ErrorNote text={error} />
     {result && <><p className="field-hint">Unmodified baseline: {result.baseline_verdict}. {result.note}</p>
+      <div className="evidence-card">
+        <p className="field-hint">PSNR measures image quality against each scenario's stated comparison basis. Infinite values are listed as unavailable on the finite chart; verification verdicts are shown below.</p>
+        <ChartViewer title="PSNR by transformation" snapshot={{ kind: "bar", title: "PSNR by transformation", unit: "dB",
+          points: result.scenarios.map((row) => ({ label: row.operation, value: row.metrics.psnr_db })),
+          notes: ["Quality is compared against the basis shown for each transformation. Infinite PSNR is not plotted on this finite scale.",
+            "Verification outcomes appear in the main window; quality metrics do not establish authenticity."],
+        }}>
+          <EvidenceBarChart label="PSNR by transformation" unit="dB" points={result.scenarios.map((row) => ({
+            label: row.operation, value: row.metrics.psnr_db,
+          }))} />
+        </ChartViewer>
+      </div>
       <div className="robust-grid">{result.scenarios.map((row) => <div className="robust-card" key={row.operation}>
         <h3>{row.operation} · {row.value}</h3>{row.preview && <img src={row.preview} alt={`${row.operation} transformed image`} />}
         <p>Verification: {row.verdict}</p>

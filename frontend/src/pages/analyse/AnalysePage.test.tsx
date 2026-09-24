@@ -36,10 +36,20 @@ it("uses the new Inspect layout to show descriptive BPCS and Chi-Square results"
   await waitFor(() => expect(screen.getByText(/Theoretical capacity/)).toBeInTheDocument());
   expect(screen.getByRole("heading", { name: "BPCS complexity segmentation" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Pop out Chi-square p-values by section" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Pop out Complex blocks by plane" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Pop out Inspected value histogram" })).toBeInTheDocument();
   expect(screen.getByText(/does not prove embedding/)).toBeInTheDocument();
   expect(screen.getByText(/presentation heuristic/)).toBeInTheDocument();
   expect(document.querySelector(".outcome")?.textContent).not.toMatch(/Something is hidden|has not been changed|looks embedded/);
+});
+
+it("shows measured chart data and keeps insufficient chi-square sections unavailable", async () => {
+  render(<AnalysePage handoff={null} />);
+  selectFile(picture);
+  fireEvent.click(screen.getByRole("button", { name: "Inspect file" }));
+  const chi = await screen.findByRole("table", { name: "Chi-square p-values data" });
+  expect(chi).toHaveTextContent("Section 2Unavailable");
+  expect(screen.getByRole("table", { name: "Complex blocks by plane data" })).toHaveTextContent("Bit 0100");
 });
 
 it("applies BPCS settings separately from channel changes and keeps invalid drafts local", async () => {

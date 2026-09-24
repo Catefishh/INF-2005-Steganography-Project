@@ -3,6 +3,7 @@
 import os
 import secrets
 import threading
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 
@@ -64,12 +65,21 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
     if desktop_token:
         cookie_name = f"stegloc_{desktop_token[:16]}"
 
+        def graph_destination(path):
+            if not isinstance(path, str) or not path.startswith("/graph/"):
+                return False
+            try:
+                return path == f"/graph/{uuid.UUID(path.removeprefix('/graph/'))}"
+            except (ValueError, TypeError):
+                return False
+
         @app.middleware("http")
         async def desktop_session(request: Request, call_next):
             if request.method == "GET" and secrets.compare_digest(
                 request.url.path.encode(), f"/_desktop/{desktop_token}".encode()
             ):
-                response = RedirectResponse("/", status_code=303)
+                next_path = request.query_params.get("next")
+                response = RedirectResponse(next_path if graph_destination(next_path) else "/", status_code=303)
                 response.set_cookie(cookie_name, desktop_token, httponly=True, samesite="strict")
                 response.headers["Cache-Control"] = "no-store"
                 response.headers["Referrer-Policy"] = "no-referrer"
@@ -99,6 +109,10 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
 
     dist = frontend_dist or FRONTEND_DIST
     if dist.is_dir():
+        def graph_entry(graph_id: str):
+            return FileResponse(dist / "index.html")
+
+        app.add_api_route("/graph/{graph_id}", graph_entry, methods=["GET"], include_in_schema=False)
         # Client routes must return the SPA shell on refresh and direct navigation.
         for route in ("/keys", "/embed", "/embed/result", "/verify", "/verify/result",
                       "/inspect", "/tamper-tests", "/v2", "/text"):
