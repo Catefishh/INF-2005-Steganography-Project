@@ -13,18 +13,21 @@ export function Histogram({ series, colors }: { series: number[][]; colors: stri
 }
 
 export function ChiStrip({ values, segments, threshold = 0.95 }: { values: (number | null)[]; segments?: ChiSquareSegment[]; threshold?: number }) {
+  const barWidth = 10;
+  const chartHeight = 124;
   return (
-    <div className="chi" role="img" aria-label="Chi-square p-value per segment">
+    <svg className="chi" viewBox={`0 0 ${Math.max(values.length, 1) * barWidth} ${chartHeight}`}
+      preserveAspectRatio="none" role="img" aria-label="Chi-square p-value per segment">
       {values.map((p, index) => (
-        <div key={index} className="chi-bar" title={segments?.[index]
-          ? `Segment ${index + 1}: ${segments[index].sample_count} samples, ${segments[index].valid_category_count} valid pairs; ${p === null ? segments[index].reason : `p = ${p.toFixed(4)}`}`
-          : p === null ? `Segment ${index + 1}: not enough data` : `Segment ${index + 1}: p = ${p.toFixed(4)}`}>
-          <span style={{
-            height: `${Math.max(2, (p ?? 0) * 100)}%`,
-            background: p === null ? "var(--line)" : p >= threshold ? "var(--coral)" : p >= 0.5 ? "var(--amber)" : "var(--teal)",
-          }} />
-        </div>
+        <rect key={index} x={index * barWidth + 1} width={barWidth - 2}
+          y={chartHeight - Math.max(2, (p ?? 0) * chartHeight)}
+          height={Math.max(2, (p ?? 0) * chartHeight)}
+          fill={p === null ? "var(--line)" : p >= threshold ? "var(--coral)" : p >= 0.5 ? "var(--amber)" : "var(--teal)"}>
+          <title>{segments?.[index]
+            ? `Segment ${index + 1}: ${segments[index].sample_count} samples, ${segments[index].valid_category_count} valid pairs; ${p === null ? segments[index].reason : `p = ${p.toFixed(4)}`}`
+            : p === null ? `Segment ${index + 1}: not enough data` : `Segment ${index + 1}: p = ${p.toFixed(4)}`}</title>
+        </rect>
       ))}
-    </div>
+    </svg>
   );
 }

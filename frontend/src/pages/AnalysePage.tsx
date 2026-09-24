@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Analysis } from "../api";
-import { ActionBar, Disclosure, DropZone, EmptyState, ErrorNote, Icon, Panel, Reveal, Spinner } from "../components";
+import { ActionBar, Disclosure, DropZone, EmptyState, ErrorNote, Icon, Panel, Spinner } from "../components";
 import { inspectMissing } from "../requirements";
 import { errorText, type Handoff } from "../util";
 import { appendBpcsForm, DEFAULT_BPCS_FORM, type BpcsForm, validateBpcsForm } from "./analyse/model";
@@ -166,9 +166,9 @@ export function AnalysePage({ handoff }: { handoff: Handoff | null }) {
         </EmptyState>
       )}
 
-      {result && <Reveal className="evidence-arrival"><InspectResult analysis={result} busy={busy} channel={channel}
+      {result && <div className="evidence-arrival"><InspectResult analysis={result} busy={busy} channel={channel}
         outcomeRef={outcomeRef} planesRef={planesRef}
-        onChannel={(index) => { focusTarget.current = "planes"; setChannel(index); void run(index, appliedBpcs); }} /></Reveal>}
+        onChannel={(index) => { focusTarget.current = "planes"; setChannel(index); void run(index, appliedBpcs); }} /></div>}
     </div>
   );
 }

@@ -183,4 +183,17 @@ def test_robustness_job_uses_real_v2_verifier():
         assert report["baseline_verdict"] == "Authentic"
         assert len(report["scenarios"]) == 5
         assert all(item["verdict"] != "Authentic" for item in report["scenarios"])
-        assert next(item for item in report["scenarios"] if item["operation"] == "crop")["metrics"] is None
+        resized = next(item for item in report["scenarios"] if item["operation"] == "resize")
+        assert resized["original_dimensions"] == [128, 128]
+        assert resized["result_dimensions"] == [96, 96]
+        assert resized["metrics"]["mse"] > 0
+        assert resized["metrics"]["psnr_db"] is not None
+        assert resized["metrics"]["ssim"] is not None
+        assert resized["metrics"]["basis"] == "Resized result restored to original dimensions"
+
+        cropped = next(item for item in report["scenarios"] if item["operation"] == "crop")
+        assert cropped["result_dimensions"] == [115, 115]
+        assert cropped["metrics"]["mse"] == 0
+        assert cropped["metrics"]["psnr_db"] is None
+        assert cropped["metrics"]["ssim"] == 1
+        assert cropped["metrics"]["retained_area_percent"] == pytest.approx(100 * 115 * 115 / (128 * 128))

@@ -1,5 +1,5 @@
 import type { Analysis, BpcsMetrics, ChiSquareDetails } from "../../api";
-import { ChiStrip, Disclosure, Icon, Panel, Stat } from "../../components";
+import { ChartViewer, ChiStrip, Disclosure, Icon, Panel, Stat } from "../../components";
 
 function Capacity({ metrics }: { metrics: BpcsMetrics }) {
   return <>{metrics.capacity_bits.toLocaleString()} bits ({metrics.capacity_bytes_floor.toLocaleString()} whole bytes + {metrics.capacity_remainder_bits} bits)</>;
@@ -53,12 +53,16 @@ export function ChiSquareSection({ details, busy }: { details: ChiSquareDetails;
   return (
     <Panel title="Chi-square pairs-of-values" aria-busy={busy}
       subtitle="Each bar covers one section in embedding order. Equalised neighbouring values can result from random LSB replacement or other causes.">
-      <ChiStrip values={details.segments.map((segment) => segment.p_value)} segments={details.segments} threshold={details.presentation_heuristic} />
-      <div className="legend">
-        <span><i style={{ background: "var(--teal)" }} /> p &lt; 0.5</span>
-        <span><i style={{ background: "var(--amber)" }} /> 0.5 to 0.95</span>
-        <span><i style={{ background: "var(--coral)" }} /> p ≥ {details.presentation_heuristic.toFixed(2)} presentation heuristic</span>
-      </div>
+      <ChartViewer title="Chi-square p-values by section" footer={<>
+        {interpretable === 0 && <p className="field-hint">No section has enough value pairs for a reliable p-value. Try a larger file; the whole-channel result below may still be interpretable.</p>}
+        <div className="legend">
+          <span><i style={{ background: "var(--teal)" }} /> p &lt; 0.5</span>
+          <span><i style={{ background: "var(--amber)" }} /> 0.5 to 0.95</span>
+          <span><i style={{ background: "var(--coral)" }} /> p ≥ {details.presentation_heuristic.toFixed(2)} presentation heuristic</span>
+        </div>
+      </>}>
+        <ChiStrip values={details.segments.map((segment) => segment.p_value)} segments={details.segments} threshold={details.presentation_heuristic} />
+      </ChartViewer>
       <div className="stats">
         <Stat label="Whole channel p" value={details.overall.p_value === null ? "not interpretable" : details.overall.p_value.toFixed(4)} />
         <Stat label="Interpretable sections" value={`${interpretable} of ${details.segments.length}`} />

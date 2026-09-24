@@ -3,7 +3,9 @@ import { pollJob, type Job } from "./jobs";
 
 export type Stored = { id: string; filename: string; size: number };
 export type Row = { operation: string; value: number; verdict: string; file: Stored; preview: string | null;
-  metrics: { mse: number; psnr_db: number | null; ssim: number | null } | null };
+  original_dimensions: [number, number]; result_dimensions: [number, number];
+  metrics: { mse: number; psnr_db: number | null; ssim: number | null; basis: string;
+    retained_area_percent: number | null } };
 export type Result = { baseline_verdict: string; scenarios: Row[]; note: string };
 
 export async function runRobustness(form: FormData, update: (phase: string) => void): Promise<Result | null> {

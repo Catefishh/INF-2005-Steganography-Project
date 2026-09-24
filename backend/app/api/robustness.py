@@ -4,7 +4,6 @@ import base64
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 
 from ..stego import robustness, engine
-from ..stego.analysis_parts.difference import compare as compare_media
 from ..stego.covers import load_cover
 from ..workflows import verify_image
 from ..stego.v2_security import load_verification_key
@@ -52,13 +51,14 @@ def attach(app: FastAPI) -> None:
                 output, extension = robustness.transform(carrier, name, value)
                 observed = verdict(output)
                 changed = load_cover(output)
-                comparable = changed.width == original.width and changed.height == original.height
-                metrics = compare_media(original, changed, max(1, (max(original.width, original.height) + 511) // 512)) if comparable else None
+                metrics = robustness.quality_metrics(original, changed, name)
                 ident = request.app.state.registry.artifact(session, output, f"{name}{extension}", "image/png", "attacked-image")
                 rows.append({"operation": name, "value": value, "verdict": observed,
                              "file": {"id": ident, "filename": f"{name}{extension}", "size": len(output)},
                              "preview": "data:image/png;base64," + base64.b64encode(output).decode("ascii") if len(output) < 2 * 1024 * 1024 else None,
-                             "metrics": {"mse": metrics["mse"], "psnr_db": metrics["psnr_db"], "ssim": metrics["ssim"]} if metrics else None})
+                             "original_dimensions": [original.width, original.height],
+                             "result_dimensions": [changed.width, changed.height],
+                             "metrics": metrics})
             return {"baseline_verdict": baseline, "scenarios": rows,
                     "note": "A failed verifier rejects this copy; it does not prove the hidden bits were destroyed."}
 
