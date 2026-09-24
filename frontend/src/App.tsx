@@ -26,7 +26,7 @@ const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Gro
   { id: "analyse", icon: "layers", label: "Inspect a file", role: "Analyst", group: "Examine",
     lede: "Look for signs that something is hidden in a file, without needing the password or any key." },
   { id: "attacks", icon: "zap", label: "Tamper tests", role: "Tester", group: "Examine",
-    lede: "Damage a protected file ten different ways and confirm the checker catches every one. Each damaged file can be saved." },
+    lede: "Damage a protected file in a dozen different ways and confirm the checker catches every one. Each damaged file can be saved." },
 ];
 
 const GROUPS: Group[] = ["Set up", "Send and receive", "Examine"];
