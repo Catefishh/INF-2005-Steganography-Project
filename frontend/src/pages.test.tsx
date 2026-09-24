@@ -189,6 +189,28 @@ it("sender: blocks until it has what it needs, then embeds and offers the downlo
   expect(primaries[0]).toHaveAttribute("download", "stego_harbour.png");
 });
 
+it("keeps the embedded file across receiving, inspection and tamper screens until cleared", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "Exact message"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "session password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("stego_harbour.png"));
+  await screenNamed("Extract & Verify");
+  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  await waitFor(() => expect(within(view()).getByLabelText("Shared password")).toHaveValue("session password"));
+  await screenNamed("Inspect a file");
+  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  await screenNamed("Tamper tests");
+  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  fireEvent.click(within(document.querySelector(".working-strip") as HTMLElement).getByRole("button", {name: "Clear workspace"}));
+  await waitFor(() => expect(document.querySelector(".working-strip")).toBeNull());
+  expect(within(view()).queryByText("stego_harbour.png")).toBeNull();
+});
+
 it("sender: says so when the payload will not fit, and offers the ways out", async () => {
   vi.spyOn(api, "estimate").mockResolvedValue({ package_bytes: 922757 });
   await appWithKeys();
@@ -210,8 +232,7 @@ it("receiver: reads the message, and reading the override panel does not arm it"
   pick("File to check", "stego_harbour.png");
   await waitFor(() => expect(within(view()).getByText("places to look in")).toBeInTheDocument());
 
-  // The password is deliberately not carried over from the sender screen.
-  expect(view().querySelector(".field-hint")).toHaveTextContent("Not carried over from Embed & Sign on purpose");
+  expect(view().querySelector(".field-hint")).toHaveTextContent("Session credentials stay loaded");
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
 
   // Opening the panel must not turn the override on: this was the worst trap in the audit.

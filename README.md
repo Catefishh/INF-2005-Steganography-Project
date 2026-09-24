@@ -18,7 +18,7 @@ INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside 
 | **Embed & sign** (party A) | Drag in a cover and a payload (text or any file), choose 1-8 LSBs and the start location, then embed |
 | **Extract & verify** (party B) | Drag in the received stego file, enter the passphrase and public key, get a verdict |
 | **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
-| **Attack lab** | Runs up to 10 positive/negative scenarios and lets you download the tampered sample files |
+| **Tamper tests** | Runs live positive/negative cases for media and text, with downloadable evidence and variants |
 | **Text Steganography** | Signed, encrypted messages in acrostic, trailing-whitespace, or zero-width text |
 
 ## V3 analysis and text
@@ -184,6 +184,8 @@ slot 0 ... start ............ start+span ...... last 520 slots
 | Cover | Output | Size preserved? |
 | --- | --- | --- |
 | PCM WAV 8/16/24/32-bit, any channel count (incl. WAVE_FORMAT_EXTENSIBLE) | WAV, patched in place | **Yes, byte-identical length** |
+| MP3 audio source | Prepared 16-bit PCM WAV, then WAV stego | Conversion changes the source format; embedding preserves the prepared WAV length |
+| MP4 or MOV video source | Selected silent uncompressed 24-bit AVI segment, then AVI stego | Conversion changes the source format; embedding preserves the prepared AVI length |
 | BMP | BMP | Yes for standard 24-bit BMP |
 | PNG, JPEG, GIF, WEBP, TIFF, palette / 16-bit images | PNG | No: PNG re-compresses (pixels and dimensions are exact) |
 

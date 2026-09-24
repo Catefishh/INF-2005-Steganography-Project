@@ -90,7 +90,7 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
   useEffect(() => {
     if (!result) return;
     if (focusTarget.current === "planes") {
-      planesRef.current?.scrollIntoView({ block: "start" });
+      planesRef.current?.scrollIntoView?.({ block: "start" });
       focusTarget.current = "reading";
     } else outcomeRef.current?.focus();
   }, [result]);

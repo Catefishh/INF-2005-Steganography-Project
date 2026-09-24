@@ -31,7 +31,7 @@ export function relativeTime(from: number, now: number = Date.now()): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export const OVERRIDE_HINT = "Not carried over from Embed & Sign on purpose — a real receiver has to type it in.";
+export const OVERRIDE_HINT = "Session credentials stay loaded while you navigate. Replace them when checking a file from another sender.";
 
 /** Shown only while the override is armed, so an active override can never be missed. */
 const OVERRIDE_WARNING = "With it on, the hidden data is read from the place you type here instead of the place "
@@ -77,6 +77,8 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     if (!handoff) return;
     requestRevision.current += 1;
     setStego(handoff.stego);
+    setPassphrase(handoff.passphrase);
+    if (handoff.publicPem) setPublicPem(handoff.publicPem);
     setFromHandoff(true);
     setResult(null);
   }, [handoff]);

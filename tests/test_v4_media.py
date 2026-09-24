@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import subprocess
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -10,7 +11,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.api.v4_media import _binary
+from backend.app.api.v4_media import _binary, _run
+from backend.app.cancellation import installed
 from backend.app.main import create_app
 from backend.app.stego.carriers.video import inspect_video
 from backend.app.stego.covers import load_cover
@@ -56,6 +58,39 @@ def test_real_media_preparation(tmp_path, kind):
             assert prepared.json()["conversion"]["audio_omitted"] is True
 
 
+def test_media_rejects_invalid_source_and_oversized_video(tmp_path):
+    with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
+        invalid = client.post("/api/v4/media/probe", files={"file": ("claim.mp4", b"not a movie")})
+        assert invalid.status_code == 400
+        try:
+            source = _sample(tmp_path / "source.mov", "mov")
+        except ValueError:
+            pytest.skip("FFmpeg not available in this environment")
+        large_source_path = tmp_path / "large.mp4"
+        subprocess.run([_binary("ffmpeg"), "-nostdin", "-v", "error", "-f", "lavfi", "-i",
+            "testsrc=size=640x360:rate=1:duration=1", "-c:v", "mpeg4", "-y", str(large_source_path)],
+            check=True, capture_output=True, timeout=20)
+        oversized = client.post("/api/v4/media/prepare", data={"duration": "30", "fps": "30",
+            "max_width": "640", "max_height": "360"}, files={"file": ("large.mp4", large_source_path.read_bytes())})
+        assert oversized.status_code == 400
+        assert "64 MiB" in oversized.text
+        invalid_setting = client.post("/api/v4/media/prepare", data={"duration": "31"},
+            files={"file": ("source.mov", source)})
+        assert invalid_setting.status_code == 400
+
+
+def test_missing_converter_and_cancellable_subprocess(monkeypatch):
+    monkeypatch.setattr(Path, "is_file", lambda _path: False)
+    monkeypatch.setattr("backend.app.api.v4_media.shutil.which", lambda _name: None)
+    with pytest.raises(ValueError, match="unavailable"):
+        _binary("ffmpeg")
+    started = time.monotonic()
+    with installed(lambda: (_ for _ in ()).throw(InterruptedError())):
+        with pytest.raises(InterruptedError):
+            _run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=10)
+    assert time.monotonic() - started < 2
+
+
 def test_video_wrong_slot_retry_and_binary_payload(tmp_path):
     try:
         source = _sample(tmp_path / "source.mp4", "mp4")
@@ -79,10 +114,14 @@ def test_video_wrong_slot_retry_and_binary_payload(tmp_path):
         recovery = client.get(f"/api/v2/artifacts/{result['recovery']['id']}").content
         form = {"recovery_code": result["recovery_code"], "public_key": keys["public_key"]}
         files = {"stego": ("stego.avi", stego), "recovery": ("recovery.stegloc", recovery)}
-        wrong = client.post("/api/v4/video/verify", data={**form, "start_slot": "1"}, files=files)
+        wrong = client.post("/api/v4/video/verify", data={**form, "start_slot": "0"}, files=files)
         assert wrong.status_code == 200, wrong.text
         assert wrong.json()["verdict"] == "Wrong Start Location"
         assert wrong.json()["content"] is None
+        second_wrong = client.post("/api/v4/video/verify", data={**form, "start_slot": "-1"}, files=files)
+        assert second_wrong.status_code == 200, second_wrong.text
+        assert second_wrong.json()["verdict"] == "Wrong Start Location"
+        assert second_wrong.json()["content"] is None
         correct = client.post("/api/v4/video/verify", data=form, files=files)
         assert correct.status_code == 200, correct.text
         assert correct.json()["verdict"] == "Authentic"
@@ -125,6 +164,9 @@ def test_live_showcase_encode_and_export():
                 assert hashlib.sha256(bundle.read(name)).hexdigest() == digest
             assert private not in evidence.content
             assert b"testing passphrase" not in evidence.content
+        with TestClient(client.app, base_url="http://127.0.0.1:8000") as unrelated:
+            unrelated.post("/api/v2/session")
+            assert unrelated.get(f"/api/v4/jobs/{started.json()['id']}/evidence").status_code == 404
 
 
 @pytest.mark.parametrize("method", ["acrostic", "whitespace", "zero-width"])
