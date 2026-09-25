@@ -8,7 +8,6 @@ import json
 import re
 import time
 import zipfile
-from pathlib import Path
 import numpy as np
 from PIL import Image
 
@@ -20,10 +19,9 @@ from ..stego import engine
 from ..stego import text_v3
 from ..stego.covers import load_cover
 from ..stego.carriers.video import inspect_video
-from ..stego.protocol import MAX_CONTENT_BYTES
 from ..stego.v2_security import (load_verification_key, generate_signing_keys, decode_recovery_code,
-    derive_keys, _parse_sidecar, _decrypt_and_verify_locator, load_signing_key)
-from ..workflows import verify_video, protect_video
+    derive_keys, _parse_sidecar, _decrypt_and_verify_locator)
+from ..workflows import verify_video
 from .session_jobs import _launch, _read, _session
 
 
@@ -31,21 +29,19 @@ def attach(app: FastAPI) -> None:
     @app.post("/api/v4/jobs/text-showcase")
     async def text_showcase(request: Request, mode: str = Form("test"), carrier: UploadFile | None = File(None),
                             recovery: UploadFile | None = File(None), recovery_code: str = Form(""),
-                            public_key: str = Form(...), message: str = Form(""), method: str = Form("acrostic"),
-                            visible: str = Form(""), private_key: str = Form(""), key_password: str = Form("")):
+                            public_key: str = Form(...)):
         _session(request)
-        if mode not in {"test", "encode"}:
+        if mode != "test":
             raise HTTPException(400, "Unknown showcase mode")
         text_bytes = await _read(carrier, "text carrier", text_v3.MAX_CARRIER) if carrier and carrier.filename else None
         sidecar = await _read(recovery, "text recovery", 4096) if recovery and recovery.filename else None
-        if not public_key or mode == "test" and (text_bytes is None or sidecar is None or not recovery_code) or mode == "encode" and not private_key:
+        if not public_key or text_bytes is None or sidecar is None or not recovery_code:
             raise HTTPException(400, "Required text verification material is missing")
-        if len(public_key) > 32768 or len(private_key) > 32768 or len(key_password) > 1024:
+        if len(public_key) > 32768:
             raise HTTPException(400, "Key input is too long")
         try:
-            text = text_bytes.decode("utf-8") if text_bytes is not None else None
+            text = text_bytes.decode("utf-8")
             key = load_verification_key(public_key.encode())
-            signer = load_signing_key(private_key.encode(), key_password.encode() or None) if mode == "encode" else None
         except (UnicodeError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -55,13 +51,6 @@ def attach(app: FastAPI) -> None:
             job.phase = "baseline"
             started = time.monotonic()
             active, material, code = text, sidecar, recovery_code
-            generated = None
-            if mode == "encode":
-                product = text_v3.protect(message, method, visible, signer)
-                active, material, code = product["carrier"], product["recovery"], product["recovery_code"]
-                ident = request.app.state.registry.artifact(session, active.encode("utf-8"),
-                    "showcase_text.txt", "text/plain; charset=utf-8", "showcase")
-                generated = {"id": ident, "filename": "showcase_text.txt", "size": len(active.encode("utf-8"))}
             rows = []
             def case(ident, title, change, expected, candidate, use_code=code, use_key=key):
                 check()
@@ -76,41 +65,36 @@ def attach(app: FastAPI) -> None:
                 job.progress = min(99, round(len(rows) / job.total_cases * 100))
             case("baseline", "Unmodified text", "none", ["Authentic"], active)
             if rows[0]["verdict"] != "Authentic":
-                return {"cases": rows, "generated": generated, "baseline_authentic": False}
+                return {"cases": rows, "baseline_authentic": False}
             case("wrong_code", "Wrong recovery code", "invalid code", ["Cannot Verify"], active, code + "-wrong")
             _, unrelated = generate_signing_keys()
             case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Cannot Verify"], active,
                  use_key=load_verification_key(unrelated))
-            damaged = _damage_text_symbol(active, method if mode == "encode" else json.loads(material)["method"])
+            damaged = _damage_text_symbol(active, json.loads(material)["method"])
             case("symbol_damage", "Hidden symbol damaged", "one encoded symbol changed", ["Cannot Verify"], damaged)
-            visible_edit = _change_visible_text(active, method if mode == "encode" else json.loads(material)["method"])
+            visible_edit = _change_visible_text(active, json.loads(material)["method"])
             case("visible_wording", "Visible wording edited", "one visible character changed", ["Authentic"], visible_edit)
-            return {"cases": rows, "generated": generated, "baseline_authentic": True,
+            return {"cases": rows, "baseline_authentic": True,
                 "input_sha256": hashlib.sha256(active.encode("utf-8")).hexdigest()}
 
         return _launch(request, "text-showcase", work)
 
     @app.post("/api/v4/jobs/showcase")
     async def showcase(request: Request, stego: UploadFile | None = File(None), cover: UploadFile | None = File(None),
-                       mode: str = Form("test"), payload: UploadFile | None = File(None),
-                       private_key: str = Form(""), key_password: str = Form(""), depth: int = Form(3),
+                       mode: str = Form("test"),
                        conversion_settings: str = Form(""),
                        passphrase: str = Form(""), public_key: str = Form(...),
                        recovery: UploadFile | None = File(None), recovery_code: str = Form("")):
         _session(request)
-        if mode not in {"test", "encode"}:
+        if mode != "test":
             raise HTTPException(400, "Unknown showcase mode")
-        carrier = await _read(stego, "stego") if mode == "test" and stego and stego.filename else None
+        carrier = await _read(stego, "stego") if stego and stego.filename else None
         original = await _read(cover, "original") if cover and cover.filename else None
-        content = await _read(payload, "payload", MAX_CONTENT_BYTES) if payload and payload.filename else None
-        video_source = carrier if carrier is not None else original or b""
-        video = video_source[:4] == b"RIFF" and video_source[8:12] == b"AVI "
+        video = carrier is not None and carrier[:4] == b"RIFF" and carrier[8:12] == b"AVI "
         sidecar = await _read(recovery, "Recovery", 8192) if recovery and recovery.filename else None
-        if (not video and not passphrase) or not public_key or (
-            mode == "test" and (carrier is None or video and (not sidecar or not recovery_code))
-        ) or (mode == "encode" and (original is None or content is None or not private_key or not 1 <= depth <= 8)):
+        if (not video and not passphrase) or not public_key or carrier is None or video and (not sidecar or not recovery_code):
             raise HTTPException(400, "Required verification credentials are missing")
-        if len(passphrase) > 1024 or len(public_key) > 32768 or len(private_key) > 32768 or len(key_password) > 1024:
+        if len(passphrase) > 1024 or len(public_key) > 32768:
             raise HTTPException(400, "Verification input is too long")
         if len(conversion_settings) > 4096:
             raise HTTPException(400, "Conversion settings are too long")
@@ -123,7 +107,7 @@ def attach(app: FastAPI) -> None:
 
         def work(session, check):
             job = session.jobs[session.active_job]
-            dct = mode == "test" and not video and engine.detect_method(load_cover(carrier)) == "dct"
+            dct = not video and engine.detect_method(load_cover(carrier)) == "dct"
             if video:
                 job.total_cases = 7
             elif dct:
@@ -141,31 +125,9 @@ def attach(app: FastAPI) -> None:
                 job.progress = min(99, round(len(job.cases) / job.total_cases * 100))
                 job.phase = case["title"]
 
-            generated = None
-            generated_recovery = None
             heatmap = None
             active = carrier
             active_sidecar, active_code = sidecar, recovery_code
-            if mode == "encode":
-                job.phase = "encoding"
-                if video:
-                    signer = load_signing_key(private_key.encode(), key_password.encode() if key_password else None)
-                    product = protect_video(original, content, signer, metadata={
-                        "filename": payload.filename, "media_type": payload.content_type or "application/octet-stream"}, depth=depth)
-                    active, active_sidecar, active_code = product.carrier, product.sidecar, product.recovery_code
-                else:
-                    active, _, _ = engine.hide(original, cover.filename or "cover", content,
-                        payload.filename, payload.content_type or "application/octet-stream", passphrase,
-                        private_key.encode(), key_password.encode() or None, depth, "auto")
-                check()
-                ext = ".avi" if video else load_cover(active).extension
-                ident = request.app.state.registry.artifact(session, active, "showcase_stego" + ext,
-                    "video/x-msvideo" if video else "audio/wav" if ext == ".wav" else "image/png", "showcase")
-                generated = {"id": ident, "filename": "showcase_stego" + ext, "size": len(active)}
-                if video:
-                    recovery_ident = request.app.state.registry.artifact(session, active_sidecar,
-                        "recovery.stegloc", "application/octet-stream", "sidecar")
-                    generated_recovery = {"id": recovery_ident, "filename": "recovery.stegloc", "size": len(active_sidecar)}
             if video:
                 scenarios, files = _video_suite(active, active_sidecar, active_code, public_key.encode(), completed, check)
             else:
@@ -186,9 +148,7 @@ def attach(app: FastAPI) -> None:
             for row in job.cases:
                 row["file"] = stored.get(row["id"])
             return {"cases": job.cases, "elapsed_ms": round((time.monotonic() - started) * 1000),
-                    "input_sha256": hashlib.sha256(active).hexdigest(), "generated": generated,
-                    "generated_recovery": generated_recovery,
-                    "recovery_code": active_code if mode == "encode" and video else None,
+                    "input_sha256": hashlib.sha256(active).hexdigest(),
                     "heatmap": heatmap,
                     "conversion_settings": conversion,
                     "baseline_authentic": bool(scenarios and scenarios[0]["as_expected"])}
@@ -226,12 +186,9 @@ def attach(app: FastAPI) -> None:
                     data = artifact.data
                     add(name, data)
             if job.result:
-                for field, name in (("generated", "samples/showcase_stego"), ("heatmap", "heatmaps/embedding.png")):
-                    descriptor = job.result.get(field)
-                    if descriptor and descriptor["id"] in session.artifacts:
-                        artifact = session.artifacts[descriptor["id"]]
-                        suffix = Path(artifact.filename).suffix if field == "generated" else ""
-                        add(name + suffix, artifact.data)
+                descriptor = job.result.get("heatmap")
+                if descriptor and descriptor["id"] in session.artifacts:
+                    add("heatmaps/embedding.png", session.artifacts[descriptor["id"]].data)
             bundle.writestr("sha256-manifest.json", json.dumps(manifest, indent=2))
         return Response(content.getvalue(), media_type="application/zip", headers={
             "Content-Disposition": 'attachment; filename="stegloc-v4-evidence.zip"',

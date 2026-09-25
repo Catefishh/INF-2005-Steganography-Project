@@ -13,6 +13,7 @@ export interface Vault {
 /** Files passed from the sender page to the receiver / analysis / attack pages. */
 export interface Handoff {
   id: string;
+  origin?: "embed" | "manual";
   method?: "lsb" | "dct";
   protocol?: "legacy" | "v2-video";
   sourceCover?: File | null;

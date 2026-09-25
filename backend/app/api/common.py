@@ -1,4 +1,6 @@
 """Shared request parsing and response models for legacy routes."""
+import math
+
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
@@ -41,9 +43,12 @@ def _optional_float(value, name):
     if value is None or str(value).strip() == "":
         return None
     try:
-        return float(value)
+        parsed = float(value)
     except ValueError as exc:
         raise HTTPException(400, f"{name} must be a number.") from exc
+    if not math.isfinite(parsed):
+        raise HTTPException(400, f"{name} must be a finite number.")
+    return parsed
 
 
 def _bad_request(exc):

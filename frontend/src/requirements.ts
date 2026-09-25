@@ -29,12 +29,9 @@ export interface VerifyInputs {
   hasFile: boolean;
   hasPassphrase: boolean;
   hasPublicKey: boolean;
-  /** True while a result is on screen that no longer describes the form. */
-  needsRecheck?: boolean;
 }
 
 export function verifyMissing(inputs: VerifyInputs): string[] {
-  if (inputs.needsRecheck) return ["re-run, because the inputs changed"];
   const missing: string[] = [];
   if (!inputs.hasFile) missing.push("the file you received");
   if (!inputs.hasPassphrase) missing.push("the shared password");

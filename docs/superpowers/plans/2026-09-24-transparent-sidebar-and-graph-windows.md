@@ -57,5 +57,5 @@
 
 - [ ] Run `npm test -- --run` and `npm run build` from `frontend`.
 - [ ] Run `.\.venv\Scripts\python.exe -m pytest -q --basetemp="C:\Users\jwooh\AppData\Local\Temp\opencode\stegloc-graph-pytest"` from repository root.
-- [ ] Run `scripts/build-desktop.ps1`; confirm packaged graph chunk and fonts under `dist/Stegloc/_internal/frontend/dist/assets`.
+- [ ] Run `build-windows.bat`; confirm packaged graph chunk and fonts under `dist/Stegloc/_internal/frontend/dist/assets`.
 - [ ] Review `git diff --check`, the final diff, and existing route and protocol tests; note if this harness cannot perform visual two-window interaction.

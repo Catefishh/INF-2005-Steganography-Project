@@ -143,6 +143,8 @@ def check_n_lsb(n_lsb):
 def max_bytes(n_slots, n_lsb, start=0):
     """Maximum bytes that fit from `start` (lecture: n_bytes = h * w * 3 // 8)."""
     check_n_lsb(n_lsb)
+    if not isinstance(start, int) or isinstance(start, bool) or start < 0:
+        raise ValueError("Start location cannot be negative.")
     if start >= n_slots:
         return 0
     return (n_slots - start) * n_lsb // 8

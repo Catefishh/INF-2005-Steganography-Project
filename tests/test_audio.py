@@ -1,9 +1,11 @@
+import math
 import struct
 
 import numpy as np
 import pytest
 
 from backend.app.stego.covers import AudioCover, CoverError, load_cover
+from backend.app.stego.legacy_capacity import resolve_manual_start
 
 
 def wav(*, bits=16, channels=2, frames=80, rate=8000, chunks=None, tag=1, extensible=False):
@@ -74,3 +76,41 @@ def test_stable_hash_covers_headers_and_unmasked_bytes():
 def test_rejects_unsupported_wav(data, message):
     with pytest.raises(CoverError):
         load_cover(data)
+
+
+def test_rejects_truncated_data_chunk():
+    data = bytearray(wav(frames=1, channels=1))
+    data_chunk = data.index(b"data")
+    struct.pack_into("<I", data, data_chunk + 4, 2)
+    del data[-1]
+    struct.pack_into("<I", data, 4, len(data) - 8)
+
+    with pytest.raises(CoverError, match="truncated"):
+        load_cover(bytes(data))
+
+
+@pytest.mark.parametrize("seconds", [math.inf, -math.inf, math.nan])
+def test_rejects_non_finite_start_time(seconds):
+    cover = load_cover(wav())
+
+    with pytest.raises(ValueError, match="finite"):
+        cover.slot_from_seconds(seconds)
+    with pytest.raises(ValueError, match="finite"):
+        resolve_manual_start(cover, start_seconds=seconds)
+
+
+def test_rejects_incorrect_riff_size():
+    data = bytearray(wav())
+    struct.pack_into("<I", data, 4, len(data) - 9)
+
+    with pytest.raises(CoverError, match="RIFF"):
+        load_cover(bytes(data))
+
+
+def test_rejects_missing_odd_chunk_padding():
+    data = bytearray(wav(chunks=[(b"JUNK", b"odd")]))
+    data.pop()
+    struct.pack_into("<I", data, 4, len(data) - 8)
+
+    with pytest.raises(CoverError, match="truncated"):
+        load_cover(bytes(data))

@@ -1,4 +1,4 @@
-# Build from Windows with scripts/build-desktop.ps1.
+# Build from Windows with build-windows.bat.
 from pathlib import Path
 
 root = Path(SPECPATH)

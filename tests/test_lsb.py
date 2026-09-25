@@ -63,3 +63,8 @@ def test_capacity_errors():
     with pytest.raises(ValueError):
         lsb.encode(slots, b"a", 0, 0)
     assert lsb.max_bytes(16, 2, 4) == 3
+
+
+def test_max_bytes_rejects_negative_start():
+    with pytest.raises(ValueError, match="Start"):
+        lsb.max_bytes(16, 1, -1)

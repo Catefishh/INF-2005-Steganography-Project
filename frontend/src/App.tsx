@@ -60,7 +60,7 @@ export default function App() {
   }, [handoff?.id]);
 
   function replaceWorkingFile(file: File | null) {
-    setHandoff(file ? { id: crypto.randomUUID(), stego: file, cover: null,
+    setHandoff(file ? { id: crypto.randomUUID(), origin: "manual", stego: file, cover: null,
       passphrase: "", publicPem: vault.publicPem, serial: Date.now() } : null);
     if (!file) setWorkspaceEpoch((value) => value + 1);
     if (!file) { embedAvailable.current = false; lastEmbedView.current = "form"; }
@@ -199,10 +199,11 @@ export default function App() {
         <Reveal hidden={route.page !== "verify"}>
           <VerifyPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo}
             showResult={route.page === "verify" && route.view === "result"}
-            onShowResult={showVerifyResult} />
+            onShowResult={showVerifyResult}
+            active={route.page === "verify"} />
         </Reveal>
         <Reveal hidden={route.page !== "analyse"}><AnalysePage key={workspaceEpoch} handoff={handoff} onWorkingFile={replaceWorkingFile} /></Reveal>
-        <Reveal hidden={route.page !== "attacks"}><AttackPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} onHandoff={setHandoff} goTo={goTo} /></Reveal>
+        <Reveal hidden={route.page !== "attacks"}><AttackPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo} /></Reveal>
       </SidebarInset>
     </SidebarProvider></MotionConfig>
   );

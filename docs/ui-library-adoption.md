@@ -7,7 +7,7 @@ Stegloc is a React 19 / Vite desktop-first app with locally owned CSS. The suppl
 | Source | Local adoption | Dependency |
 | --- | --- | --- |
 | [shadcn sidebar blocks](https://ui.shadcn.com/blocks/sidebar) | `frontend/src/ui/sidebar.tsx` provides provider, sidebar, inset, trigger and menu composition, adapted to the existing History API and plain CSS | Local React components; no Tailwind or shadcn CLI |
-| [shadcn area charts](https://ui.shadcn.com/charts/area) | `frontend/src/ui/evidenceChart.tsx` wraps Recharts for chi-square segments, BPCS complexity and robustness measurements | `recharts` |
+| [shadcn area charts](https://ui.shadcn.com/charts/area) | `frontend/src/ui/evidenceChart.tsx` wraps Recharts for chi-square segments and BPCS complexity | `recharts` |
 | [Watermelon UI dashboards](https://ui.watermelon.sh/dashboards) | Visual reference for workflow hierarchy, status surfaces and evidence cards | No Watermelon runtime or copied component source |
 | [Motion for React](https://motion.dev/docs/react) | Page and result entry, sidebar, disclosure and working-file transitions | `motion` |
 | [Plus Jakarta Sans](https://fontsource.org/fonts/plus-jakarta-sans) | Bundled Latin 400–700 weights, with local system fallbacks | `@fontsource/plus-jakarta-sans` |
@@ -32,7 +32,7 @@ From the repository root, with the documented Python environment:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-.\scripts\build-desktop.ps1
+.\build-windows.bat
 ```
 
 For environments where pytest cannot access its default Windows temp directory, pass `--basetemp` pointing at a writable directory. For visual review, exercise each workflow in the packaged desktop app, toggle the sidebar, inspect charts with missing measurements, navigate with a keyboard and enable reduced motion.

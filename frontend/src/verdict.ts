@@ -33,7 +33,7 @@ const HEADLINE: Record<VerdictName, string> = {
   Authentic: "This file is genuine",
   Tampered: "Something in this file has been changed",
   "Signature Invalid": "This file was not signed by the key you supplied",
-  "Payload Missing": "There is nothing hidden in this file",
+  "Payload Missing": "No readable hidden payload was found",
   "Wrong Start Location": "Looked in the wrong place",
   "Cannot Verify": "Cannot check this file",
 };
@@ -55,8 +55,8 @@ const SUMMARY: Record<VerdictName, string> = {
     + "it changed after it was signed. The failing check above names what changed.",
   "Signature Invalid": "The file carries a signature that does not match the public key you "
     + "supplied. Either it was signed with a different key, or the signed record was replaced.",
-  "Payload Missing": "No hidden data was found where the file says it should be. The file may never "
-    + "have carried anything from this tool, or its lowest bits were overwritten.",
+  "Payload Missing": "No recognizable hidden header was found in this copy. It may never have carried "
+    + "a payload, or an edit may have changed the bits needed to find one.",
   "Wrong Start Location": "Nothing was found at the place you chose. The password was accepted, so "
     + "the file itself is intact. Turn the override off to read from the place the file records.",
   "Cannot Verify": "Nothing could be read out of it. The most likely reason is a wrong password, "

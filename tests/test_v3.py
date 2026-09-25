@@ -1,4 +1,4 @@
-"""Independent checks for v3 analysis, text carriers and robustness."""
+"""Independent checks for v3 analysis and text carriers."""
 import io
 import base64
 import time
@@ -15,9 +15,9 @@ from backend.app.stego.analysis_parts.difference import compare as compare_media
 from backend.app.stego.analysis_parts.bit_planes import render as render_planes
 from backend.app.stego.analysis_parts.common import grid as preview_grid
 from backend.app.stego.covers import load_cover
-from backend.app.stego import robustness, text_v3
+from backend.app.stego import text_v3
 from backend.app.stego.v2_security import generate_signing_keys, load_signing_key, load_verification_key
-from backend.app.workflows import estimate, protect_image
+from backend.app.workflows import estimate
 from test_audio import wav
 from test_video_v2 import avi
 
@@ -122,19 +122,13 @@ def test_text_rejects_oversized_input_and_ambiguous_whitespace():
         text_v3.encode(b"abc", "whitespace", "A line with a trailing space ")
 
 
-def test_capacity_true_maximum_and_attacks():
+def test_capacity_true_maximum():
     cover = _png(np.random.default_rng(2005).integers(0, 256, (128, 128, 3), dtype=np.uint8))
     for sample in cover, wav(frames=16000), avi():
         report = estimate(sample, 1, depth=3)
         maximum = report["maximum_message_bytes"]
         assert estimate(sample, maximum, depth=3)["fits_at_selected_start"]
         assert not estimate(sample, maximum + 1, depth=3)["fits_at_selected_start"]
-    original = Image.open(io.BytesIO(cover))
-    for name, value in (("resize", .75), ("crop", .9), ("jpeg", 75), ("noise", 2), ("brightness", 1.1)):
-        transformed, extension = robustness.transform(cover, name, value)
-        assert extension == ".png" and transformed == robustness.transform(cover, name, value)[0]
-        assert Image.open(io.BytesIO(transformed)).format == "PNG"
-    assert Image.open(io.BytesIO(cover)).size == original.size
 
 
 def _finished(client, ident):
@@ -165,35 +159,3 @@ def test_text_api_smoke():
         assert client.post("/api/v3/jobs/text/verify", data={"recovery_code": protected["recovery_code"],
             "public_key": public.decode()}, files={"carrier": ("carrier.txt", b"\xff"),
             "recovery": ("recovery.stegloc-text", recovery)}).status_code == 400
-
-
-def test_robustness_job_uses_real_v2_verifier():
-    private, public = generate_signing_keys()
-    cover = _png(np.random.default_rng(2005).integers(0, 256, (128, 128, 3), dtype=np.uint8))
-    protected = protect_image(cover, b"robustness sample", load_signing_key(private))
-    with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
-        assert client.post("/api/v2/session").status_code == 200
-        attack = client.post("/api/v3/jobs/robustness", data={"protocol": "v2", "public_key": public.decode(),
-            "recovery_code": protected.recovery_code}, files={"stego": ("stego.png", protected.carrier),
-            "recovery": ("recovery.stegloc", protected.sidecar)})
-        assert attack.status_code == 200, attack.text
-        result = _finished(client, attack.json()["id"])
-        assert result["status"] == "succeeded", result
-        report = result["result"]
-        assert report["baseline_verdict"] == "Authentic"
-        assert len(report["scenarios"]) == 5
-        assert all(item["verdict"] != "Authentic" for item in report["scenarios"])
-        resized = next(item for item in report["scenarios"] if item["operation"] == "resize")
-        assert resized["original_dimensions"] == [128, 128]
-        assert resized["result_dimensions"] == [96, 96]
-        assert resized["metrics"]["mse"] > 0
-        assert resized["metrics"]["psnr_db"] is not None
-        assert resized["metrics"]["ssim"] is not None
-        assert resized["metrics"]["basis"] == "Resized result restored to original dimensions"
-
-        cropped = next(item for item in report["scenarios"] if item["operation"] == "crop")
-        assert cropped["result_dimensions"] == [115, 115]
-        assert cropped["metrics"]["mse"] == 0
-        assert cropped["metrics"]["psnr_db"] is None
-        assert cropped["metrics"]["ssim"] == 1
-        assert cropped["metrics"]["retained_area_percent"] == pytest.approx(100 * 115 * 115 / (128 * 128))

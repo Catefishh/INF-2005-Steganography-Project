@@ -8,7 +8,7 @@ Image senders can choose **DCT · lossless PNG** in Embed & Sign. It uses one bi
 2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
 3. Extract and verify. Compare the signed expected payload digest with the decoded digest. A wrong manual start keeps the same file and offers immediate retry or the authenticated stored location.
 4. Inspect the prepared cover against the stego file with side-by-side, swipe, overlay, and heatmap views. For video, inspect individual frames and the timeline. For WAV, the strip shows changes across time and channels.
-5. Open Tamper tests. Choose **Encode and test** or **Test protected file** for image, WAV, AVI, or text carriers. Watch each case finish, including wrong-location correction and a controlled legacy payload-hash mismatch, then download the evidence ZIP. Passwords, recovery codes, private keys, and extracted plaintext are excluded from that ZIP.
+5. Open Tamper tests with a protected image, WAV, AVI, or text carrier from the relevant embedding workflow. Watch each case finish, including wrong-location correction and a controlled legacy payload-hash mismatch, then download the evidence ZIP. Passwords, recovery codes, private keys, and extracted plaintext are excluded from that ZIP.
 
 Prepared MOV/MP4 video uses the Ed25519 workflow with a separate recovery file and code. MP3 becomes WAV; MOV/MP4 becomes silent AVI. The downloaded stego format is the prepared lossless format. Working files live only for the current app session.
 
@@ -27,7 +27,7 @@ INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside 
 
 **Inspect a file** now offers image-only RS statistics, paired cover/stego histograms and bit planes 0–7, an even/odd filter (bit 0: even black, odd white), and full-resolution luminance SSIM. Its before/after slider and change overlay show exactly where pixels differ. RS, histograms and chi-square are descriptive evidence; they cannot prove a message is present. MSE, PSNR and SSIM require a same-size original image. SSIM uses 11×11 windows, so it is unavailable below 11×11 pixels.
 
-The BPCS number in Inspect is a theoretical estimate. The image robustness simulator in **Tamper tests** independently applies resize, center crop, JPEG round-trip, noise and brightness changes, then reports actual legacy or v2 verifier outcomes. Resize/crop have no direct image-quality comparison because dimensions change.
+The BPCS number in Inspect is a theoretical estimate. Tamper tests run controlled positive and negative verification cases against protected files.
 
 **Text Steganography** (`/text`) uses existing Ed25519 keys and an independent v3 text format. Enter a message, select a method, generate an encrypted carrier, and download its text and `.stegloc-text` recovery material. Pass the code separately. Paste or import the carrier on the recipient side with the recovery file, code and public key. The hidden message and sender are authenticated; visible wording is not. Acrostic lines may be rewritten if the A–P initials and order remain exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The input message limit is 32 KiB and the resulting UTF-8 carrier limit is 2 MiB. See [the text format](docs/v3-text-protocol.md) for exact framing and limitations.
 
@@ -41,7 +41,7 @@ Inspect a file also provides image-only BPCS settings and complexity maps, plus 
 
 ## Desktop studio interface
 
-The application uses a workflow-first collapsible sidebar with transparent frosted glass. The active file and its digest remain visible across screens; the Inspect workspace presents descriptive chi-square and BPCS charts, while the image robustness simulator under Tamper tests compares measured PSNR values. Use **Pop out graph** to open a separate graph-only Stegloc window (or browser tab) with a larger plot, zoom and measured-value details. The source analysis must remain available in the main window. Sidebar components follow the local [shadcn sidebar pattern](https://ui.shadcn.com/blocks/sidebar); measured charts adapt [shadcn area charts](https://ui.shadcn.com/charts/area) using Recharts. Watermelon UI remains a visual reference and Motion for React handles short, reduced-motion-aware transitions. Fonts and chart code are included in the packaged frontend for offline use. Details: [UI adoption](docs/ui-library-adoption.md).
+The application uses a workflow-first collapsible sidebar with transparent frosted glass. The active file and its digest remain visible across screens; the Inspect workspace presents descriptive chi-square and BPCS charts. Use **Pop out graph** to open a separate graph-only Stegloc window (or browser tab) with a larger plot, zoom and measured-value details. The source analysis must remain available in the main window. Sidebar components follow the local [shadcn sidebar pattern](https://ui.shadcn.com/blocks/sidebar); measured charts adapt [shadcn area charts](https://ui.shadcn.com/charts/area) using Recharts. Watermelon UI remains a visual reference and Motion for React handles short, reduced-motion-aware transitions. Fonts and chart code are included in the packaged frontend for offline use. Details: [UI adoption](docs/ui-library-adoption.md).
 
 ## Run the packaged Windows app
 
@@ -80,14 +80,13 @@ With the virtual environment activated, the launch command is `python desktop.py
 
 ## Build the Windows distribution
 
-Build on Windows after completing development setup:
+From the repository root on Windows, run the single build script:
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install ".[desktop,build]"
-.\scripts\build-desktop.ps1
+```bat
+build-windows.bat
 ```
 
-The script builds the frontend and packages a windowed application at `dist\Stegloc\Stegloc.exe`. It uses `.venv\Scripts\python.exe` by default; select another prepared environment with `-Python "C:\path\to\python.exe"`. Distribute the entire `dist\Stegloc` folder, for example as a ZIP archive.
+The script creates `.venv` if needed, installs the pinned Python and frontend dependencies, downloads and verifies FFmpeg when needed, builds the frontend, and packages a windowed application at `dist\Stegloc\Stegloc.exe`. Install Python 3.11+ and Node.js 20.19+ or 22.12+ first. WebView2 is required on machines that run the packaged app. Distribute the entire `dist\Stegloc` folder, for example as a ZIP archive.
 
 ## Run in a browser during development
 
@@ -215,7 +214,7 @@ backend/app/api/               HTTP routes, uploads, sessions and jobs
 backend/desktop.py             desktop window and internal server lifecycle
 desktop.py                     desktop launch entry point
 Stegloc.spec                   Windows folder distribution
-scripts/build-desktop.ps1      frontend and desktop build
+build-windows.bat              dependency installation and Windows desktop build
 backend/app/stego/lsb.py       LSB encode / decode (lecture style)
 backend/app/stego/covers.py    legacy image/WAV cover objects -> slots
 backend/app/stego/carriers/    V2 image, WAV and AVI adapters

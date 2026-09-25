@@ -158,11 +158,6 @@ describe("missing inputs", () => {
       .toEqual(["something small enough to fit in this cover"]);
   });
 
-  it("asks for a re-run rather than listing inputs when a result is out of date", () => {
-    expect(verifyMissing({ hasFile: true, hasPassphrase: true, hasPublicKey: true, needsRecheck: true }))
-      .toEqual(["re-run, because the inputs changed"]);
-  });
-
   it("keeps the heading and the list in agreement", () => {
     expect(missingHeading([])).toBe("Ready");
     expect(missingHeading(["one"])).toBe("One thing still needed");

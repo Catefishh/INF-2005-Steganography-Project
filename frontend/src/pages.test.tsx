@@ -200,15 +200,74 @@ it("keeps the embedded file across receiving, inspection and tamper screens unti
   fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
   await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("stego_harbour.png"));
   await screenNamed("Extract & Verify");
-  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  expect(within(view()).getAllByText("stego_harbour.png").length).toBeGreaterThan(0);
   await waitFor(() => expect(within(view()).getByLabelText("Shared password")).toHaveValue("session password"));
   await screenNamed("Inspect a file");
-  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  expect(within(view()).getAllByText("stego_harbour.png").length).toBeGreaterThan(0);
   await screenNamed("Tamper tests");
-  expect(within(view()).getByText("stego_harbour.png")).toBeInTheDocument();
+  expect(within(view()).getAllByText("stego_harbour.png").length).toBeGreaterThan(0);
   fireEvent.click(within(document.querySelector(".working-strip") as HTMLElement).getByRole("button", {name: "Clear workspace"}));
   await waitFor(() => expect(document.querySelector(".working-strip")).toBeNull());
   expect(within(view()).queryByText("stego_harbour.png")).toBeNull();
+});
+
+it("receiver opens the file picker and marks a replacement as an independent upload", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "hello"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("stego_harbour.png"));
+  await screenNamed("Extract & Verify");
+  expect(within(view()).getByText(/Loaded from Embed & Sign/)).toBeInTheDocument();
+  const input = view().querySelector<HTMLInputElement>('#verify-file-slot input[type="file"]')!;
+  const openPicker = vi.spyOn(input, "click").mockImplementation(() => undefined);
+  fireEvent.click(within(view()).getByRole("button", {name: "Use a different file"}));
+  expect(openPicker).toHaveBeenCalledOnce();
+  setFiles(input, new File([new Uint8Array(16)], "external.png", {type: "image/png"}));
+  fireEvent.change(input);
+  await waitFor(() => expect(within(view()).getByText("external.png")).toBeInTheDocument());
+  expect(within(view()).queryByText(/Loaded from Embed & Sign/)).not.toBeInTheDocument();
+});
+
+it("receiver rejects a private PEM uploaded as the sender's public key", async () => {
+  await appWithKeys();
+  await screenNamed("Extract & Verify");
+  fireEvent.click(within(view()).getByRole("button", {name: "Use a different key"}));
+  const field = within(view()).getByLabelText("Sender's RSA public key").closest(".field")!;
+  const input = field.querySelector<HTMLInputElement>('input[type="file"]')!;
+  setFiles(input, new File(["-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----"], "private_key.pem"));
+  fireEvent.change(input);
+  expect(await within(view()).findByRole("alert")).toHaveTextContent("private key");
+  expect(within(view()).getByLabelText("Sender's RSA public key")).toHaveValue("");
+});
+
+it("receiver can check again with a different uploaded public key", async () => {
+  await appWithKeys();
+  await screenNamed("Extract & Verify");
+  pick("File to check", "stego_harbour.png");
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Check file/}));
+  await waitFor(() => expect(window.location.pathname).toBe("/verify/result"));
+  fireEvent.click(within(view()).getByRole("button", {name: "Change and check again"}));
+  await waitFor(() => expect(window.location.pathname).toBe("/verify"));
+  fireEvent.click(within(view()).getByRole("button", {name: "Use a different key"}));
+
+  const field = within(view()).getByLabelText("Sender's RSA public key").closest(".field")!;
+  const input = field.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const otherKey = "-----BEGIN PUBLIC KEY-----\nother\n-----END PUBLIC KEY-----";
+  setFiles(input, new File([otherKey], "publickey.pem"));
+  fireEvent.change(input);
+  await waitFor(() => expect(within(view()).getByLabelText("Sender's RSA public key")).toHaveValue(otherKey));
+
+  const check = within(view()).getByRole("button", {name: /Check file/});
+  expect(check).toBeEnabled();
+  fireEvent.click(check);
+  await waitFor(() => expect(api.verify).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(api.verify).mock.calls[1][0].get("public_key")).toBe(otherKey);
 });
 
 it("restores the latest embed result from the sidebar and keeps its download after Edit", async () => {
@@ -423,13 +482,27 @@ it("tester: leads with the count and keeps every damaged file downloadable", asy
   });
   await appWithKeys();
   await screenNamed("Tamper tests");
+  expect(within(view()).queryByRole("button", { name: "Encode and test" })).not.toBeInTheDocument();
   pick("Protected file", "stego_harbour.png");
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
   fireEvent.click(within(view()).getByRole("button", { name: /Run tamper tests/ }));
 
   await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 applicable cases behaved correctly"));
+  const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/v4/jobs/showcase")?.[1]?.body as FormData;
+  expect(sent.get("stego")).toBeInstanceOf(File);
+  expect(sent.has("payload")).toBe(false);
+  expect(sent.has("private_key")).toBe(false);
   expect(within(view()).getAllByText("as expected")).toHaveLength(2);
   expect(within(view()).getByRole("link", { name: /Save harbour_flip.png/ })).toBeInTheDocument();
   expect(within(view()).getByText("file unchanged")).toBeInTheDocument();
   expect(within(view()).getAllByText(/Expected:/)).toHaveLength(2);
+});
+
+it("tester: text carriers use only existing protected files", async () => {
+  await appWithKeys();
+  await screenNamed("Tamper tests");
+  fireEvent.click(within(view()).getByRole("button", { name: "Text carrier tests" }));
+  expect(within(view()).getByText("Protected text file")).toBeInTheDocument();
+  expect(within(view()).queryByRole("button", { name: "Encode and test" })).not.toBeInTheDocument();
+  expect(within(view()).queryByText("Ed25519 private key")).not.toBeInTheDocument();
 });
