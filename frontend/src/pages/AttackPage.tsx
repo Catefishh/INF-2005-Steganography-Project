@@ -10,7 +10,7 @@ import { artifactUrl, requestJson, type Job } from "../api/jobs";
 import { RobustnessPanel } from "./RobustnessPanel";
 import { TextShowcase } from "./TextShowcase";
 
-const STEGO_ACCEPT = "image/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,audio/wav";
+const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi";
 const STEGO_SLOT_ID = "tamper-file-slot";
 const COVER_SLOT_ID = "tamper-cover-slot";
 
@@ -176,7 +176,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
         </ol>
         <div className="columns">
           {mode === "test" && <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
-            title="Drop the protected file" hint="picture or WAV produced by Embed & Sign"
+            title="Drop the protected file" hint="image, audio, or video file produced by Embed & Sign"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="shield" file={stego}
             onFile={(file) => { requestRevision.current += 1; setStego(file); onWorkingFile?.(file); setScenarios(null); }} />}
           <DropZone label={<>Original cover <span className="opt">{mode === "test" ? "(optional)" : "· required"}</span></>} id={COVER_SLOT_ID}
@@ -242,7 +242,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
 
       <ActionBar missing={missing} heading={ready ? "Ready" : undefined}>
         {(reasonId) => (
-          <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={run}
+          <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}
             aria-describedby={reasonId} aria-busy={busy}>
             {busy ? <Spinner /> : <Icon name="zap" />} {busy ? "Running the tests…" : mode === "encode" ? "Encode and test" : "Run tamper tests"}
           </button>
@@ -332,7 +332,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
           </div>
         </>
       )}
-      <RobustnessPanel />
+      <RobustnessPanel handoff={handoff} />
     </div>
   );
 }

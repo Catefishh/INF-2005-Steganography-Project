@@ -17,6 +17,6 @@ export async function runRobustness(form: FormData, update: (phase: string) => v
     throw new Error(body.detail || "Could not start attacks");
   }
   const started = await response.json() as Job<Result>;
-  return pollJob(started.id, { attempts: 1200, onUpdate: update,
+  return pollJob(started.id, { attempts: 1200, onUpdate: (phase) => update(phase),
     failed: (state) => state.status, cancelled: (state) => state.status });
 }
