@@ -46,11 +46,10 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
                                [Verdict.AUTHENTIC], base))
     if stop_on_failed_baseline and base["verdict"] != Verdict.AUTHENTIC:
         return scenarios, files
+    # Credential and manual-location probes are handled by Verify, not this integrity suite.
     cover = load_cover(stego)
     ext = cover.extension
     if detect_method(cover) == "dct":
-        scenarios.append(_scenario("wrong_passphrase", "Wrong passphrase", "receiver types a different passphrase",
-                                   [Verdict.CANNOT_VERIFY], verify(stego, passphrase + "-wrong", public_pem)))
         _, other_public = generate_rsa_keys()
         scenarios.append(_scenario("wrong_key", "Wrong public key", "verify with an unrelated RSA key",
                                    [Verdict.SIGNATURE_INVALID], verify(stego, passphrase, other_public)))
@@ -73,8 +72,7 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
             scenarios.append(_scenario("flip_payload_bit", "DCT payload bit changed",
                                        "invert the first encoded bit of the encrypted payload",
                                        [Verdict.TAMPERED], verify(altered, passphrase, public_pem), "flip_payload_bit"))
-        for name, title in (("wrong_start", "Manual LSB start"),
-                            ("lsb_noise", "LSB overwrite"), ("forged_payload", "LSB package forgery")):
+        for name, title in (("lsb_noise", "LSB overwrite"), ("forged_payload", "LSB package forgery")):
             scenarios.append({"id": name, "title": title, "change": "LSB-only attack is unsupported for DCT",
                               "expected": [], "verdict": "Unsupported", "summary": "This attack assumes pixel LSB framing.",
                               "as_expected": True, "file": None, "stages": []})
@@ -89,10 +87,6 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
                                        [Verdict.PAYLOAD_MISSING, Verdict.CANNOT_VERIFY, Verdict.TAMPERED],
                                        verify(back.getvalue(), passphrase, public_pem), "jpeg"))
         return scenarios, files
-
-    # Wrong passphrase
-    scenarios.append(_scenario("wrong_passphrase", "Wrong passphrase", "receiver types a different passphrase",
-                               [Verdict.CANNOT_VERIFY], verify(stego, passphrase + "-wrong", public_pem)))
 
     # Wrong public key (someone else's key)
     _, other_public = generate_rsa_keys()
@@ -120,15 +114,6 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
     files["flip_payload_bit"] = ("tampered_payload_bit" + ext, tampered)
     scenarios.append(_scenario("flip_payload_bit", "1 bit changed inside the payload", f"flip the LSB at {where}",
                                [Verdict.TAMPERED], verify(tampered, passphrase, public_pem), "flip_payload_bit"))
-
-    override = start + 1
-    scenarios.append(_scenario("wrong_start", "Wrong start location", f"extract from slot {override:,} instead of "
-                               f"{start:,} ({cover.location(override)['text']})", [Verdict.WRONG_START],
-                               verify(stego, passphrase, public_pem, start_slot=override)))
-    if include_hash_mismatch:
-        scenarios.append(_scenario("corrected_start", "Corrected start location",
-                                   f"retry the same file at authenticated slot {start:,}", [Verdict.AUTHENTIC],
-                                   verify(stego, passphrase, public_pem, start_slot=start)))
 
     noisy = load_cover(stego)
     rng = np.random.default_rng(2005)

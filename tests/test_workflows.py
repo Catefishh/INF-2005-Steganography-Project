@@ -119,7 +119,9 @@ def test_attack_suite_behaves_as_expected(keys, kind):
     cover = png() if kind == "image" else wav(frames=8000)
     stego, _, _ = protect(cover, keys)
     scenarios, files = run_suite(stego, "pass phrase", keys[1], cover)
-    assert len(scenarios) == 10
+    assert len(scenarios) == 8
+    assert "wrong_passphrase" not in {s["id"] for s in scenarios}
+    assert "wrong_start" not in {s["id"] for s in scenarios}
     failures = [(s["id"], s["verdict"], s["summary"]) for s in scenarios if not s["as_expected"]]
     assert failures == []
     assert set(files) >= {"flip_cover_bit", "flip_payload_bit", "lsb_noise", "forged_payload"}

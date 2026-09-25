@@ -26,7 +26,7 @@ const TONE: Record<VerdictName, Tone> = {
   "Signature Invalid": "bad",
   "Payload Missing": "warn",
   "Wrong Start Location": "warn",
-  "Cannot Verify": "flat",
+  "Cannot Verify": "warn",
 };
 
 const HEADLINE: Record<VerdictName, string> = {

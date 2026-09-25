@@ -65,7 +65,7 @@ const VERDICT_TONE: Record<VerdictName, string> = {
   "Signature Invalid": "bad",
   "Payload Missing": "warn",
   "Wrong Start Location": "warn",
-  "Cannot Verify": "neutral",
+  "Cannot Verify": "warn",
 };
 
 /**

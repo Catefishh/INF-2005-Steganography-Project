@@ -48,7 +48,7 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone }: {
       }}
     >
       <input ref={input} type="file" accept={accept} hidden onClick={(event) => event.stopPropagation()} onChange={(event) => {
-        const picked = event.target.files?.item(0);
+         const picked = event.target.files?.[0];
         if (picked) onFile(picked);
         event.target.value = "";
       }} />
@@ -90,7 +90,7 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
         </span>
       </div>
       <input ref={input} type="file" accept=".pem,.key,.pub,.txt" hidden onChange={(event) => {
-        readFile(event.target.files?.item(0));
+        readFile(event.target.files?.[0]);
         event.target.value = "";
       }} />
       <textarea

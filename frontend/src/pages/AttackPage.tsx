@@ -119,6 +119,8 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
   const passed = applicable.filter((s) => s.as_expected).length;
   const negatives = applicable.filter((s) => s.expected[0] !== "Authentic").length;
   const rejectedAsExpected = applicable.filter((s) => s.expected[0] !== "Authentic" && s.as_expected).length;
+  const tamperingEvidence = applicable.filter((s) => s.verdict === "Tampered" || s.verdict === "Signature Invalid").length;
+  const inconclusive = applicable.filter((s) => s.verdict === "Cannot Verify").length;
   const saved = scenarios?.filter((s) => s.file !== null).length ?? 0;
   const baseline = scenarios?.find((s) => s.id === POSITIVE_ID);
 
@@ -127,7 +129,9 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     if (scenarios) outcomeRef.current?.focus();
   }, [scenarios]);
 
-  if (media === "text") return <TextShowcase back={() => setMedia("binary")} onWorkingFile={onWorkingFile} />;
+  if (media === "text") return <TextShowcase back={() => setMedia("binary")} onWorkingFile={onWorkingFile}
+    initialCarrier={handoff?.stego ?? null} initialRecovery={handoff?.recovery ?? null}
+    initialCode={handoff?.recoveryCode ?? ""} initialPublicKey={handoff?.publicPem ?? ""} />;
 
   return (
     <div className="form-column">
@@ -224,15 +228,17 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
             <Outcome tone={passed === applicable.length ? "good" : "bad"}
               icon={passed === applicable.length ? "shield" : "alert"}
               label="Result"
-              title={`${passed} of ${applicable.length} applicable cases behaved correctly`}
+               title={baseline?.verdict === "Authentic" ? "Baseline file is genuine" : "Baseline file could not be confirmed genuine"}
                headingRef={outcomeRef}
                summary={
                  <>
-                   Baseline: {baseline?.verdict ?? "not run"}.
-                   {negatives > 0 && ` ${rejectedAsExpected} of ${negatives} rejection checks matched their expected verdicts.`}
+                    {baseline?.verdict === "Authentic" ? "The baseline is genuine and its integrity checks passed." : `The baseline could not be confirmed genuine (${baseline?.verdict ?? "not run"}).`}
+                    {tamperingEvidence > 0 && ` ${tamperingEvidence} test${tamperingEvidence === 1 ? " found" : "s found"} evidence of tampering or an invalid signature.`}
+                    {inconclusive > 0 && ` ${inconclusive} result${inconclusive === 1 ? " is" : "s are"} inconclusive; authenticity could not be established.`}
+                    {negatives > 0 && ` ${rejectedAsExpected} of ${negatives} negative checks produced their expected outcomes.`}
                    {saved > 0 && ` ${saved} modified file${saved === 1 ? " is" : "s are"} available to download.`}
                    {unsupported > 0 && ` ${unsupported} spatial-LSB cases do not apply to this DCT file.`}
-                   {passed < applicable.length && " The rows in red did not behave as expected."}
+                    {passed < applicable.length && " Some checks produced unexpected results; review the evidence below."}
                 </>
               }
               actions={
@@ -244,7 +250,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
             <div className="table-wrap">
               <table className="attacks">
                 <thead>
-                   <tr><th className="col-test">Test</th><th className="col-result">Expected / observed</th><th className="col-file">Modified file</th></tr>
+                    <tr><th className="col-test">Test</th><th className="col-result">Expected outcome / observed result</th><th className="col-file">Modified file</th></tr>
                 </thead>
                 <tbody>
                   {scenarios.map((scenario) => (
@@ -254,9 +260,9 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                         <p className="attack-what"><b>Change:</b> {scenario.change}</p>
                       </td>
                       <td>
-                        <div className="attack-expected"><b>Expected:</b> {expectation(scenario, Boolean(cover))}</div>
+                        <div className="attack-expected"><b>Expected outcome:</b> {expectation(scenario, Boolean(cover))}</div>
                         <div className="attack-observed"><b>Observed:</b>{" "}
-                        {scenario.verdict === "Unsupported" ? <span className="chip flat">Unsupported</span> : <VerdictChip verdict={scenario.verdict} />}
+                        {scenario.verdict === "Unsupported" ? <span className="chip flat">Unsupported</span> : <><VerdictChip verdict={scenario.verdict} /><span className="small"> {observation(scenario)}</span></>}
                         </div>
                         {scenario.verdict === "Unsupported" ? <div className="muted small">not applicable</div> : scenario.as_expected
                           ? <div className="attack-ok">as expected</div>
@@ -284,9 +290,13 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                 </tbody>
               </table>
             </div>
-            {selectedVariant?.file && <Panel title="Selected tampered variant" subtitle="The baseline working file remains unchanged.">
-              <p>{selectedVariant.file.filename} · {selectedVariant.file.size.toLocaleString()} bytes</p>
-              <p>Expected: {selectedVariant.expected.join(" or ")}. Observed: {selectedVariant.verdict}.</p>
+            {selectedVariant?.file && <Panel title="Selected test variant" subtitle="This is a separate test copy. The baseline working file remains unchanged.">
+              <p><strong>{selectedVariant.file.filename}</strong> · {selectedVariant.file.size.toLocaleString()} bytes</p>
+              <h3>Change made</h3><p>{selectedVariant.change}</p>
+              <h3>Verification result</h3><p>{observation(selectedVariant)} Expected: {expectation(selectedVariant, Boolean(cover))} Observed verdict: {selectedVariant.verdict}.</p>
+              <p>{selectedVariant.summary}</p>
+              {selectedVariant.stages && selectedVariant.stages.length > 0 && <><h3>Checks reached</h3><ul className="variant-stages">{selectedVariant.stages.map((stage) => <li key={stage.id}><strong>{stage.id.replaceAll("_", " ")}</strong>: {stage.status}</li>)}</ul></>}
+              {selectedVariant.elapsed_ms !== undefined && <p className="muted small">Verification took {selectedVariant.elapsed_ms.toLocaleString()} ms.</p>}
               <a className="btn ghost" href={artifactUrl(selectedVariant.file.id)} download={selectedVariant.file.filename}>Download this variant</a>
             </Panel>}
           </div>
@@ -302,14 +312,35 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
  */
 export function expectation(scenario: Scenario, hasCover: boolean): string {
   if (scenario.verdict === "Unsupported") return "Not applicable (spatial LSB only).";
-  const alternatives = scenario.expected.join(" or ");
-  if (scenario.expected.length > 1) {
-    return `${alternatives}. The first failing check determines which verdict appears.`;
-  }
-  if (!hasCover && NEEDS_ORIGINAL.has(scenario.id)) {
-    return `${alternatives} after adding the original cover.`;
-  }
-  return `${alternatives}.`;
+  const outcomes: Record<string, string> = {
+    baseline: "The correct passphrase is accepted, the signature is valid, and the file is confirmed genuine.",
+    wrong_passphrase: "The incorrect passphrase is rejected; the file cannot be authenticated with it.",
+    wrong_key: "The unrelated public key does not validate the sender's signature.",
+    flip_cover_bit: "The changed file is identified as tampered because data outside the payload changed.",
+    flip_payload_bit: "The changed file is identified as tampered because the protected payload changed.",
+    wrong_start: "The selected location is rejected; the file itself remains unchanged.",
+    corrected_start: "The authenticated location succeeds and the unchanged file is confirmed genuine.",
+    clean_cover: "No signed payload is found in the original cover.",
+    jpeg: "The re-compressed file is rejected or cannot be verified because its protected data may no longer be readable.",
+    lsb_noise: "The overwritten file is rejected or cannot be verified because the hidden payload was disrupted.",
+    forged_payload: "The modified content is rejected because its signature is invalid.",
+    payload_hash_mismatch: "The payload is identified as tampered because its content no longer matches the signed digest.",
+    click: "The edited audio is identified as tampered.",
+  };
+  const outcome = outcomes[scenario.id] ?? `The result indicates ${scenario.expected.join(" or ")}.`;
+  return !hasCover && NEEDS_ORIGINAL.has(scenario.id) ? `${outcome} Add the original cover to run this check.` : outcome;
+}
+
+export function observation(scenario: Scenario): string {
+  if (scenario.verdict === "Authentic") return "The file is genuine; the authenticity and integrity checks passed.";
+  if (scenario.verdict === "Tampered") return "There is evidence of tampering: an integrity check detected a change.";
+  if (scenario.verdict === "Signature Invalid") return "There is evidence of an invalid or replaced signature; authenticity was not established.";
+  if (scenario.verdict === "Cannot Verify") return scenario.id === "wrong_passphrase"
+    ? "The supplied passphrase was not accepted, so authenticity could not be checked."
+    : "Inconclusive: the file could not be verified, so this result does not by itself prove tampering.";
+  if (scenario.verdict === "Payload Missing") return "No recognizable signed payload was found; this alone does not prove tampering.";
+  if (scenario.verdict === "Wrong Start Location") return "The chosen location did not contain the payload; this does not indicate a file change.";
+  return "The test could not be applied to this file type.";
 }
 
 /** Why a row has no file. "–" says nothing; these say which of the two reasons it is. */
