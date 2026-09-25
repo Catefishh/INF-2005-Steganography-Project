@@ -126,7 +126,6 @@ export default function App() {
             </svg>
             <div>
               <strong>STEGLOC</strong>
-              <span>LSB + DCT integrity workbench</span>
             </div>
           </div>
           <span className={`rail-keys${hasKeys ? " ready" : ""}`}>

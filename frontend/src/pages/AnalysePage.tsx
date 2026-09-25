@@ -106,11 +106,11 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
         subtitle="Inspect a file alone or add a matching original to measure differences directly. These observations cannot prove embedding or authenticity.">
         <div className="columns">
           <DropZone label={<>File to inspect <span className="req">· required</span></>} id={SUSPECT_SLOT_ID}
-            title="Drop the file here" hint="picture or WAV" accept="image/*,.wav" icon="eye" file={suspect}
+            title="Drop the file here" hint="image, audio, or video" accept="image/*,audio/*,video/*,.wav,.mp3,.mp4,.mov,.avi" icon="eye" file={suspect}
             onFile={(file) => changeFile(file, "suspect")} />
           <DropZone label={<>Original, before anything was hidden <span className="opt">(optional)</span></>} id={REFERENCE_SLOT_ID}
             title="Drop the original here" hint="same format and size — reveals measured differences"
-            accept="image/*,.wav" icon="image" file={reference}
+            accept="image/*,audio/*,video/*,.wav,.mp3,.mp4,.mov,.avi" icon="image" file={reference}
             onFile={(file) => changeFile(file, "reference")} />
         </div>
         <Disclosure title="BPCS image settings" value="optional">

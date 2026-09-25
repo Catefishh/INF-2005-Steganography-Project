@@ -333,14 +333,14 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onR
         {result && <div className="note note-good"><Icon name="download" /><span>
           Latest protected file: <a href={fileUrl(result.stego.id, true)} download={result.stego.filename}>Download {result.stego.filename}</a>
         </span></div>}
-        <Panel step="1" title="Pick the picture or sound to hide it in"
-          subtitle="PNG, BMP, JPEG, GIF, WEBP, TIFF or a WAV recording."
+        <Panel step="1" title="Pick the cover file to hide your message in"
+          subtitle="Images (PNG, BMP, JPEG, GIF, WEBP, TIFF), audio (WAV, MP3), or video (MP4, MOV, AVI)."
           aside={info && (
             <span className={`chip ${info.lossy_source ? "warn" : "flat"}`}>
               {info.lossy_source ? `${info.format} · will be saved as ${info.output_format}` : `${info.output_format} · stays lossless`}
             </span>
           )}>
-          <DropZone label="Cover file" id={COVER_SLOT_ID} title="Drop an image, WAV, MP3, MP4 or MOV" hint="compressed media is prepared as a lossless cover"
+          <DropZone label="Cover file" id={COVER_SLOT_ID} title="Drop an image, audio, or video file" hint="MP3, MP4, MOV and AVI are prepared as a lossless cover automatically"
             accept={COVER_ACCEPT} icon="image" file={sourceCover} onFile={(file) => void selectCover(file)} />
           {sourceDetails && <div className="conversion-panel">
             <b>{sourceDetails.kind === "video" ? "Prepare silent AVI video" : "Prepare PCM WAV audio"}</b>

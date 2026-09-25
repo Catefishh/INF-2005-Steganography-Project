@@ -10,7 +10,7 @@ import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Pag
 import { VideoVerify } from "./VideoWorkflow";
 import { failedStep, skippedSteps, stepsValue, verdictReading } from "../verdict";
 
-const STEGO_ACCEPT = "image/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,audio/wav";
+const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi";
 const STEGO_SLOT_ID = "verify-file-slot";
 
 /** The inputs a verdict is a statement about. Named so the stale banner can name them too. */
@@ -245,8 +245,8 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
             </span>
           </div>
         )}
-        <DropZone label="File to check" id={STEGO_SLOT_ID} title="Drop the protected picture or sound clip"
-          hint="or click to browse" accept={STEGO_ACCEPT} icon="eye" file={stego}
+        <DropZone label="File to check" id={STEGO_SLOT_ID} title="Drop the protected file"
+          hint="image, audio, or video — or click to browse" accept={STEGO_ACCEPT} icon="eye" file={stego}
           onFile={(file) => { requestRevision.current += 1; setStego(file); onWorkingFile?.(file); setFromHandoff(false); setResult(null); setAttempts([]); }} />
         {info?.kind === "audio" && stegoUrl && (
           <MediaPreview url={stegoUrl} mime="audio/wav" name={stego?.name ?? "received file"} />
