@@ -237,3 +237,19 @@ def test_friendly_errors(client, keys):
     response = client.post("/api/keys/inspect", json={"pem": keys["public_key"]})
     assert response.json()["type"] == "public"
     assert client.get("/api/files/unknown").status_code == 404
+
+
+def test_hide_rejects_non_finite_audio_start(client, keys):
+    response = client.post(
+        "/api/hide",
+        files={"cover": ("cover.wav", wav(frames=9000), "audio/wav")},
+        data={
+            "payload_text": "hello",
+            "passphrase": "pw",
+            "private_key": keys["private_key"],
+            "start_seconds": "nan",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Start time must be a finite number."

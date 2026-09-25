@@ -1,6 +1,7 @@
 """Legacy capacity estimates and safe start-slot selection."""
 import hashlib
 import hmac
+import math
 import uuid
 from .legacy_types import CapacityError, StartLocationError
 from .legacy_record import HEADER_SLOTS, ZERO_HASH, canonical_json, make_record, package_size, _limit
@@ -46,7 +47,10 @@ def resolve_manual_start(cover, start_slot=None, start_x=None, start_y=None, sta
         if cover.kind == "image" and start_x is not None and start_y is not None:
             return cover.slot_from_xy(int(start_x), int(start_y))
         if cover.kind == "audio" and start_seconds is not None:
-            return cover.slot_from_seconds(float(start_seconds))
+            seconds = float(start_seconds)
+            if not math.isfinite(seconds):
+                raise ValueError("Audio start time must be finite.")
+            return cover.slot_from_seconds(seconds)
     except ValueError as exc:
         raise StartLocationError(str(exc)) from exc
     return None

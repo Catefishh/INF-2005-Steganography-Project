@@ -5,6 +5,7 @@ import {
   PassphraseField, Spinner, StaleBanner, VerifySteps,
 } from "../components";
 import { verifyMissing } from "../requirements";
+import { pathFor } from "../router";
 import { changedInputs, staleReason } from "../stale";
 import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Page, type Vault } from "../util";
 import { VideoVerify } from "./VideoWorkflow";
@@ -35,7 +36,8 @@ export function relativeTime(from: number, now: number = Date.now()): string {
 const OVERRIDE_WARNING = "With it on, the hidden data is read from the place you type here instead of the place "
   + "stored in the file. Normal checks will fail. Turn it off to check a file properly.";
 
-export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, onShowResult }: {
+export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, onShowResult,
+  active = true }: {
   vault: Vault;
   handoff: Handoff | null;
   onWorkingFile?: (file: File | null) => void;
@@ -44,13 +46,17 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   showResult: boolean;
   /** Moves the route between the form and the result. */
   onShowResult: (show: boolean) => void;
+  active?: boolean;
 }) {
   const [stego, setStego] = useState<File | null>(null);
   const requestRevision = useRef(0);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [info, setInfo] = useState<CoverInfo | null>(null);
   const [fromHandoff, setFromHandoff] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [publicPem, setPublicPem] = useState("");
+  const [publicKeyError, setPublicKeyError] = useState("");
   const [keyEditorOpen, setKeyEditorOpen] = useState(false);
   const [override, setOverride] = useState(false);
   // Pre-filled from the file's real start point, not from zero: the override is meant to show
@@ -76,13 +82,13 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     requestRevision.current += 1;
     setStego(handoff.stego);
     setPassphrase(handoff.passphrase);
-    if (handoff.publicPem) setPublicPem(handoff.publicPem);
-    setFromHandoff(true);
+    if (handoff.publicPem) { setPublicPem(handoff.publicPem); setPublicKeyError(""); }
+    setFromHandoff(handoff.origin !== "manual");
     setResult(null);
   }, [handoff]);
 
   useEffect(() => {
-    if (vault.publicPem) setPublicPem(vault.publicPem);
+    if (vault.publicPem) { setPublicPem(vault.publicPem); setPublicKeyError(""); }
   }, [vault.publicPem]);
 
   useEffect(() => {
@@ -124,31 +130,43 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     : "off";
 
   const usingVaultKey = Boolean(vault.publicPem) && publicPem === vault.publicPem;
+  function choosePublicKey(pem: string) {
+    if (pem.includes("PRIVATE KEY")) {
+      setPublicPem("");
+      setPublicKeyError("This is a private key. Select the sender's RSA public key instead.");
+      setKeyEditorOpen(true);
+      return;
+    }
+    setPublicKeyError("");
+    setPublicPem(pem);
+  }
   const hasPublicKey = publicPem.trim().length > 0;
   const missing = verifyMissing({
     hasFile: stego !== null,
     hasPassphrase: passphrase.length > 0,
     hasPublicKey,
-    needsRecheck: stale,
   });
   const ready = missing.length === 0;
 
   async function submit(useOverride = override) {
-    if (!stego) return;
+    const submittedFile = stego;
+    if (!submittedFile) return;
     const requestId = ++requestRevision.current;
     // Snapshot before the await: state read after it belongs to a later render.
     const sentOverride = useOverride && info?.embedding_method !== "dct";
     const sentStart = overrideSlot !== "" ? `slot:${overrideSlot}` : info?.kind === "audio" ? `s:${overrideSeconds}` : `xy:${overrideX},${overrideY}`;
-    const snapshot = [stego.name, passphrase, publicPem, sentOverride ? sentStart : "from the password"];
+    const submittedPassphrase = passphrase;
+    const submittedKey = publicPem;
+    const snapshot = [submittedFile.name, submittedPassphrase, submittedKey, sentOverride ? sentStart : "from the password"];
     setBusy(true);
     setError("");
     if (!showResult) setResult(null);
     setResultInputs(null);
     setStaleDismissed(false);
     const form = new FormData();
-    form.append("stego", stego, stego.name);
-    form.append("passphrase", passphrase);
-    form.append("public_key", publicPem);
+    form.append("stego", submittedFile, submittedFile.name);
+    form.append("passphrase", submittedPassphrase);
+    form.append("public_key", submittedKey);
     if (sentOverride) {
       if (overrideSlot !== "") form.append("start_slot", overrideSlot);
       else if (info?.kind === "audio") {
@@ -160,13 +178,13 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     }
     try {
       const response = await api.verify(form);
-      if (requestId !== requestRevision.current) return;
+      if (requestId !== requestRevision.current || !activeRef.current) return;
       setResult(response);
       setResultInputs(snapshot);
       setAttempts((before) => [...before, { location: sentOverride ? sentStart : "authenticated stored location", verdict: response.verdict }]);
-      onShowResult(true);
+      if (activeRef.current) onShowResult(true);
     } catch (e) {
-      if (requestId === requestRevision.current) setError(errorText(e));
+      if (requestId === requestRevision.current && activeRef.current) setError(errorText(e));
     } finally {
       if (requestId === requestRevision.current) setBusy(false);
     }
@@ -175,7 +193,8 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   const hasResult = result !== null;
   const correctedRef = useRef(false);
   useEffect(() => {
-    if (showResult && !hasResult && !correctedRef.current) {
+    if (showResult && !hasResult && !correctedRef.current
+      && window.location.pathname === pathFor("verify", "result")) {
       correctedRef.current = true;
       onShowResult(false);
     }
@@ -238,7 +257,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
             <span>
               <b>Loaded from Embed &amp; Sign, {relativeTime(handoff.serial)}.</b>
               <span className="note-actions">
-                <button type="button" className="btn ghost sm" onClick={() => document.getElementById(STEGO_SLOT_ID)?.focus()}>
+                <button type="button" className="btn ghost sm" onClick={() => document.querySelector<HTMLInputElement>(`#${STEGO_SLOT_ID} input[type="file"]`)?.click()}>
                   Use a different file
                 </button>
               </span>
@@ -295,7 +314,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
             </div>
           ) : (
             <>
-              <KeyField label="Sender's RSA public key" value={publicPem} onChange={setPublicPem}
+              <KeyField label="Sender's RSA public key" value={publicPem} onChange={choosePublicKey}
                 placeholder="-----BEGIN PUBLIC KEY----- (drop public_key.pem here)"
                 vaultPem={vault.publicPem} vaultLabel="Use key from Keys page" />
               {usingVaultKey && (
@@ -305,6 +324,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
               )}
             </>
           )}
+          <ErrorNote text={publicKeyError} />
         </div>
 
         {info?.embedding_method !== "dct" && <Disclosure title="Look in a specific place instead of using the password" value={overrideValue} tone={override ? "warn" : ""}>

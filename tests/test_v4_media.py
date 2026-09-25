@@ -16,7 +16,9 @@ from backend.app.cancellation import installed
 from backend.app.main import create_app
 from backend.app.stego.carriers.video import inspect_video
 from backend.app.stego.covers import load_cover
+from backend.app.stego import engine, text_v3
 from backend.app.stego.security import generate_rsa_keys
+from backend.app.stego.v2_security import load_signing_key
 from test_v2_api import finished, image_bytes
 
 
@@ -132,14 +134,16 @@ def test_video_wrong_slot_retry_and_binary_payload(tmp_path):
         assert client.get(f"/api/v2/artifacts/{content['id']}").content == payload
 
 
-def test_live_showcase_encode_and_export():
+def test_live_showcase_existing_file_and_export():
     private, public = generate_rsa_keys()
+    cover = image_bytes()
+    protected, _, _ = engine.hide(cover, "original.png", b"\x00\x01binary evidence", "voice.mp3",
+        "audio/mpeg", "testing passphrase", private, None, 1, "auto")
     with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
         client.post("/api/v2/session")
-        started = client.post("/api/v4/jobs/showcase", data={"mode": "encode", "passphrase": "testing passphrase",
-            "private_key": private.decode(), "public_key": public.decode(), "depth": "1"}, files={
-            "cover": ("original.png", image_bytes(), "image/png"),
-            "payload": ("voice.mp3", b"\x00\x01binary evidence", "audio/mpeg")})
+        started = client.post("/api/v4/jobs/showcase", data={"passphrase": "testing passphrase",
+            "public_key": public.decode()}, files={"stego": ("protected.png", protected, "image/png"),
+            "cover": ("original.png", cover, "image/png")})
         assert started.status_code == 200, started.text
         state = None
         for _ in range(1200):
@@ -148,7 +152,6 @@ def test_live_showcase_encode_and_export():
                 break
             time.sleep(0.01)
         assert state["status"] == "succeeded", state.get("error")
-        assert state["result"]["generated"]
         rows = state["result"]["cases"]
         assert rows[0]["verdict"] == "Authentic"
         assert any(row["id"] == "payload_hash_mismatch" and row["verdict"] == "Tampered" for row in rows)
@@ -159,7 +162,7 @@ def test_live_showcase_encode_and_export():
             manifest = json.loads(bundle.read("sha256-manifest.json"))
             assert "report.html" in manifest and "results.json" in manifest
             assert "heatmaps/embedding.png" in manifest
-            assert any(name.startswith("samples/showcase_stego") for name in manifest)
+            assert any(name.startswith("samples/") for name in manifest)
             for name, digest in manifest.items():
                 assert hashlib.sha256(bundle.read(name)).hexdigest() == digest
             assert private not in evidence.content
@@ -167,6 +170,7 @@ def test_live_showcase_encode_and_export():
         with TestClient(client.app, base_url="http://127.0.0.1:8000") as unrelated:
             unrelated.post("/api/v2/session")
             assert unrelated.get(f"/api/v4/jobs/{started.json()['id']}/evidence").status_code == 404
+        assert client.post("/api/v4/jobs/showcase", data={"mode": "encode", "public_key": public.decode()}).status_code == 400
 
 
 @pytest.mark.parametrize("method", ["acrostic", "whitespace", "zero-width"])
@@ -174,12 +178,15 @@ def test_text_showcase_methods(method):
     with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
         client.post("/api/v2/session")
         keys = client.post("/api/v2/keys/generate", data={"password": "text test key"}).json()
-        started = client.post("/api/v4/jobs/text-showcase", data={"mode": "encode", "method": method,
-            "message": "exact text", "visible": "A visible sentence.", "private_key": keys["private_key"],
-            "key_password": "text test key", "public_key": keys["public_key"]})
+        protected = text_v3.protect("exact text", method, "A visible sentence.",
+            load_signing_key(keys["private_key"].encode(), b"text test key"))
+        started = client.post("/api/v4/jobs/text-showcase", data={"recovery_code": protected["recovery_code"],
+            "public_key": keys["public_key"]}, files={"carrier": ("protected.txt", protected["carrier"].encode()),
+            "recovery": ("recovery.stegloc-text", protected["recovery"])})
         assert started.status_code == 200, started.text
         state = finished(client, started.json()["id"])
         assert state["status"] == "succeeded", state.get("error")
         rows = state["result"]["cases"]
         assert len(rows) == 5
         assert all(row["as_expected"] for row in rows), rows
+        assert client.post("/api/v4/jobs/text-showcase", data={"mode": "encode", "public_key": keys["public_key"]}).status_code == 400

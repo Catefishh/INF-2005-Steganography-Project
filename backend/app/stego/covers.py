@@ -131,6 +131,8 @@ class AudioCover:
     def __init__(self, data):
         if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
             raise CoverError("Audio covers must be WAV (RIFF/WAVE) files.")
+        if int.from_bytes(data[4:8], "little") != len(data) - 8:
+            raise CoverError("WAV RIFF size does not match the file length.")
 
         fmt = None
         data_offset = None
@@ -140,6 +142,9 @@ class AudioCover:
             chunk_id = data[pos:pos + 4]
             size = int.from_bytes(data[pos + 4:pos + 8], "little")
             body = pos + 8
+            padded = body + size + (size & 1)
+            if padded > len(data):
+                raise CoverError("WAV file contains a truncated RIFF chunk.")
             if chunk_id == b"fmt " and size >= 16 and body + 16 <= len(data):
                 tag, channels, rate, _byte_rate, block_align, bits = struct.unpack_from("<HHIIHH", data, body)
                 if tag == 0xFFFE and size >= 40 and body + 40 <= len(data):
@@ -147,8 +152,8 @@ class AudioCover:
                 fmt = (tag, channels, rate, block_align, bits)
             elif chunk_id == b"data" and data_offset is None:
                 data_offset = body
-                data_size = min(size, len(data) - body)
-            pos = body + size + (size & 1)
+                data_size = size
+            pos = padded
 
         if fmt is None or data_offset is None:
             raise CoverError("WAV file is missing its fmt or data chunk.")
@@ -208,6 +213,8 @@ class AudioCover:
                 "text": f"{seconds:.3f} s (sample {frame}, channel {channel + 1})"}
 
     def slot_from_seconds(self, seconds):
+        if not np.isfinite(seconds):
+            raise ValueError("Audio start time must be finite.")
         frame = int(round(seconds * self.sample_rate))
         if not 0 <= frame < self.frames:
             raise ValueError(f"{seconds} s is outside the {self.frames / self.sample_rate:.3f} s audio.")

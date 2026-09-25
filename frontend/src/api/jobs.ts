@@ -1,4 +1,4 @@
-/** Session jobs used by text and robustness workflows. */
+/** Session jobs used by text and image verification workflows. */
 export type Job<T> = {
   id: string;
   status: string;

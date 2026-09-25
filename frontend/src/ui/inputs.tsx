@@ -47,7 +47,7 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone }: {
         if (dropped) onFile(dropped);
       }}
     >
-      <input ref={input} type="file" accept={accept} hidden onChange={(event) => {
+      <input ref={input} type="file" accept={accept} hidden onClick={(event) => event.stopPropagation()} onChange={(event) => {
         const picked = event.target.files?.item(0);
         if (picked) onFile(picked);
         event.target.value = "";
