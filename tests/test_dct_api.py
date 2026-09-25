@@ -50,7 +50,7 @@ def test_independent_dct_download_and_reupload():
     changed_payload = client.get(f"/api/files/{payload_flip['file']['id']}").content
     assert client.post("/api/verify", files={"stego": ("payload_flip.png", changed_payload)},
                        data={"passphrase": "pw", "public_key": keys["public_key"]}).json()["content"] is None
-    assert next(row for row in attacks if row["id"] == "wrong_start")["verdict"] == "Unsupported"
+    assert not any(row["id"] == "wrong_passphrase" for row in attacks)
     blocked = client.post("/api/verify", files={"stego": ("stego.png", stego)},
                           data={"passphrase": "pw", "public_key": keys["public_key"], "start_slot": "1"}).json()
     assert blocked["content"] is None

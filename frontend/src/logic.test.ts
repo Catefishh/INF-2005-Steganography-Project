@@ -185,7 +185,7 @@ describe("verdicts", () => {
       "Signature Invalid": "bad",
       "Payload Missing": "warn",
       "Wrong Start Location": "warn",
-      "Cannot Verify": "flat",
+      "Cannot Verify": "warn",
     });
   });
 
@@ -430,11 +430,12 @@ describe("the wording helpers the screens use", () => {
     { id: "lsb_noise", title: "Every lowest bit overwritten", change: "", expected: ["Payload Missing", "Cannot Verify"], verdict: "Payload Missing", summary: "", as_expected: true, file: null },
   ];
 
-  it("folds the expectation into the description, and explains the either-or cases", () => {
+  it("describes the expected outcomes in plain language", () => {
     const list = scenarios();
-    expect(expectation(list[0], true)).toBe("Authentic.");
-    expect(expectation(list[3], true)).toContain("Payload Missing or Cannot Verify. The first failing check");
-    expect(expectation(list[2], false)).toBe("Payload Missing after adding the original cover.");
+    expect(expectation(list[0], true)).toContain("file is confirmed genuine");
+    expect(expectation(list[1], true)).toContain("incorrect passphrase is rejected");
+    expect(expectation(list[3], true)).toContain("hidden payload was disrupted");
+    expect(expectation(list[2], false)).toContain("Add the original cover");
   });
 
   it("explains why a scenario has no downloadable modified file", () => {

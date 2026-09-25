@@ -473,7 +473,7 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
   expect(vi.mocked(api.analyse).mock.calls[0][0].get("channel")).toBe("1");
 });
 
-it("tester: leads with the count and keeps every damaged file downloadable", async () => {
+it("tester: explains expected outcomes, file integrity, and tampered variants", async () => {
   const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
     if (path === "/api/v2/session") return {status: "ready"} as never;
@@ -487,7 +487,7 @@ it("tester: leads with the count and keeps every damaged file downloadable", asy
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
   fireEvent.click(within(view()).getByRole("button", { name: /Run tamper tests/ }));
 
-  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 applicable cases behaved correctly"));
+  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("baseline is genuine"));
   const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/v4/jobs/showcase")?.[1]?.body as FormData;
   expect(sent.get("stego")).toBeInstanceOf(File);
   expect(sent.has("payload")).toBe(false);
@@ -495,7 +495,13 @@ it("tester: leads with the count and keeps every damaged file downloadable", asy
   expect(within(view()).getAllByText("as expected")).toHaveLength(2);
   expect(within(view()).getByRole("link", { name: /Save harbour_flip.png/ })).toBeInTheDocument();
   expect(within(view()).getByText("file unchanged")).toBeInTheDocument();
-  expect(within(view()).getAllByText(/Expected:/)).toHaveLength(2);
+  expect(within(view()).getAllByText(/Expected outcome:/)).toHaveLength(2);
+  expect(within(view()).getByText(/baseline is genuine/)).toBeInTheDocument();
+  expect(within(view()).queryByText(/behaved correctly/)).toBeNull();
+  expect(within(view()).getByText(/correct passphrase is accepted/)).toBeInTheDocument();
+  fireEvent.click(within(view()).getAllByRole("button", { name: "Examine variant" })[0]);
+  expect(within(view()).getAllByText(/Flip the lowest bit/)).toHaveLength(2);
+  expect(within(view()).getAllByText(/integrity check detected a change/)).toHaveLength(2);
 });
 
 it("tester: text carriers use only existing protected files", async () => {

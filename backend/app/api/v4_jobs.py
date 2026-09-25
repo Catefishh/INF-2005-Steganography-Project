@@ -254,9 +254,6 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
          "All v2 verification stages passed" if baseline.overall.value == "Authentic" else "Baseline verification failed")
     if baseline.overall.value != "Authentic":
         return rows, files
-    wrong_code = verify_video(carrier, sidecar, code + "-wrong", key)
-    case("wrong_code", "Wrong recovery code", "changed recovery code", ["Cannot Verify"],
-         wrong_code.overall.value, "Authenticated locator cannot be recovered")
     _, unrelated_pem = generate_signing_keys()
     other = load_verification_key(unrelated_pem)
     wrong_key = verify_video(carrier, sidecar, code, other)
@@ -267,17 +264,6 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
     salt, _, _, _ = _parse_sidecar(sidecar)
     locator = _decrypt_and_verify_locator(sidecar, derive_keys(secret, salt).locator, key)
     start = int(locator["start_slot"])
-    wrong_slot = start + 1 if start + 1 < inspect_video(carrier).eligible_slots else start - 1
-    try:
-        at_wrong_slot = adapter.extract(int(locator["encoded_byte_length"]), int(locator["depth"]), wrong_slot)
-        wrong_verdict = "Authentic" if hashlib.sha256(at_wrong_slot).hexdigest() == locator["encrypted_package_sha256"] else "Wrong Start Location"
-    except (ValueError, IndexError):
-        wrong_verdict = "Wrong Start Location"
-    case("wrong_start", "Wrong start location", f"manual slot {wrong_slot}", ["Wrong Start Location"],
-         wrong_verdict, "Baseline verification passed; manual slot differs from authenticated locator")
-    corrected = verify_video(carrier, sidecar, code, key)
-    case("corrected_start", "Corrected start location", f"retry at authenticated slot {start}", ["Authentic"],
-         corrected.overall.value, "Same AVI verifies when the authenticated locator is used")
     changed = bytearray(adapter.slots())
     changed[0] ^= 1
     cover_flip = adapter.export_slots(changed)
