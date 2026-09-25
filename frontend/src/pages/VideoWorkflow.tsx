@@ -24,7 +24,7 @@ async function job<T>(path: string, form: FormData, onPhase: (value: string) => 
   return result;
 }
 
-export function VideoEmbed({ cover, source, conversion, onHandoff }: {cover: File; source: File | null; conversion?: Handoff["conversion"]; onHandoff: (value: Handoff) => void}) {
+export function VideoEmbed({ cover, source, conversion, onHandoff, onResultAvailability }: {cover: File; source: File | null; conversion?: Handoff["conversion"]; onHandoff: (value: Handoff) => void; onResultAvailability?: (available: boolean) => void}) {
   const [payload, setPayload] = useState<File | null>(null);
   const [payloadDigest, setPayloadDigest] = useState("");
   const [privateKey, setPrivateKey] = useState("");
@@ -68,12 +68,14 @@ export function VideoEmbed({ cover, source, conversion, onHandoff }: {cover: Fil
 
   async function protect() {
     if (!payload) return;
+    onResultAvailability?.(false);
     setError(""); setResult(null); setPhase("Starting protection");
     try {
       const form = new FormData(); form.append("cover", cover); form.append("content_file", payload);
       form.append("private_key", privateKey); form.append("key_password", keyPassword); form.append("depth", String(depth));
       const protectedFile = await job<VideoProtected>("/api/v2/jobs/protect", form, setPhase);
       setResult(protectedFile);
+      onResultAvailability?.(true);
       const [stego, recovery] = await Promise.all([getFile(protectedFile.carrier), getFile(protectedFile.recovery)]);
       onHandoff({id: crypto.randomUUID(), protocol: "v2-video", stego, cover, sourceCover: source, conversion, passphrase: "", publicPem: publicKey,
         recovery, recoveryCode: protectedFile.recovery_code, serial: Date.now()});

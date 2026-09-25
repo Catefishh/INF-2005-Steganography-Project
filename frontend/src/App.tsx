@@ -26,7 +26,7 @@ const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Gro
   { id: "analyse", icon: "layers", label: "Inspect a file", role: "Analyst", group: "Examine",
     lede: "Look for signs that something is hidden in a file, without needing the password or any key." },
   { id: "attacks", icon: "zap", label: "Tamper tests", role: "Tester", group: "Examine",
-    lede: "Damage a protected file in a dozen different ways and confirm the checker catches every one. Each damaged file can be saved." },
+    lede: "Run controlled changes against a protected file and compare each verification result with the expected verdict." },
 ];
 
 const GROUPS: Group[] = ["Set up", "Send and receive", "Examine"];
@@ -41,6 +41,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const lastPageRef = useRef<Page | null>(null);
+  const lastEmbedView = useRef<"form" | "result">("form");
+  const embedAvailable = useRef(false);
 
   const pathname = usePathname();
   const hasKeys = Boolean(vault.privatePem || vault.publicPem);
@@ -61,12 +63,16 @@ export default function App() {
     setHandoff(file ? { id: crypto.randomUUID(), stego: file, cover: null,
       passphrase: "", publicPem: vault.publicPem, serial: Date.now() } : null);
     if (!file) setWorkspaceEpoch((value) => value + 1);
+    if (!file) { embedAvailable.current = false; lastEmbedView.current = "form"; }
   }
 
   useEffect(() => {
     if (lastPageRef.current !== null && lastPageRef.current !== route.page) headingRef.current?.focus();
     lastPageRef.current = route.page;
   }, [route.page]);
+  useEffect(() => {
+    if (route.page === "hide") lastEmbedView.current = route.view;
+  }, [route.page, route.view]);
 
   // Keep the address bar honest: rewrite "/", trailing slashes and unknown paths to the
   // canonical path of the screen actually on show. Compares against the *current* pathname
@@ -82,7 +88,7 @@ export default function App() {
   }, [pathname, hasKeys]);
 
   function goTo(page: Page): void {
-    navigate(pathFor(page));
+    navigate(pathFor(page, page === "hide" && embedAvailable.current ? lastEmbedView.current : "form"));
     setMenuOpen(false);
   }
 
@@ -91,7 +97,13 @@ export default function App() {
    * returns to the form; going back to the form replaces it, so the two do not stack up.
    */
   const showEmbedResult = useCallback((show: boolean) => {
-    navigate(pathFor("hide", show ? "result" : "form"), { replace: !show });
+    lastEmbedView.current = show ? "result" : "form";
+    if (resolveRoute(window.location.pathname, true).page === "hide")
+      navigate(pathFor("hide", lastEmbedView.current), { replace: !show });
+  }, []);
+  const setEmbedAvailable = useCallback((available: boolean) => {
+    embedAvailable.current = available;
+    if (!available) lastEmbedView.current = "form";
   }, []);
 
   const showVerifyResult = useCallback((show: boolean) => {
@@ -114,7 +126,7 @@ export default function App() {
             </svg>
             <div>
               <strong>STEGLOC</strong>
-              <span>LSB integrity workbench</span>
+              <span>LSB + DCT integrity workbench</span>
             </div>
           </div>
           <span className={`rail-keys${hasKeys ? " ready" : ""}`}>
@@ -156,7 +168,7 @@ export default function App() {
 
         <div className="rail-foot">
           <div className="tech">
-            <span>SHA-256</span><span>RSA-PSS</span><span>AES-256-GCM</span><span>LSB 1-8</span>
+            <span>SHA-256</span><span>RSA-PSS</span><span>AES-256-GCM</span><span>LSB 1-8</span><span>DCT</span>
           </div>
           <p>INF2005 · Cyber Security Fundamentals</p>
         </div>
@@ -170,20 +182,20 @@ export default function App() {
             <p>{current.lede}</p>
           </div>
         </motion.header>
-        <AnimatePresence initial={false}>{handoff && <motion.section className="working-strip" role="status"
+        {route.page !== "text" && <AnimatePresence initial={false}>{handoff && <motion.section className="working-strip" role="status"
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
           <div><b>Working file</b> <span>{handoff.stego.name} · {handoff.stego.name.split(".").pop()?.toUpperCase()} · {(handoff.stego.size / 1024).toFixed(1)} KiB</span>
             {handoff.sourceCover && handoff.sourceCover !== handoff.cover && <span>Prepared from {handoff.sourceCover.name}</span>}
             <code title={workspaceDigest}>{workspaceDigest || "Calculating SHA-256…"}</code></div>
           <label className="btn ghost sm">Replace file<input type="file" hidden onChange={(event) => replaceWorkingFile(event.target.files?.[0] ?? null)} /></label>
           <button className="btn ghost sm" type="button" onClick={() => replaceWorkingFile(null)}>Clear workspace</button>
-        </motion.section>}</AnimatePresence>
+        </motion.section>}</AnimatePresence>}
         <Reveal hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></Reveal>
-        <Reveal hidden={route.page !== "text"}><TextPage key={workspaceEpoch} /></Reveal>
+        <Reveal hidden={route.page !== "text"}><TextPage /></Reveal>
         <Reveal hidden={route.page !== "hide"}>
           <HidePage key={workspaceEpoch} vault={vault} onHandoff={setHandoff} goTo={goTo}
             showResult={route.page === "hide" && route.view === "result"}
-            onShowResult={showEmbedResult} />
+            onShowResult={showEmbedResult} onResultAvailability={setEmbedAvailable} />
         </Reveal>
         <Reveal hidden={route.page !== "verify"}>
           <VerifyPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo}

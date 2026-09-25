@@ -8,6 +8,7 @@ import { differenceLabel, differenceReading, qualityReading, roomReading, touche
 import { embedMissing } from "../requirements";
 import { LONG_MESSAGE, SHORT_MESSAGE } from "../samples";
 import { VideoEmbed } from "./VideoWorkflow";
+import { DctResult } from "./embed/DctResult";
 import { errorText, formatBytes, shortHash, useDebounced, useObjectUrl, type Handoff, type Page, type Vault } from "../util";
 
 const COVER_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi";
@@ -21,7 +22,7 @@ function depthPhrase(kind: CoverInfo["kind"] | undefined, nLsb: number): string 
   return `${nLsb} bit${nLsb === 1 ? "" : "s"} per ${unit}`;
 }
 
-export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
+export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onResultAvailability }: {
   vault: Vault;
   onHandoff: (handoff: Handoff) => void;
   goTo: (page: Page) => void;
@@ -29,6 +30,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   showResult: boolean;
   /** Moves the route between the form and the result. */
   onShowResult: (show: boolean) => void;
+  onResultAvailability?: (available: boolean) => void;
 }) {
   const [cover, setCover] = useState<File | null>(null);
   const [sourceCover, setSourceCover] = useState<File | null>(null);
@@ -47,6 +49,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   const [payloadFile, setPayloadFile] = useState<File | null>(null);
   const [payloadDigest, setPayloadDigest] = useState("");
   const [nLsb, setNLsb] = useState(1);
+  const [embeddingMethod, setEmbeddingMethod] = useState<"lsb" | "dct">("lsb");
   const [startMode, setStartMode] = useState<"auto" | "manual">("auto");
   const [startX, setStartX] = useState("16");
   const [startY, setStartY] = useState("16");
@@ -104,6 +107,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     setCover(null);
     setInfo(null);
     setResult(null);
+    onResultAvailability?.(false);
     setSourceDetails(null);
     setCoverError("");
     if (!file) return;
@@ -181,19 +185,19 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   }, [pemForBits, keyPassword]);
 
   const estimateInput = useDebounced(
-    JSON.stringify([info?.descriptor ?? null, info?.kind ?? null, cover?.name ?? null, payloadName, payloadType, payloadSize, team, keyBits]),
+    JSON.stringify([info?.descriptor ?? null, info?.kind ?? null, cover?.name ?? null, payloadName, payloadType, payloadSize, team, keyBits, embeddingMethod]),
     250,
   );
   useEffect(() => {
-    const [descriptor, kind, coverName, name, type, size, teamName, bits] =
-      JSON.parse(estimateInput) as [string | null, string | null, string | null, string, string, number, string, number];
+    const [descriptor, kind, coverName, name, type, size, teamName, bits, method] =
+      JSON.parse(estimateInput) as [string | null, string | null, string | null, string, string, number, string, number, "lsb" | "dct"];
     if (!descriptor || !kind || coverName === null || !name) {
       setPackageBytes(null);
       return;
     }
     let live = true;
     api.estimate({ cover_kind: kind, descriptor, cover_filename: coverName, payload_filename: name, payload_type: type,
-      payload_size: size, team: teamName, key_bits: bits })
+      payload_size: size, team: teamName, key_bits: bits, method: kind === "image" ? method : "lsb" })
       .then((estimate) => live && setPackageBytes(estimate.package_bytes))
       .catch(() => live && setPackageBytes(null));
     return () => {
@@ -201,7 +205,8 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     };
   }, [estimateInput]);
 
-  const capacity = info?.capacity?.[nLsb - 1]?.max_package_bytes ?? null;
+  const dctSelected = info?.kind === "image" && embeddingMethod === "dct";
+  const capacity = dctSelected ? info?.dct?.max_package_bytes ?? null : info?.capacity?.[nLsb - 1]?.max_package_bytes ?? null;
   const fits = packageBytes !== null && capacity !== null && packageBytes <= capacity;
   const overCapacity = packageBytes !== null && capacity !== null && packageBytes > capacity;
   const hasPayload = mode === "text" ? text.length > 0 : payloadFile !== null;
@@ -222,17 +227,19 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     setBusy(true);
     setError("");
     setResult(null);
+    onResultAvailability?.(false);
     const form = new FormData();
     form.append("cover", cover, cover.name);
     if (mode === "text") form.append("payload_file", new Blob([text], { type: "text/plain" }), "message.txt");
     else if (payloadFile) form.append("payload_file", payloadFile, payloadFile.name);
     form.append("passphrase", passphrase);
+    form.append("method", dctSelected ? "dct" : "lsb");
     form.append("private_key", privatePem);
     if (keyPassword) form.append("key_password", keyPassword);
-    form.append("n_lsb", String(nLsb));
-    form.append("start_mode", startMode);
+    form.append("n_lsb", String(dctSelected ? 1 : nLsb));
+    form.append("start_mode", dctSelected ? "auto" : startMode);
     form.append("team", team);
-    if (startMode === "manual") {
+    if (!dctSelected && startMode === "manual") {
       if (info?.kind === "audio") {
         form.append("start_seconds", startSeconds);
       } else {
@@ -245,11 +252,12 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
       const response = await api.hide(form);
       if (revision !== submitted.current) return;
       setResult(response);
+      onResultAvailability?.(true);
       setUsedCover(cover);
       onShowResult(true);
       void fetchAsFile(response.stego).then((stego) => {
         if (revision === submitted.current) onHandoff({ id: crypto.randomUUID(), stego, cover, sourceCover, conversion,
-          passphrase, publicPem: vault.publicPem, serial: Date.now() });
+          passphrase, publicPem: vault.publicPem, method: dctSelected ? "dct" : "lsb", serial: Date.now() });
       }).catch(() => undefined);
     } catch (e) {
       setError(errorText(e));
@@ -262,7 +270,8 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
     if (!result || !usedCover) return;
     try {
       const stego = await fetchAsFile(result.stego);
-      onHandoff({ id: crypto.randomUUID(), stego, cover: usedCover, sourceCover, conversion, passphrase, publicPem: vault.publicPem, serial: Date.now() });
+      onHandoff({ id: crypto.randomUUID(), stego, cover: usedCover, sourceCover, conversion, passphrase, publicPem: vault.publicPem,
+        method: result.report.method === "dct" ? "dct" : "lsb", serial: Date.now() });
       goTo(page);
     } catch (e) {
       setError(errorText(e));
@@ -298,18 +307,20 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   const hasResult = result !== null && report !== undefined;
   const correctedRef = useRef(false);
   useEffect(() => {
-    if (showResult && !hasResult && !correctedRef.current) {
+    if (showResult && !hasResult && !correctedRef.current && !/\.avi$/i.test(cover?.name ?? "")) {
       correctedRef.current = true;
       onShowResult(false);
     }
     if (!showResult) correctedRef.current = false;
-  }, [showResult, hasResult, onShowResult]);
+  }, [showResult, hasResult, onShowResult, cover?.name]);
 
   // The result replaces the form rather than being appended below it.
   if (cover && /\.avi$/i.test(cover.name)) {
-    return <VideoEmbed cover={cover} source={sourceCover} conversion={conversion} onHandoff={onHandoff} />;
+    return <VideoEmbed cover={cover} source={sourceCover} conversion={conversion} onHandoff={onHandoff}
+      onResultAvailability={onResultAvailability} />;
   }
   if (showResult && result && report) {
+    if (report.method === "dct") return <Reveal><DctResult result={result} onEdit={() => onShowResult(false)} onHandOff={handOff} /></Reveal>;
     return (
       <Reveal><EmbedResult report={report} stego={result.stego} usedCoverUrl={usedCoverUrl} stegoUrl={stegoUrl}
         team={team} onEdit={() => onShowResult(false)} onHandOff={handOff} /></Reveal>
@@ -319,6 +330,9 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
   return (
     <>
       <div className="form-column">
+        {result && <div className="note note-good"><Icon name="download" /><span>
+          Latest protected file: <a href={fileUrl(result.stego.id, true)} download={result.stego.filename}>Download {result.stego.filename}</a>
+        </span></div>}
         <Panel step="1" title="Pick the picture or sound to hide it in"
           subtitle="PNG, BMP, JPEG, GIF, WEBP, TIFF or a WAV recording."
           aside={info && (
@@ -351,6 +365,11 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
             {cover && <span className="chip good">Ready: {cover.name}</span>}
           </div>}
           <ErrorNote text={coverError} />
+          {info?.kind === "image" && <div className="field"><span className="field-label">Embedding method</span>
+            <div className="segmented" role="group" aria-label="Embedding method">
+              <button type="button" className={embeddingMethod === "lsb" ? "on" : ""} onClick={() => setEmbeddingMethod("lsb")}>Spatial LSB</button>
+              <button type="button" className={embeddingMethod === "dct" ? "on" : ""} onClick={() => setEmbeddingMethod("dct")}>DCT · lossless PNG</button>
+            </div>{dctSelected && <p className="field-hint">One bit per 8×8 RGB coefficient block. Placement is automatic. PNG prevents codec loss after embedding; edits, resizing and JPEG recompression may still prevent recovery.</p>}</div>}
           {info && coverUrl && (
             <div className="cover-preview">
               <div className="cover-preview-row">
@@ -362,8 +381,8 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
                     <b>{info.kind === "image" ? `${info.width} × ${info.height}` : `${info.duration?.toFixed(2)} s`}</b>
                     {info.kind === "image" ? `picture size · ${info.mode}` : `${info.channels} ch · ${info.bits}-bit · ${info.sample_rate} Hz`}
                   </span>
-                  <span><b>{info.n_slots.toLocaleString()}</b>places to hide bits</span>
-                  <span><b>{info.output_format}</b>saved as</span>
+                  <span><b>{(dctSelected ? info.dct?.n_slots : info.n_slots)?.toLocaleString()}</b>{dctSelected ? "coefficient blocks" : "places to hide bits"}</span>
+                  <span><b>{dctSelected ? "PNG" : info.output_format}</b>saved as</span>
                   <span><b>{formatBytes(info.file_size ?? cover?.size ?? 0)}</b>current size</span>
                 </div>
               </div>
@@ -433,10 +452,10 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
                     if (mode === "text") messageRef.current?.focus();
                     else document.getElementById(PAYLOAD_SLOT_ID)?.focus();
                   }}>Choose something smaller</button>
-                  <button type="button" className="btn ghost sm" onClick={() => {
+                  {!dctSelected && <button type="button" className="btn ghost sm" onClick={() => {
                     setOptionsOpen(true);
                     window.setTimeout(() => depthRef.current?.querySelector<HTMLElement>("button")?.focus(), 0);
-                  }}>Use more bits per value</button>
+                  }}>Use more bits per value</button>}
                 </span>
               </span>
             </div>
@@ -445,12 +464,12 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
           <Meter used={packageBytes} total={capacity} label="Room in this cover" reading={roomReading} />
         </Panel>
 
-        <EmbeddingOptions open={optionsOpen} onOpenChange={setOptionsOpen} summary={optionsSummary}
+        {!dctSelected && <EmbeddingOptions open={optionsOpen} onOpenChange={setOptionsOpen} summary={optionsSummary}
           info={info} nLsb={nLsb} onNLsb={setNLsb} capacity={capacity} depthRef={depthRef}
           startMode={startMode} onStartMode={setStartMode}
           startX={startX} startY={startY} startSeconds={startSeconds}
           onStartX={setStartX} onStartY={setStartY} onStartSeconds={setStartSeconds}
-          manualSlot={manualSlot} />
+          manualSlot={manualSlot} />}
 
         <Panel step="3" title="Lock and sign it"
           subtitle="The receiver needs the same password. Your private key proves the file came from you.">
@@ -513,13 +532,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult }: {
 
         <ErrorNote text={error} />
 
-        <ActionBar missing={missing}
-          heading={ready ? "Ready" : undefined}
-          detail={ready && info
-            ? info.lossy_source
-              ? `${cover?.name} is a JPEG, so the protected copy is written as ${info.output_format}.`
-              : `${cover?.name} stays lossless, so it will look and sound identical.`
-            : undefined}>
+        <ActionBar missing={missing} heading={ready ? "Ready" : undefined}>
           {(reasonId) => (
             <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={submit}
               aria-describedby={reasonId} aria-busy={busy}>

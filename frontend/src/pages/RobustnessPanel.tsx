@@ -4,8 +4,6 @@ import { errorText } from "../util";
 
 import { runRobustness, type Result } from "../api/robustness";
 import { artifactUrl } from "../api/jobs";
-import { EvidenceBarChart } from "../ui/lazyEvidenceChart";
-import { ChartViewer } from "../ui/chartViewer";
 
 export function RobustnessPanel() {
   const [stego, setStego] = useState<File | null>(null);
@@ -45,7 +43,7 @@ export function RobustnessPanel() {
 
   return <Panel title="Image robustness simulator" subtitle="Each image edit starts from the same protected file; no edits are chained.">
     <div className="field"><label htmlFor="robust-stego">Protected image</label><input id="robust-stego" type="file" accept="image/png,image/bmp" onChange={(event) => setStego(event.target.files?.[0] ?? null)} /></div>
-    <div className="field"><label htmlFor="robust-protocol">Verification workflow</label><select id="robust-protocol" value={protocol} onChange={(event) => setProtocol(event.target.value)}><option value="legacy">Legacy RSA/passphrase</option><option value="v2">V2 Ed25519/recovery file</option></select></div>
+    <div className="field"><label htmlFor="robust-protocol">Verification workflow</label><select id="robust-protocol" value={protocol} onChange={(event) => setProtocol(event.target.value)}><option value="legacy">RSA/passphrase (LSB or DCT)</option><option value="v2">V2 Ed25519/recovery file</option></select></div>
     {protocol === "legacy" && <div className="field"><label htmlFor="robust-password">Passphrase</label><input id="robust-password" type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} /></div>}
     {protocol === "v2" && <><div className="field"><label htmlFor="robust-recovery">Recovery file</label><input id="robust-recovery" type="file" onChange={(event) => setRecovery(event.target.files?.[0] ?? null)} /></div>
       <div className="field"><label htmlFor="robust-code">Recovery code</label><input id="robust-code" value={code} onChange={(event) => setCode(event.target.value)} /></div></>}
@@ -57,25 +55,10 @@ export function RobustnessPanel() {
     <button type="button" className="btn primary" disabled={!stego || !publicKey || Boolean(phase)} onClick={() => void run()}>Run image transformations</button>
     {phase && <p role="status">{phase}</p>}<ErrorNote text={error} />
     {result && <><p className="field-hint">Unmodified baseline: {result.baseline_verdict}. {result.note}</p>
-      <div className="evidence-card">
-        <p className="field-hint">PSNR measures image quality against each scenario's stated comparison basis. Infinite values are listed as unavailable on the finite chart; verification verdicts are shown below.</p>
-        <ChartViewer title="PSNR by transformation" snapshot={{ kind: "bar", title: "PSNR by transformation", unit: "dB",
-          points: result.scenarios.map((row) => ({ label: row.operation, value: row.metrics.psnr_db })),
-          notes: ["Quality is compared against the basis shown for each transformation. Infinite PSNR is not plotted on this finite scale.",
-            "Verification outcomes appear in the main window; quality metrics do not establish authenticity."],
-        }}>
-          <EvidenceBarChart label="PSNR by transformation" unit="dB" points={result.scenarios.map((row) => ({
-            label: row.operation, value: row.metrics.psnr_db,
-          }))} />
-        </ChartViewer>
-      </div>
       <div className="robust-grid">{result.scenarios.map((row) => <div className="robust-card" key={row.operation}>
         <h3>{row.operation} · {row.value}</h3>{row.preview && <img src={row.preview} alt={`${row.operation} transformed image`} />}
         <p>Verification: {row.verdict}</p>
         <p>Size: {row.original_dimensions.join(" × ")} → {row.result_dimensions.join(" × ")}</p>
-        {row.metrics.retained_area_percent !== null && <p>Image area retained: {row.metrics.retained_area_percent.toFixed(1)}%</p>}
-        <p>MSE {row.metrics.mse.toFixed(3)} · PSNR {row.metrics.psnr_db === null ? "∞" : row.metrics.psnr_db.toFixed(2)} dB · SSIM {row.metrics.ssim?.toFixed(4) ?? "unavailable"}</p>
-        <p className="field-hint">Comparison: {row.metrics.basis}.</p>
         <a href={artifactUrl(row.file.id)} download={row.file.filename}>Download transformed PNG</a>
       </div>)}</div></>}
   </Panel>;

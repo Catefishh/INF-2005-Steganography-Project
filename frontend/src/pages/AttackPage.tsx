@@ -16,8 +16,8 @@ const COVER_SLOT_ID = "tamper-cover-slot";
 
 const INPUT_LABELS = ["file", "original", "password", "public key"];
 
-/** Tests that only run when the original cover was supplied, because they attack it. */
-const NEEDS_ORIGINAL = new Set(["clean_cover", "wrong_start", "flip_payload_bit", "click"]);
+/** Only the clean-cover check requires the original image or recording. */
+const NEEDS_ORIGINAL = new Set(["clean_cover"]);
 
 /** The test that should come back clean. */
 const POSITIVE_ID = "baseline";
@@ -145,10 +145,13 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
     tamperMissing({ hasFile: stego !== null, hasPassphrase: passphrase.length > 0, hasPublicKey });
   const ready = missing.length === 0;
 
-  const passed = scenarios?.filter((s) => s.as_expected).length ?? 0;
-  const negatives = scenarios?.filter((s) => s.expected[0] !== "Authentic").length ?? 0;
+  const applicable = scenarios?.filter((s) => s.verdict !== "Unsupported") ?? [];
+  const unsupported = (scenarios?.length ?? 0) - applicable.length;
+  const passed = applicable.filter((s) => s.as_expected).length;
+  const negatives = applicable.filter((s) => s.expected[0] !== "Authentic").length;
+  const rejectedAsExpected = applicable.filter((s) => s.expected[0] !== "Authentic" && s.as_expected).length;
   const saved = scenarios?.filter((s) => s.file !== null).length ?? 0;
-  const positives = scenarios ? scenarios.length - negatives : 0;
+  const baseline = scenarios?.find((s) => s.id === POSITIVE_ID);
 
   // The outcome is the point of the screen, so it takes focus and is announced.
   useEffect(() => {
@@ -164,24 +167,31 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
         <button type="button" className={mode === "test" ? "active" : ""} onClick={() => setMode("test")}>Test protected file</button>
         <button type="button" className={mode === "encode" ? "active" : ""} onClick={() => setMode("encode")}>Encode and test</button>
       </div>
-      <Panel step="1" title="The protected file to attack"
-        subtitle="Start from a file that currently passes the check. Each test changes one thing and runs the normal checker on the result.">
+      <Panel step="1" title={mode === "test" ? "Choose the protected file" : "Choose a cover and payload"}
+        subtitle={mode === "test" ? "Use a file that passes Extract & Verify." : "The app will embed the payload before running the checks."}>
+        <ol className="tamper-guide">
+          <li><strong>Baseline:</strong> verify the protected file without changes.</li>
+          <li><strong>One change:</strong> edit a copy or change a credential for each case.</li>
+          <li><strong>Compare:</strong> show expected and observed verdicts; download modified files.</li>
+        </ol>
         <div className="columns">
           {mode === "test" && <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
             title="Drop the protected file" hint="picture or WAV produced by Embed & Sign"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="shield" file={stego}
             onFile={(file) => { requestRevision.current += 1; setStego(file); onWorkingFile?.(file); setScenarios(null); }} />}
           <DropZone label={<>Original cover <span className="opt">{mode === "test" ? "(optional)" : "· required"}</span></>} id={COVER_SLOT_ID}
-            title="Drop the original here" hint="adds the tests that attack the original file"
+            title="Drop the original here" hint={mode === "test"
+              ? "adds a check that the original contains no hidden payload"
+              : "the payload will be embedded into this cover"}
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="image" file={cover}
             onFile={(file) => { setCover(file); setScenarios(null); }} />
           {mode === "encode" && <label>Payload file<input type="file" onChange={(event) => setPayload(event.target.files?.[0] ?? null)} /></label>}
         </div>
       </Panel>
 
-      <Panel step="2" title="What the checker will be given">
+      <Panel step="2" title={mode === "test" ? "Verification inputs" : "Signing and verification inputs"}>
         {!isVideo && <PassphraseField value={passphrase} onChange={setPassphrase}
-          hint="Carried over from Embed & Sign, because the tests need a password that works in order to prove the failures are caused by the damage and nothing else." />
+          hint="The baseline uses this password; the wrong-password case replaces it for that check." />
         }
         {isVideo && mode === "test" && <div className="inline-fields"><label>Recovery file<input type="file" accept=".stegloc" onChange={(e) => setRecovery(e.target.files?.[0] ?? null)} /></label>
           <label>Recovery code<input value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} /></label></div>}
@@ -230,13 +240,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
         <ErrorNote text={error} />
       </Panel>
 
-      <ActionBar missing={missing}
-        heading={ready ? "Ready" : undefined}
-        detail={ready
-          ? cover
-            ? "Runs the whole suite, including the tests that attack the original. Takes a few seconds."
-            : "Runs the suite. Add the original to unlock the tests that attack it. Takes a few seconds."
-          : undefined}>
+      <ActionBar missing={missing} heading={ready ? "Ready" : undefined}>
         {(reasonId) => (
           <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={run}
             aria-describedby={reasonId} aria-busy={busy}>
@@ -257,19 +261,18 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
             <StaleBanner reason={staleReason(changed)} busy={busy} onRerun={run} onDismiss={() => setStaleDismissed(true)} />
           )}
           <div className={`result-column${stale ? " stale" : ""}`}>
-            <Outcome tone={passed === scenarios.length ? "good" : "bad"}
-              icon={passed === scenarios.length ? "shield" : "alert"}
+            <Outcome tone={passed === applicable.length ? "good" : "bad"}
+              icon={passed === applicable.length ? "shield" : "alert"}
               label="Result"
-              title={`${passed} of ${scenarios.length} completed cases behaved correctly`}
-              headingRef={outcomeRef}
-              summary={
-                <>
-                  {positives === 1 ? "The one file that should pass, passed. " : `All ${positives} files that should pass, passed. `}
-                  {negatives === 0
-                    ? "No test should have been rejected, so there is nothing to catch."
-                    : `All ${numberWord(negatives)} damaged files were rejected, each for the right reason.`}
-                  {saved > 0 && ` ${numberWord(saved)} of the damaged files were kept and can be saved below.`}
-                  {passed < scenarios.length && " The rows in red did not behave as expected."}
+              title={`${passed} of ${applicable.length} applicable cases behaved correctly`}
+               headingRef={outcomeRef}
+               summary={
+                 <>
+                   Baseline: {baseline?.verdict ?? "not run"}.
+                   {negatives > 0 && ` ${rejectedAsExpected} of ${negatives} rejection checks matched their expected verdicts.`}
+                   {saved > 0 && ` ${saved} modified file${saved === 1 ? " is" : "s are"} available to download.`}
+                   {unsupported > 0 && ` ${unsupported} spatial-LSB cases do not apply to this DCT file.`}
+                   {passed < applicable.length && " The rows in red did not behave as expected."}
                 </>
               }
               actions={
@@ -281,18 +284,21 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
             <div className="table-wrap">
               <table className="attacks">
                 <thead>
-                  <tr><th className="col-test">Test</th><th className="col-result">Result</th><th className="col-file">Damaged file</th></tr>
+                   <tr><th className="col-test">Test</th><th className="col-result">Expected / observed</th><th className="col-file">Modified file</th></tr>
                 </thead>
                 <tbody>
                   {scenarios.map((scenario) => (
                     <tr key={scenario.id} className={scenario.as_expected ? "" : "mismatch"}>
                       <td>
                         <strong>{scenario.title}</strong>
-                        <p className="attack-what">{scenario.change} {expectation(scenario, Boolean(cover))}</p>
+                        <p className="attack-what"><b>Change:</b> {scenario.change}</p>
                       </td>
                       <td>
-                        <VerdictChip verdict={scenario.verdict} />
-                        {scenario.as_expected
+                        <div className="attack-expected"><b>Expected:</b> {expectation(scenario, Boolean(cover))}</div>
+                        <div className="attack-observed"><b>Observed:</b>{" "}
+                        {scenario.verdict === "Unsupported" ? <span className="chip flat">Unsupported</span> : <VerdictChip verdict={scenario.verdict} />}
+                        </div>
+                        {scenario.verdict === "Unsupported" ? <div className="muted small">not applicable</div> : scenario.as_expected
                           ? <div className="attack-ok">as expected</div>
                           : <div className="attack-bad">expected {scenario.expected.join(" or ")}</div>}
                         <Disclosure title="Why">
@@ -336,22 +342,25 @@ export function AttackPage({ vault, handoff, onWorkingFile, onHandoff, goTo }: {
  * answer is correct, which is the whole reason the separate Expected column could be dropped.
  */
 export function expectation(scenario: Scenario, hasCover: boolean): string {
+  if (scenario.verdict === "Unsupported") return "Not applicable (spatial LSB only).";
   const alternatives = scenario.expected.join(" or ");
   if (scenario.expected.length > 1) {
-    return `Either ${scenario.expected[0]} or ${scenario.expected[1]} is correct here, because which check fails `
-      + "first depends on what the damaged data happens to look like.";
+    return `${alternatives}. The first failing check determines which verdict appears.`;
   }
   if (!hasCover && NEEDS_ORIGINAL.has(scenario.id)) {
-    return `Should come back ${alternatives} once the original file is supplied.`;
+    return `${alternatives} after adding the original cover.`;
   }
-  return `Should come back ${alternatives}.`;
+  return `${alternatives}.`;
 }
 
 /** Why a row has no file. "–" says nothing; these say which of the two reasons it is. */
 export function noFileReason(scenario: Scenario, hasCover: boolean): string {
-  if (scenario.id === POSITIVE_ID) return "not damaged";
-  if (!hasCover) return "needs the original file";
-  return "original file used";
+  if (scenario.verdict === "Unsupported") return "not applicable to DCT";
+  if (scenario.id === POSITIVE_ID) return "file unchanged";
+  if (scenario.id === "clean_cover") return hasCover ? "original cover used" : "requires original cover";
+  if (["wrong_passphrase", "wrong_key", "wrong_start", "corrected_start"].includes(scenario.id))
+    return "file unchanged; check settings changed";
+  return "no modified file";
 }
 
 export function numberWord(n: number): string {

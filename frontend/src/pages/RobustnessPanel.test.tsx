@@ -30,7 +30,7 @@ test("loads a saved PEM and sends its content to the robustness job", async () =
   expect(sent.get("stego")).toBe(image);
 });
 
-test("shows resize and crop metrics with their comparison basis", async () => {
+test("shows transformations and verification without image-quality output", async () => {
   const row = { value: 0.75, verdict: "Cannot Verify", file: { id: "1", filename: "resize.png", size: 10 },
     preview: null, original_dimensions: [128, 128] as [number, number],
     result_dimensions: [96, 96] as [number, number],
@@ -51,11 +51,7 @@ test("shows resize and crop metrics with their comparison basis", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Run image transformations" }));
 
   expect(await screen.findByText("Size: 128 × 128 → 96 × 96")).toBeInTheDocument();
-  expect(screen.getByText("MSE 12.345 · PSNR 37.21 dB · SSIM 0.9123")).toBeInTheDocument();
-  expect(screen.getByText("Image area retained: 80.7%")).toBeInTheDocument();
-  expect(screen.getByText("MSE 0.000 · PSNR ∞ dB · SSIM 1.0000")).toBeInTheDocument();
-  expect(screen.getByText("Comparison: Retained center region only; missing area excluded.")).toBeInTheDocument();
-  expect(await screen.findByRole("table", { name: "PSNR by transformation data" })).toHaveTextContent("cropUnavailable");
-  expect(screen.getByRole("button", { name: "Pop out PSNR by transformation" })).toBeInTheDocument();
-  expect(screen.getByRole("table", { name: "PSNR by transformation data" })).toHaveTextContent("resize37.21");
+  expect(screen.getAllByText("Verification: Cannot Verify")).toHaveLength(2);
+  expect(screen.getAllByText("Download transformed PNG")).toHaveLength(2);
+  expect(screen.queryByText(/MSE|PSNR|SSIM|Comparison:/)).not.toBeInTheDocument();
 });

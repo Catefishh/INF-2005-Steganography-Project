@@ -8,6 +8,8 @@ export type VerdictName =
   | "Wrong Start Location"
   | "Cannot Verify";
 
+export type EmbeddingMethod = "lsb" | "dct";
+
 export interface Location {
   slot: number;
   text: string;
@@ -37,6 +39,8 @@ export interface CoverInfo {
   filename?: string;
   header?: Location;
   capacity?: { n_lsb: number; max_package_bytes: number }[];
+  dct?: { max_package_bytes: number; n_slots: number };
+  embedding_method?: EmbeddingMethod | "unsupported_dct" | "ambiguous" | null;
 }
 
 export interface StoredFile {
@@ -55,9 +59,9 @@ export interface SignedRecord {
   nonce: string;
   team: string;
   signer_fingerprint: string;
-  cover: { type: string; descriptor: string; filename: string; sha256: string };
+  cover: { type: string; descriptor: string; filename: string; sha256: string; width?: string; height?: string };
   payload: { filename: string; media_type: string; size: number; sha256: string };
-  embedding: { method: string; lsb_bits: number; start_slot: string; header_slot: string };
+  embedding: { method: string; lsb_bits?: number; version?: number; start_slot: string; header_slot: string; total_slots?: string; package_bytes?: string };
   algorithms: Record<string, string>;
 }
 
@@ -78,6 +82,8 @@ export interface HideStep {
 }
 
 export interface HideReport {
+  method?: "dct" | "lsb";
+  coverage?: { protected_rgb_values: number; total_rgb_values: number; alpha_values: number; description: string };
   payload_hash?: import("../ui/hashEvidence").HashEvidenceData;
   cover: CoverInfo;
   stego_size: number;
@@ -119,7 +125,7 @@ export interface VerifyResponse {
   verdict: VerdictName;
   summary: string;
   steps: VerifyStep[];
-  info: { cover?: CoverInfo; header?: Location; start?: Location; n_lsb?: number; package_bytes?: number; span_slots?: number;
+  info: { method?: "dct" | "lsb"; coverage?: HideReport["coverage"]; cover?: CoverInfo; header?: Location; start?: Location; n_lsb?: number; package_bytes?: number; span_slots?: number;
     payload_hash?: import("../ui/hashEvidence").HashEvidenceData };
   record: SignedRecord | null;
   record_trusted: boolean;
@@ -243,7 +249,7 @@ export interface Scenario {
   title: string;
   change: string;
   expected: VerdictName[];
-  verdict: VerdictName;
+  verdict: VerdictName | "Unsupported";
   summary: string;
   as_expected: boolean;
   file: StoredFile | null;

@@ -437,16 +437,17 @@ describe("the wording helpers the screens use", () => {
 
   it("folds the expectation into the description, and explains the either-or cases", () => {
     const list = scenarios();
-    expect(expectation(list[0], true)).toBe("Should come back Authentic.");
-    expect(expectation(list[3], true)).toContain("Either Payload Missing or Cannot Verify is correct here");
-    expect(expectation(list[2], false)).toContain("once the original file is supplied");
+    expect(expectation(list[0], true)).toBe("Authentic.");
+    expect(expectation(list[3], true)).toContain("Payload Missing or Cannot Verify. The first failing check");
+    expect(expectation(list[2], false)).toBe("Payload Missing after adding the original cover.");
   });
 
-  it("says why a damaged file is missing rather than printing a dash", () => {
+  it("explains why a scenario has no downloadable modified file", () => {
     const list = scenarios();
-    expect(noFileReason(list[0], true)).toBe("not damaged");
-    expect(noFileReason(list[1], true)).toBe("original file used");
-    expect(noFileReason(list[2], false)).toBe("needs the original file");
+    expect(noFileReason(list[0], true)).toBe("file unchanged");
+    expect(noFileReason(list[1], false)).toBe("file unchanged; check settings changed");
+    expect(noFileReason(list[2], false)).toBe("requires original cover");
+    expect(noFileReason(list[2], true)).toBe("original cover used");
   });
 
   it("spells small counts and falls back to digits", () => {

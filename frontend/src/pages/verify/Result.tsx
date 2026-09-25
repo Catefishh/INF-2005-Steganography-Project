@@ -36,7 +36,7 @@ export function VerifyResult({ result, stegoName, overrideUsed, passphrase, onPa
         headingRef={outcomeRef}
         summary={
           <>
-            {reading.summary}
+            {result.info.method === "dct" ? result.summary : reading.summary}
             {failed && <> The check that stopped it was <b>{failed.title}</b>.</>}
           </>
         }
@@ -47,6 +47,11 @@ export function VerifyResult({ result, stegoName, overrideUsed, passphrase, onPa
         ) : undefined} />
 
       {result.info.payload_hash && <HashEvidence evidence={result.info.payload_hash} />}
+      {result.info.method === "dct" && result.info.coverage && <Panel title="DCT integrity scope">
+        <p>{result.info.coverage.protected_rgb_values.toLocaleString()} RGB values outside embedding blocks and {result.info.coverage.alpha_values.toLocaleString()} alpha values are covered by the signed hash.</p>
+        {result.info.coverage.protected_rgb_values === 0 && <p>No RGB cover-integrity coverage is available for this placement.</p>}
+        <p>The encrypted payload is authenticated. Pixel edits inside embedding blocks can go undetected if the encoded bits remain readable.</p>
+      </Panel>}
 
       {content && record && (
         <div className="columns">
@@ -178,7 +183,9 @@ const FULL_RECORD_ROWS: [string, (record: SignedRecord) => string][] = [
   ["Cover SHA-256", (r) => r.cover?.sha256],
   ["Hidden content", (r) => `${r.payload?.filename} · ${r.payload?.media_type} · ${r.payload?.size} B`],
   ["Content SHA-256", (r) => r.payload?.sha256],
-  ["How it was hidden", (r) => `${r.embedding?.method}, ${r.embedding?.lsb_bits} bit(s), start position ${Number(r.embedding?.start_slot).toLocaleString()}`],
+  ["How it was hidden", (r) => r.embedding?.method === "DCT"
+    ? `DCT version ${r.embedding.version}, start slot ${Number(r.embedding.start_slot).toLocaleString()}`
+    : `${r.embedding?.method}, ${r.embedding?.lsb_bits} bit(s), start position ${Number(r.embedding?.start_slot).toLocaleString()}`],
 ];
 
 /**
