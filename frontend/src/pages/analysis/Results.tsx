@@ -36,12 +36,12 @@ export function InspectResult({ analysis, busy, channel, outcomeRef, planesRef, 
 
       {compare && <DiffPanel analysis={analysis} />}
 
-      <div className="columns">
-        {kind === "image" && analysis.rs && <RsPanel rs={analysis.rs} />}
-        <ChiSquareSection details={analysis.chi_square_details} busy={busy} />
-
-        <BitPlanesPanel analysis={analysis} busy={busy} channel={channel} planesRef={planesRef} onChannel={onChannel} />
+      <div className={kind === "image" && analysis.rs ? "columns" : ""}>
+        {kind === "image" && analysis.rs && <div><RsPanel rs={analysis.rs} /></div>}
+        <div><ChiSquareSection details={analysis.chi_square_details} busy={busy} /></div>
       </div>
+
+      <BitPlanesPanel analysis={analysis} busy={busy} channel={channel} planesRef={planesRef} onChannel={onChannel} />
 
       <BpcsSection result={analysis} busy={busy} />
 

@@ -139,13 +139,7 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
         <ErrorNote text={error} />
       </Panel>
 
-      <ActionBar missing={missing}
-        heading={ready ? "Ready" : undefined}
-        detail={ready
-          ? reference
-            ? "The original is supplied, so differences can be measured directly."
-            : "Without the original the app reports statistical and visual patterns only."
-          : undefined}>
+      <ActionBar missing={missing} heading={ready ? "Ready" : undefined}>
         {(reasonId) => (
           <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}
             aria-describedby={reasonId} aria-busy={busy}>
@@ -162,9 +156,6 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
           <p>
             Inspect value-pair statistics, the eight bit layers and a histogram. Images also include BPCS complexity
             maps and capacity estimates. With an original, compare measured differences directly.
-          </p>
-          <p className="muted small">
-            None of this needs the password or a key. It is what an outsider could work out from the file alone.
           </p>
         </EmptyState>
       )}

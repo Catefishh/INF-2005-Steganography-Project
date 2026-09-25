@@ -110,8 +110,8 @@ export function EmbedResult({ report, stego, usedCoverUrl, stegoUrl, team, onEdi
           )}
           <p className="muted small">
             {kind === "image"
-              ? `They should look the same. That is the point — the difference is ${report.n_lsb} bit in each of ${report.slots_changed.toLocaleString()} colour values.`
-              : `They should sound the same. The difference is ${report.n_lsb} bit in the quietest part of each of ${report.slots_changed.toLocaleString()} samples.`}
+              ? `${report.n_lsb} bit${report.n_lsb === 1 ? "" : "s"} changed in each of ${report.slots_changed.toLocaleString()} colour values.`
+              : `${report.n_lsb} bit${report.n_lsb === 1 ? "" : "s"} changed in each of ${report.slots_changed.toLocaleString()} samples.`}
           </p>
         </Panel>
 
@@ -152,9 +152,6 @@ export function EmbedResult({ report, stego, usedCoverUrl, stegoUrl, team, onEdi
             <Icon name="zap" /> Run the tamper tests
           </button>
         </div>
-        <p className="muted small">
-          Each one opens with this file already loaded. The password is carried across too; it is shown so you know it was.
-        </p>
       </Panel>
 
       <Disclosure title="Step by step — what the app just did" value={`${report.steps.length} steps`}>

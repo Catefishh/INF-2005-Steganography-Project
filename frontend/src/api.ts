@@ -1,5 +1,5 @@
 /** Legacy HTTP calls; V2/V3 request helpers live in api/. */
-export type { VerdictName, Location, CoverInfo, StoredFile, SignedRecord, LectureRow,
+export type { VerdictName, EmbeddingMethod, Location, CoverInfo, StoredFile, SignedRecord, LectureRow,
   HideStep, HideReport, HideResponse, VerifyStep, VerifyResponse, Analysis, Scenario,
   KeyInfo, BpcsConfig, BpcsMetrics, BpcsResult, ChiSquareDetails, ChiSquareSegment } from "./api/types";
 import type { CoverInfo, HideResponse, VerifyResponse, Analysis, Scenario, KeyInfo, StoredFile } from "./api/types";
@@ -63,6 +63,7 @@ export const api = {
     return postForm<CoverInfo>("/api/inspect", form);
   },
   estimate(body: {
+    method?: "lsb" | "dct";
     cover_kind: string;
     descriptor: string;
     cover_filename: string;

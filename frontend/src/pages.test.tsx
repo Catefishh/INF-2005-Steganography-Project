@@ -5,7 +5,7 @@
 // accessibility properties of the same screens live in a11y.test.tsx, and the logic behind them
 // in logic.test.ts.
 
-import { fireEvent, render, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { api, type VerifyStep } from "./api";
@@ -211,6 +211,104 @@ it("keeps the embedded file across receiving, inspection and tamper screens unti
   expect(within(view()).queryByText("stego_harbour.png")).toBeNull();
 });
 
+it("restores the latest embed result from the sidebar and keeps its download after Edit", async () => {
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "hello"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(window.location.pathname).toBe("/embed/result"));
+  await screenNamed("Keys");
+  await screenNamed("Embed & Sign");
+  expect(window.location.pathname).toBe("/embed/result");
+  expect(within(view()).getByRole("link", {name: /Download stego_harbour.png/})).toHaveAttribute("download", "stego_harbour.png");
+  fireEvent.click(within(view()).getByRole("button", {name: /Edit/}));
+  await waitFor(() => expect(window.location.pathname).toBe("/embed"));
+  expect(within(view()).getByRole("link", {name: /Download stego_harbour.png/})).toBeInTheDocument();
+  act(() => { window.history.pushState(null, "", "/embed/result"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "File protected"})).toBeInTheDocument());
+  act(() => { window.history.pushState(null, "", "/embed"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  await waitFor(() => expect(within(view()).getByLabelText("Message")).toBeInTheDocument());
+});
+
+it("finishing an embed while another screen is active does not change that screen", async () => {
+  let finish!: (value: Awaited<ReturnType<typeof api.hide>>) => void;
+  const original = await vi.mocked(api.hide).getMockImplementation()?.(new FormData());
+  if (!original) throw new Error("missing hide mock");
+  vi.mocked(api.hide).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "hello"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await screenNamed("Keys");
+  finish(original);
+  await waitFor(() => expect(api.hide).toHaveBeenCalled());
+  expect(window.location.pathname).toBe("/keys");
+  await screenNamed("Embed & Sign");
+  await waitFor(() => expect(window.location.pathname).toBe("/embed/result"));
+});
+
+it("sends DCT selection and shows the method-specific PNG result", async () => {
+  vi.mocked(api.inspect).mockResolvedValue({...IMAGE_INFO, dct: {n_slots: 14_400, max_package_bytes: 1671}});
+  const response = await vi.mocked(api.hide).getMockImplementation()?.(new FormData());
+  if (!response) throw new Error("missing hide mock");
+  vi.mocked(api.hide).mockResolvedValue({...response, report: {...response.report, method: "dct",
+    coverage: {protected_rgb_values: 1000, total_rgb_values: 3000, alpha_values: 0, description: "non-embedding pixels"}}});
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByRole("button", {name: "DCT · lossless PNG"})).toBeInTheDocument());
+  fireEvent.click(within(view()).getByRole("button", {name: "DCT · lossless PNG"}));
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "hello"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  await waitFor(() => expect(api.estimate).toHaveBeenCalledWith(expect.objectContaining({method: "dct"})));
+  expect(within(view()).queryByText(/Bits per/)).not.toBeInTheDocument();
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "DCT image protected"})).toBeInTheDocument());
+  expect(vi.mocked(api.hide).mock.calls.at(-1)?.[0].get("method")).toBe("dct");
+  expect(within(view()).getByRole("link", {name: "Download protected PNG"})).toHaveAttribute("download", "stego_harbour.png");
+});
+
+it("keeps text work independent of the media working file", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "hello"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("stego_harbour.png"));
+  await screenNamed("Text Steganography");
+  await waitFor(() => expect(document.querySelector(".working-strip")).toBeNull());
+  fireEvent.change(within(view()).getByLabelText("Message to hide"), {target: {value: "text stays"}});
+  await screenNamed("Embed & Sign");
+  fireEvent.click(within(document.querySelector(".working-strip") as HTMLElement).getByRole("button", {name: "Clear workspace"}));
+  await screenNamed("Text Steganography");
+  expect(within(view()).getByLabelText("Message to hide")).toHaveValue("text stays");
+});
+
+it("keeps the video inline workflow on an embed result URL without an RSA result", async () => {
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  const bytes = new Uint8Array(16);
+  bytes.set(new TextEncoder().encode("RIFF"), 0);
+  bytes.set(new TextEncoder().encode("AVI "), 8);
+  const slot = within(view()).getByText("Cover file").closest(".slot") as HTMLElement;
+  const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
+  setFiles(input, new File([bytes], "clip.avi", {type: "video/x-msvideo"}));
+  fireEvent.change(input);
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "Lossless video carrier"})).toBeInTheDocument());
+  act(() => { window.history.pushState(null, "", "/embed/result"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  await waitFor(() => expect(window.location.pathname).toBe("/embed/result"));
+  expect(within(view()).getByRole("heading", {name: "Lossless video carrier"})).toBeInTheDocument();
+});
+
 it("sender: says so when the payload will not fit, and offers the ways out", async () => {
   vi.spyOn(api, "estimate").mockResolvedValue({ package_bytes: 922757 });
   await appWithKeys();
@@ -232,7 +330,6 @@ it("receiver: reads the message, and reading the override panel does not arm it"
   pick("File to check", "stego_harbour.png");
   await waitFor(() => expect(within(view()).getByText("places to look in")).toBeInTheDocument());
 
-  expect(view().querySelector(".field-hint")).toHaveTextContent("Session credentials stay loaded");
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
 
   // Opening the panel must not turn the override on: this was the worst trap in the audit.
@@ -276,6 +373,30 @@ it("receiver: a failure names the check, and editing an input marks the verdict 
   expect(within(view()).getByText(/This result is out of date/)).toBeInTheDocument();
 });
 
+it("detects an independently uploaded DCT PNG and reports its partial integrity scope", async () => {
+  vi.mocked(api.inspect).mockResolvedValue({...IMAGE_INFO, embedding_method: "dct",
+    dct: {n_slots: 14_400, max_package_bytes: 1671}});
+  vi.mocked(api.verify).mockResolvedValue({
+    verdict: "Authentic", summary: "Signature and payload authentication valid; non-embedding pixels match.",
+    steps: VERIFY_STEPS,
+    info: {method: "dct", coverage: {protected_rgb_values: 1000, total_rgb_values: 3000,
+      alpha_values: 0, description: "non-embedding pixels"}},
+    record: {...RECORD, embedding: {...RECORD.embedding, method: "DCT", version: 1}},
+    record_trusted: true,
+    content: {id: "file-1", filename: "message.txt", media_type: "text/plain", size: 5, text: "hello"},
+  });
+  await appWithKeys();
+  await screenNamed("Extract & Verify");
+  pick("File to check", "received.png");
+  await waitFor(() => expect(within(view()).getByText("places to look in")).toBeInTheDocument());
+  expect(within(view()).queryByRole("button", {name: /Look in a specific place/})).toBeNull();
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Check file/}));
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "DCT integrity scope"})).toBeInTheDocument());
+  expect(within(view()).getByText(/Pixel edits inside embedding blocks can go undetected/)).toBeInTheDocument();
+  expect(vi.mocked(api.verify).mock.calls.at(-1)?.[0].get("start_slot")).toBeNull();
+});
+
 it("analyst: reports a reading, not a certainty, and re-runs on a channel change", async () => {
   render(<App />);
   await screenNamed("Inspect a file");
@@ -306,9 +427,9 @@ it("tester: leads with the count and keeps every damaged file downloadable", asy
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
   fireEvent.click(within(view()).getByRole("button", { name: /Run tamper tests/ }));
 
-  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 completed cases behaved correctly"));
+  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("2 of 2 applicable cases behaved correctly"));
   expect(within(view()).getAllByText("as expected")).toHaveLength(2);
   expect(within(view()).getByRole("link", { name: /Save harbour_flip.png/ })).toBeInTheDocument();
-  // A row with no file says why instead of printing a dash.
-  expect(within(view()).getByText("not damaged")).toBeInTheDocument();
+  expect(within(view()).getByText("file unchanged")).toBeInTheDocument();
+  expect(within(view()).getAllByText(/Expected:/)).toHaveLength(2);
 });

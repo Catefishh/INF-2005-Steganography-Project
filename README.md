@@ -1,4 +1,6 @@
-# Stegloc: LSB steganography with digital signatures
+# Stegloc: LSB and DCT steganography with digital signatures
+
+Image senders can choose **DCT · lossless PNG** in Embed & Sign. It uses one bit per complete 8×8 RGB channel block, automatically places a signed and encrypted payload, and produces a PNG that can be independently reuploaded to Extract & Verify. Small images may have no usable capacity; the capacity meter includes the encrypted envelope and RSA signature. The lossless output avoids further codec loss, but resizing, JPEG recompression, or other edits may prevent recovery. The DCT cover hash protects RGB pixels outside embedding blocks and all alpha values, while AES-GCM protects recovered payload bytes. See [DCT format and integrity scope](docs/dct-protocol.md).
 
 ## Demonstration workflow
 
@@ -10,7 +12,7 @@
 
 Prepared MOV/MP4 video uses the Ed25519 workflow with a separate recovery file and code. MP3 becomes WAV; MOV/MP4 becomes silent AVI. The downloaded stego format is the prepared lossless format. Working files live only for the current app session.
 
-INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement. It supports SHA-256/RSA signing and an Ed25519 media protocol with a separate recovery file/code and restricted AVI video carrier.
+INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement, with a DCT option for images. It supports SHA-256/RSA signing and an Ed25519 media protocol with a separate recovery file/code and restricted AVI video carrier.
 
 | Page | What it does |
 | --- | --- |

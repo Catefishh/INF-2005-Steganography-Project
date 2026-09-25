@@ -123,7 +123,13 @@ def attach(app: FastAPI) -> None:
 
         def work(session, check):
             job = session.jobs[session.active_job]
-            job.total_cases = 7 if video else 12 if original else 11
+            dct = mode == "test" and not video and engine.detect_method(load_cover(carrier)) == "dct"
+            if video:
+                job.total_cases = 7
+            elif dct:
+                job.total_cases = 10 if original else 9
+            else:
+                job.total_cases = 12 if original else 11
             job.phase = "baseline"
 
             started = time.monotonic()

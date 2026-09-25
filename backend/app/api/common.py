@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 class EstimateRequest(BaseModel):
+    method: str = Field("lsb", max_length=10)
     cover_kind: str = Field(max_length=10)
     descriptor: str = Field(max_length=200)
     cover_filename: str = Field("", max_length=200)

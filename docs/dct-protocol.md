@@ -1,0 +1,15 @@
+# DCT PNG format (version 1)
+
+Stegloc's DCT option accepts an image, decodes its first frame as RGB or RGBA, and writes a PNG of the same dimensions. Each complete 8×8 RGB channel block carries one bit. Blocks run row by row, with R, G, B within each block. Incomplete right and bottom edges and all alpha bytes are preserved.
+
+For each bit, the orthonormal DCT coefficients at zero-based (2, 3) and (3, 2) are ordered: positive difference is one, negative is zero. Bits are most significant first. The encoder starts with a minimum separation of 32 coefficient units and retries failing blocks at 64, 128, and 256. It reopens the actual PNG and checks the entire header and package after each pass. If it cannot recover the exact bytes, embedding fails without publishing the file. There is no redundancy or error correction.
+
+The final 1,024 transform slots contain a 128-byte bootstrap: `DCT1` (4 bytes), random salt (16), AES-GCM nonce (12), encrypted 24-byte plaintext plus tag (40), and zero padding (56). The plaintext contains three big-endian unsigned 64-bit integers: payload start slot, encrypted package byte length, and total transform slots. Magic and salt are AES-GCM associated data. The passphrase derives independent header, payload, and placement keys with PBKDF2-HMAC-SHA256. The payload begins at slot 1 or later and ends before the bootstrap. Maximum encrypted package bytes are `floor(max(0, total_slots - 1024 - 1) / 8)`.
+
+The encrypted package contains a canonical JSON record, RSA-PSS signature over its SHA-256 digest, and exact payload bytes. Signed fields include method/version, image dimensions and descriptor, placement/count fields, payload length/digest, and a cover hash. Placement/count fields are fixed-width decimal strings, so the placeholder and final record have identical lengths. The package uses its own AES-GCM nonce and tag. Recovery requires header authentication, bounds checks, package authentication, RSA signature validation, payload digest and length validation, placement/dimension checks, and cover-hash validation before any content is released.
+
+The cover hash covers decoded RGB values outside the channel blocks used by the package and bootstrap, plus **every alpha byte**. It does not authenticate pixel changes inside embedding blocks when their encoded bits still decode correctly. Payload ciphertext authentication detects damaged hidden bytes. A successful verdict means those checks passed; it does not prove every output pixel is unchanged. JPEG recompression, resizing, and other edits can prevent recovery despite the lossless PNG output.
+
+In the app, choose **DCT · lossless PNG** on **Embed & Sign** for an image. Capacity is shown in encrypted package bytes. Download the PNG and supply it, the passphrase, and the sender's public key to **Extract & Verify**. The receiver detects the DCT format from the PNG itself, without sender session state or PNG metadata.
+
+**Tamper tests** can flip an encoded bit in the DCT payload and verify that package authentication rejects the modified PNG. Cases that require spatial LSB slots are labelled not applicable.

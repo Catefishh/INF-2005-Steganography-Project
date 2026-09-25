@@ -4,6 +4,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 from ..stego import engine
 from ..stego.covers import CoverError, load_cover
+from ..stego.dct_codec import DctCarrier
 from .common import EstimateRequest, _read, _optional_int, _optional_float, _bad_request, _looks_like_text
 TEXT_PREVIEW_BYTES = 200_000
 
@@ -19,6 +20,13 @@ def attach(app: FastAPI, store) -> None:
             info["header"] = cover.location(max(engine.header_slot(cover.n_slots), 0))
             info["capacity"] = [{"n_lsb": n, "max_package_bytes": max(0, engine.max_package_bytes(cover.n_slots, n))}
                                 for n in range(1, 9)]
+            if cover.kind == "image":
+                dct = DctCarrier(data)
+                info["dct"] = {"max_package_bytes": dct.capacity_bytes, "n_slots": dct.n_slots}
+            info["embedding_method"] = engine.detect_method(cover)
+            if info["embedding_method"] == "dct":
+                slot = info["dct"]["n_slots"] - 1024
+                info["header"] = {"slot": slot, "text": f"DCT slot {slot:,}"}
             return info
         try:
             return await run_in_threadpool(work)
@@ -30,7 +38,7 @@ def attach(app: FastAPI, store) -> None:
         try:
             size = engine.estimate_package_bytes(body.cover_kind, body.descriptor, body.cover_filename,
                                                  body.payload_filename, body.payload_type, body.payload_size,
-                                                 body.team, body.key_bits)
+                                                 body.team, body.key_bits, method=body.method)
         except ValueError as exc:
             raise _bad_request(exc)
         return {"package_bytes": size}
@@ -42,7 +50,7 @@ def attach(app: FastAPI, store) -> None:
                    private_key: str = Form(...), key_password: str | None = Form(None),
                    n_lsb: int = Form(1), start_mode: str = Form("auto"), start_x: str | None = Form(None),
                    start_y: str | None = Form(None), start_seconds: str | None = Form(None),
-                   start_slot: str | None = Form(None), team: str = Form("")):
+                   start_slot: str | None = Form(None), team: str = Form(""), method: str = Form("lsb")):
         cover_data = await _read(cover, "Cover")
         if payload_file is not None and payload_file.filename:
             content = await _read(payload_file, "Payload")
@@ -60,7 +68,7 @@ def attach(app: FastAPI, store) -> None:
         def work():
             return engine.hide(cover_data, cover.filename or "cover", content, payload_name, payload_type,
                                passphrase, private_key.encode(), (key_password or "").encode() or None, n_lsb,
-                               start_mode, team=team, **manual)
+                               start_mode, team=team, method=method, **manual)
         try:
             stego, cover_obj, report = await run_in_threadpool(work)
         except ValueError as exc:  # CoverError, CapacityError, StartLocationError, KeyFormatError

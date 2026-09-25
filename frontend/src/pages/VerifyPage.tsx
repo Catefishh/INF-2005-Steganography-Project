@@ -31,8 +31,6 @@ export function relativeTime(from: number, now: number = Date.now()): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export const OVERRIDE_HINT = "Session credentials stay loaded while you navigate. Replace them when checking a file from another sender.";
-
 /** Shown only while the override is armed, so an active override can never be missed. */
 const OVERRIDE_WARNING = "With it on, the hidden data is read from the place you type here instead of the place "
   + "stored in the file. Normal checks will fail. Turn it off to check a file properly.";
@@ -89,6 +87,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
 
   useEffect(() => {
     setInfo(null);
+    setOverride(false);
     if (!stego) return;
     let live = true;
     api.inspect(stego).then((details) => live && setInfo(details)).catch(() => undefined);
@@ -109,7 +108,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     }
   }, [info]);
 
-  const startSignature = override
+  const startSignature = override && info?.embedding_method !== "dct"
     ? info?.kind === "audio"
       ? `s:${overrideSeconds}`
       : `xy:${overrideX},${overrideY}`
@@ -118,7 +117,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   const changed = resultInputs ? changedInputs(INPUT_LABELS, resultInputs, currentInputs) : [];
   const stale = result !== null && changed.length > 0 && !staleDismissed;
 
-  const overrideValue = override
+  const overrideValue = override && info?.embedding_method !== "dct"
     ? info?.kind === "audio"
       ? `ON · ${Number(overrideSeconds || 0).toFixed(3)} s`
       : `ON · (${overrideX || 0}, ${overrideY || 0})`
@@ -138,7 +137,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     if (!stego) return;
     const requestId = ++requestRevision.current;
     // Snapshot before the await: state read after it belongs to a later render.
-    const sentOverride = useOverride;
+    const sentOverride = useOverride && info?.embedding_method !== "dct";
     const sentStart = overrideSlot !== "" ? `slot:${overrideSlot}` : info?.kind === "audio" ? `s:${overrideSeconds}` : `xy:${overrideX},${overrideY}`;
     const snapshot = [stego.name, passphrase, publicPem, sentOverride ? sentStart : "from the password"];
     setBusy(true);
@@ -213,7 +212,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
             onInspect={() => goTo("analyse")} onOverrideOff={overrideOff} />
           {result.verdict === "Wrong Start Location" && <div className="retry-panel">
             <h2>Retry on this file</h2>
-            <p>The working file and credentials stay loaded. Enter a corrected location or use the authenticated stored location.</p>
+            <p>Enter a corrected location or use the authenticated stored location.</p>
             <div className="btn-row">
               <label>Exact slot<input type="number" min="0" value={overrideSlot} onChange={(e) => setOverrideSlot(e.target.value)} /></label>
               {info?.kind === "audio" ? <label>Time (seconds)<input type="number" min="0" step="0.001" value={overrideSeconds} onChange={(e) => { setOverrideSeconds(e.target.value); setOverrideSlot(""); }} /></label> : <>
@@ -232,14 +231,12 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
 
   return (
     <div className="form-column">
-      <Panel step="1" title="The file you received"
-        subtitle="Drag in the file the sender gave you. Nothing about it needs to be known in advance.">
+      <Panel step="1" title="The file you received">
         {fromHandoff && handoff && (
           <div className="note note-info">
             <Icon name="send" />
             <span>
-              <b>Carried over from Embed &amp; Sign, {relativeTime(handoff.serial)}.</b>
-              Handy for testing your own file. If you are checking something that actually arrived by email, replace it.
+              <b>Loaded from Embed &amp; Sign, {relativeTime(handoff.serial)}.</b>
               <span className="note-actions">
                 <button type="button" className="btn ghost sm" onClick={() => document.getElementById(STEGO_SLOT_ID)?.focus()}>
                   Use a different file
@@ -267,10 +264,9 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
       </Panel>
 
       <Panel step="2" title="What you need to open it"
-        subtitle="The password the sender gave you in person, and their public key.">
+        subtitle="The password unlocks the content; the sender's public key checks the signature.">
         <PassphraseField value={passphrase} onChange={setPassphrase}
-          placeholder="The password the sender told you"
-          hint={OVERRIDE_HINT} />
+          placeholder="The password the sender told you" />
 
         <div className="field">
           <span className="field-label">Sender's public key</span>
@@ -311,7 +307,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
           )}
         </div>
 
-        <Disclosure title="Look in a specific place instead of using the password" value={overrideValue} tone={override ? "warn" : ""}>
+        {info?.embedding_method !== "dct" && <Disclosure title="Look in a specific place instead of using the password" value={overrideValue} tone={override ? "warn" : ""}>
           {override && (
             <div className="note note-warn">
               <Icon name="alert" />
@@ -351,7 +347,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
                 : "The payload start becomes available after unlocking the file."}
             </small>
           </div>
-        </Disclosure>
+        </Disclosure>}
 
         <ErrorNote text={error} />
       </Panel>
@@ -363,7 +359,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
             ? info?.kind === "audio"
               ? `Reading from ${Number(overrideSeconds || 0).toFixed(3)} s, not from the place in the file.`
               : `Reading from (${overrideX || 0}, ${overrideY || 0}), not from the place in the file.`
-            : `${stego?.name} will be opened with the password you typed.`
+            : undefined
           : undefined}
         tone={ready && override ? "warn" : ""}>
         {(reasonId) => (

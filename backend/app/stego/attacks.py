@@ -13,7 +13,7 @@ from PIL import Image
 
 from . import lsb
 from .covers import load_cover
-from .engine import MAGIC, Verdict, _pack, _unpack, canonical_json, open_header, verify
+from .engine import MAGIC, Verdict, _pack, _unpack, canonical_json, open_header, verify, detect_method
 from .security import decrypt, encrypt, generate_rsa_keys, sha256_hex
 
 
@@ -48,6 +48,47 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
         return scenarios, files
     cover = load_cover(stego)
     ext = cover.extension
+    if detect_method(cover) == "dct":
+        scenarios.append(_scenario("wrong_passphrase", "Wrong passphrase", "receiver types a different passphrase",
+                                   [Verdict.CANNOT_VERIFY], verify(stego, passphrase + "-wrong", public_pem)))
+        _, other_public = generate_rsa_keys()
+        scenarios.append(_scenario("wrong_key", "Wrong public key", "verify with an unrelated RSA key",
+                                   [Verdict.SIGNATURE_INVALID], verify(stego, passphrase, other_public)))
+        if original_cover:
+            scenarios.append(_scenario("clean_cover", "Original cover (no payload)", "verify the cover before embedding",
+                                       [Verdict.PAYLOAD_MISSING], verify(original_cover, passphrase, public_pem)))
+        from .dct_codec import DctCarrier
+        changed = DctCarrier(stego)
+        changed.rgb[0, 0, 0] ^= 1  # slot 0 is reserved, outside all embedding blocks
+        altered = changed.export()
+        files["flip_cover_bit"] = ("tampered_non_embedding_pixel.png", altered)
+        scenarios.append(_scenario("flip_cover_bit", "Non-embedding pixel changed", "flip one RGB bit outside occupied DCT blocks",
+                                   [Verdict.TAMPERED], verify(altered, passphrase, public_pem), "flip_cover_bit"))
+        if base["verdict"] == Verdict.AUTHENTIC:
+            start = base["info"]["start"]["slot"]
+            payload = DctCarrier(stego)
+            first_byte = payload.read_bytes(1, start)[0]
+            altered = payload.embed_ranges([(start, bytes([first_byte ^ 0x80]))])
+            files["flip_payload_bit"] = ("tampered_dct_payload_bit.png", altered)
+            scenarios.append(_scenario("flip_payload_bit", "DCT payload bit changed",
+                                       "invert the first encoded bit of the encrypted payload",
+                                       [Verdict.TAMPERED], verify(altered, passphrase, public_pem), "flip_payload_bit"))
+        for name, title in (("wrong_start", "Manual LSB start"),
+                            ("lsb_noise", "LSB overwrite"), ("forged_payload", "LSB package forgery")):
+            scenarios.append({"id": name, "title": title, "change": "LSB-only attack is unsupported for DCT",
+                              "expected": [], "verdict": "Unsupported", "summary": "This attack assumes pixel LSB framing.",
+                              "as_expected": True, "file": None, "stages": []})
+        if cover.kind == "image":
+            image = Image.open(io.BytesIO(stego)).convert("RGB")
+            jpeg = io.BytesIO()
+            image.save(jpeg, format="JPEG", quality=90)
+            back = io.BytesIO()
+            Image.open(io.BytesIO(jpeg.getvalue())).save(back, format="PNG")
+            files["jpeg"] = ("tampered_jpeg_q90.png", back.getvalue())
+            scenarios.append(_scenario("jpeg", "JPEG re-compression (quality 90)", "save as JPEG, then PNG",
+                                       [Verdict.PAYLOAD_MISSING, Verdict.CANNOT_VERIFY, Verdict.TAMPERED],
+                                       verify(back.getvalue(), passphrase, public_pem), "jpeg"))
+        return scenarios, files
 
     # Wrong passphrase
     scenarios.append(_scenario("wrong_passphrase", "Wrong passphrase", "receiver types a different passphrase",
