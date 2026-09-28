@@ -88,7 +88,7 @@ def test_dct_showcase_reports_all_applicable_and_skipped_cases():
                 break
             time.sleep(0.01)
         assert state["status"] == "succeeded", state.get("error")
-        assert state["total"] == len(state["result"]["cases"]) == 9
+        assert state["completed"] == state["total"] == len(state["result"]["cases"]) == 7
         payload_flip = next(row for row in state["result"]["cases"] if row["id"] == "flip_payload_bit")
         assert payload_flip["verdict"] == "Tampered"
         assert payload_flip["file"] is not None

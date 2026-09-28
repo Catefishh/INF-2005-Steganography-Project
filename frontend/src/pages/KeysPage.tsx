@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "../api";
 import {
   ActionBar, ConfirmDialog, Disclosure, DropZone, EmptyState, ErrorNote, Icon, Panel, Spinner,
@@ -7,7 +7,7 @@ import { downloadText, errorText, shortHash, type Page, type Vault } from "../ut
 
 export function KeysPage({ vault, setVault, goTo }: {
   vault: Vault;
-  setVault: (vault: Vault) => void;
+  setVault: Dispatch<SetStateAction<Vault>>;
   goTo: (page: Page) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -18,8 +18,11 @@ export function KeysPage({ vault, setVault, goTo }: {
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [loadOpen, setLoadOpen] = useState(false);
   const replaceButton = useRef<HTMLButtonElement>(null);
+  const loadRevision = useRef({ private: 0, public: 0 });
 
   async function generate() {
+    loadRevision.current.private++;
+    loadRevision.current.public++;
     setBusy(true);
     setError("");
     try {
@@ -37,13 +40,20 @@ export function KeysPage({ vault, setVault, goTo }: {
   }
 
   async function load(file: File | null, kind: "private" | "public") {
+    const revision = ++loadRevision.current[kind];
     if (kind === "private") setPrivateFile(file);
     else setPublicFile(file);
-    if (!file) return;
+    setVault((current) => kind === "private"
+      ? { ...current, privatePem: "", privateFingerprint: null }
+      : { ...current, publicPem: "", publicFingerprint: null });
+    setSaved((current) => ({ ...current, [kind === "private" ? "privateKey" : "publicKey"]: false }));
     setError("");
+    if (!file) return;
     try {
       const pem = await file.text();
+      if (revision !== loadRevision.current[kind]) return;
       const info = await api.inspectKey(pem);
+      if (revision !== loadRevision.current[kind]) return;
       if (info.type !== kind) {
         setError(kind === "public"
           ? "That file is a PRIVATE key. The receiver only ever needs the sender's public key."
@@ -51,15 +61,15 @@ export function KeysPage({ vault, setVault, goTo }: {
         return;
       }
       if (kind === "private") {
-        setVault({ ...vault, privatePem: pem, privateFingerprint: info.fingerprint, bits: info.bits ?? vault.bits });
+        setVault((current) => ({ ...current, privatePem: pem, privateFingerprint: info.fingerprint, bits: info.bits ?? current.bits }));
         // A key loaded from disk already exists as a file, so there is nothing to lose.
         setSaved((current) => ({ ...current, privateKey: true }));
       } else {
-        setVault({ ...vault, publicPem: pem, publicFingerprint: info.fingerprint, bits: vault.bits ?? info.bits });
+        setVault((current) => ({ ...current, publicPem: pem, publicFingerprint: info.fingerprint, bits: current.bits ?? info.bits }));
         setSaved((current) => ({ ...current, publicKey: true }));
       }
     } catch (e) {
-      setError(errorText(e));
+      if (revision === loadRevision.current[kind]) setError(errorText(e));
     }
   }
 
@@ -152,7 +162,7 @@ export function KeysPage({ vault, setVault, goTo }: {
             </div>
           )}
 
-          <Panel title="Your key pair">
+          <Panel title={hasBoth ? "Your key pair" : "Your key"}>
             <div className="key-rows">
               <div className="key-row">
                 <span className="role"><Icon name="lock" size={16} /> Private key</span>
@@ -193,15 +203,16 @@ export function KeysPage({ vault, setVault, goTo }: {
       <ErrorNote text={error} />
 
       {hasAny ? (
-        <ActionBar heading="Next: embed and sign a file" detail="Your private key is filled in for you there.">
+        <ActionBar heading={hasPrivate ? "Next: embed and sign a file" : "Next: extract and verify a file"}
+          detail={hasPrivate ? "Your private key is filled in for you there." : "Your public key is filled in for you there."}>
           {(reasonId) => (
             <>
               <button type="button" className="btn quiet" ref={replaceButton} onClick={() => setConfirmReplace(true)}
                 disabled={busy} aria-describedby={reasonId}>
                 {busy ? <Spinner /> : <Icon name="refresh" />} Replace key pair
               </button>
-              <button type="button" className="btn primary lg" onClick={() => goTo("hide")}>
-                Go to Embed &amp; Sign <Icon name="arrowRight" size={16} />
+              <button type="button" className="btn primary lg" onClick={() => goTo(hasPrivate ? "hide" : "verify")}>
+                Go to {hasPrivate ? "Embed & Sign" : "Extract & Verify"} <Icon name="arrowRight" size={16} />
               </button>
             </>
           )}

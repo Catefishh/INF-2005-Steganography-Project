@@ -4,6 +4,7 @@ export { Icon, Spinner, Panel, ErrorNote, ActionBar, Disclosure, Reveal, Confirm
 export type { IconName } from "./ui/layout";
 export { DropZone, KeyField, PassphraseField } from "./ui/inputs";
 export { ByteDiagram, HideTimeline, VerifySteps, VerdictChip, LectureTable } from "./ui/evidence";
+export { LsbDepthPicker } from "./ui/LsbDepthPicker";
 export { CompareSlider, waveformColumns, normalizeColumns, Waveform, MediaPreview } from "./ui/media";
 export { Histogram, ChiStrip } from "./ui/charts";
 export { ChartViewer } from "./ui/chartViewer";

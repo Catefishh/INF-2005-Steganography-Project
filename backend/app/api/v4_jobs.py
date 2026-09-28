@@ -8,6 +8,7 @@ import json
 import re
 import time
 import zipfile
+from pathlib import Path
 import numpy as np
 from PIL import Image
 
@@ -19,6 +20,7 @@ from ..stego import engine
 from ..stego import text_v3
 from ..stego.covers import load_cover
 from ..stego.carriers.video import inspect_video
+from ..stego.carriers.video_mp4 import inspect_mp4, is_mp4, extension as mp4_extension
 from ..stego.v2_security import (load_verification_key, generate_signing_keys, decode_recovery_code,
     derive_keys, _parse_sidecar, _decrypt_and_verify_locator)
 from ..workflows import verify_video
@@ -90,7 +92,7 @@ def attach(app: FastAPI) -> None:
             raise HTTPException(400, "Unknown showcase mode")
         carrier = await _read(stego, "stego") if stego and stego.filename else None
         original = await _read(cover, "original") if cover and cover.filename else None
-        video = carrier is not None and carrier[:4] == b"RIFF" and carrier[8:12] == b"AVI "
+        video = carrier is not None and ((carrier[:4] == b"RIFF" and carrier[8:12] == b"AVI ") or is_mp4(carrier))
         sidecar = await _read(recovery, "Recovery", 8192) if recovery and recovery.filename else None
         if (not video and not passphrase) or not public_key or carrier is None or video and (not sidecar or not recovery_code):
             raise HTTPException(400, "Required verification credentials are missing")
@@ -109,11 +111,11 @@ def attach(app: FastAPI) -> None:
             job = session.jobs[session.active_job]
             dct = not video and engine.detect_method(load_cover(carrier)) == "dct"
             if video:
-                job.total_cases = 7
+                job.total_cases = 4
             elif dct:
-                job.total_cases = 10 if original else 9
+                job.total_cases = 8 if original else 7
             else:
-                job.total_cases = 12 if original else 11
+                job.total_cases = 9 if original else 8
             job.phase = "baseline"
 
             started = time.monotonic()
@@ -133,6 +135,7 @@ def attach(app: FastAPI) -> None:
             else:
                 scenarios, files = attacks.run_suite(active, passphrase, public_key.encode(), original,
                     on_case=completed, check=check, stop_on_failed_baseline=True, include_hash_mismatch=True)
+            job.total_cases = len(job.cases)
             if original is not None and active is not None:
                 heatmap_bytes = _comparison_heatmap(original, active, video)
                 if heatmap_bytes:
@@ -143,7 +146,10 @@ def attach(app: FastAPI) -> None:
             for key, (filename, sample_bytes) in files.items():
                 check()
                 ident = request.app.state.registry.artifact(session, sample_bytes, filename,
-                    "video/x-msvideo" if filename.endswith(".avi") else "image/png" if filename.endswith(".png") else "audio/wav", "showcase")
+                    {".avi": "video/x-msvideo", ".mov": "video/quicktime", ".mp4": "video/mp4",
+                     ".m4v": "video/x-m4v", ".3gp": "video/3gpp", ".mkv": "video/x-matroska",
+                     ".webm": "video/webm", ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv",
+                     ".png": "image/png", ".wav": "audio/wav"}.get(Path(filename).suffix.lower(), "application/octet-stream"), "showcase")
                 stored[key] = {"id": ident, "filename": filename, "size": len(sample_bytes)}
             for row in job.cases:
                 row["file"] = stored.get(row["id"])
@@ -182,7 +188,7 @@ def attach(app: FastAPI) -> None:
                     continue
                 artifact = session.artifacts.get(file["id"])
                 if artifact:
-                    name = "samples/" + row["id"] + (".avi" if artifact.filename.endswith(".avi") else ".png" if artifact.filename.endswith(".png") else ".wav")
+                    name = "samples/" + row["id"] + Path(artifact.filename).suffix
                     data = artifact.data
                     add(name, data)
             if job.result:
@@ -199,7 +205,8 @@ def _comparison_heatmap(original: bytes, active: bytes, video: bool) -> bytes | 
     """One representative full-resolution max-channel difference map for the export."""
     try:
         if video:
-            before, after = inspect_video(original), inspect_video(active)
+            before = inspect_mp4(original) if is_mp4(original) else inspect_video(original)
+            after = inspect_mp4(active) if is_mp4(active) else inspect_video(active)
             if (before.width, before.height) != (after.width, after.height):
                 return None
             shape = (before.height, before.width, 3)
@@ -250,7 +257,7 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
         rows.append(row)
         completed(row)
     baseline = verify_video(carrier, sidecar, code, key)
-    case("baseline", "Unmodified AVI", "none", ["Authentic"], baseline.overall.value,
+    case("baseline", "Unmodified video", "none", ["Authentic"], baseline.overall.value,
          "All v2 verification stages passed" if baseline.overall.value == "Authentic" else "Baseline verification failed")
     if baseline.overall.value != "Authentic":
         return rows, files
@@ -259,7 +266,8 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
     wrong_key = verify_video(carrier, sidecar, code, other)
     case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Signature Invalid"],
          wrong_key.overall.value, "Locator or record signature cannot verify")
-    adapter = inspect_video(carrier)
+    adapter = inspect_mp4(carrier) if is_mp4(carrier) else inspect_video(carrier)
+    suffix = mp4_extension(carrier) if is_mp4(carrier) else ".avi"
     secret = decode_recovery_code(code)
     salt, _, _, _ = _parse_sidecar(sidecar)
     locator = _decrypt_and_verify_locator(sidecar, derive_keys(secret, salt).locator, key)
@@ -267,14 +275,14 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
     changed = bytearray(adapter.slots())
     changed[0] ^= 1
     cover_flip = adapter.export_slots(changed)
-    files["cover_flip"] = ("video_cover_flip.avi", cover_flip)
+    files["cover_flip"] = ("video_cover_flip" + suffix, cover_flip)
     damaged = verify_video(cover_flip, sidecar, code, key)
     case("cover_flip", "Carrier bit changed", "first frame pixel changed outside payload", ["Tampered"],
          damaged.overall.value, "Canonical carrier SHA-256 must reject the change", "cover_flip")
     changed = bytearray(adapter.slots())
     changed[start] ^= 1
     payload_flip = adapter.export_slots(changed)
-    files["payload_flip"] = ("video_payload_flip.avi", payload_flip)
+    files["payload_flip"] = ("video_payload_flip" + suffix, payload_flip)
     damaged = verify_video(payload_flip, sidecar, code, key)
     case("payload_flip", "Payload bit changed", "embedded package bit changed", ["Tampered"],
          damaged.overall.value, "Encrypted package digest must reject the change", "payload_flip")

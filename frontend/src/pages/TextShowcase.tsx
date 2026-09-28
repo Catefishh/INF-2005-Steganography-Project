@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { requestJson, type Job } from "../api/jobs";
 import type { Scenario } from "../api";
 import { errorText } from "../util";
@@ -23,27 +23,42 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
   const [rows, setRows] = useState<Scenario[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const requestRevision = useRef(0);
+  const codeFileRevision = useRef(0);
+
+  function invalidateRun() {
+    requestRevision.current++;
+    setBusy(false);
+    setJobId("");
+    setPhase("");
+    setRows([]);
+    setError("");
+  }
 
   async function run() {
-    setBusy(true); setRows([]); setError("");
+    const revision = ++requestRevision.current;
+    setBusy(true); setRows([]); setError(""); setJobId(""); setPhase("");
     try {
       await requestJson("/api/v2/session", {method: "POST"});
+      if (revision !== requestRevision.current) return;
       const form = new FormData(); form.append("public_key", publicKey);
       if (carrier) form.append("carrier", carrier);
       if (recovery) form.append("recovery", recovery);
       form.append("recovery_code", code);
       const started = await requestJson<Job<Result>>("/api/v4/jobs/text-showcase", {method: "POST", body: form});
+      if (revision !== requestRevision.current) return;
       setJobId(started.id);
       for (let attempt = 0; attempt < 1200; attempt++) {
         const state = await requestJson<Job<Result> & {cases: Scenario[]; completed: number; total: number}>(`/api/v2/jobs/${encodeURIComponent(started.id)}`);
+        if (revision !== requestRevision.current) return;
         setRows(state.cases); setPhase(state.phase); setProgress({completed: state.completed, total: state.total});
         if (state.status === "succeeded") {setRows(state.result?.cases ?? state.cases); break;}
         if (state.status === "failed") throw new Error(state.error?.message || "Text showcase failed");
         if (state.status === "cancelled") break;
         await new Promise((resolve) => window.setTimeout(resolve, 250));
       }
-    } catch (cause) {setError(errorText(cause));}
-    finally {setBusy(false);}
+    } catch (cause) {if (revision === requestRevision.current) setError(errorText(cause));}
+    finally {if (revision === requestRevision.current) setBusy(false);}
   }
 
   const ready = Boolean(publicKey && carrier && recovery && code);
@@ -61,16 +76,18 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
       </div>
        <div className="text-test-inputs">
          <DropZone label="Protected text file" title="Choose protected text file" hint="Drop or choose a .txt carrier" accept=".txt,text/plain" file={carrier}
-            onFile={(file) => {setCarrier(file); onCarrierChange?.(file); onWorkingFile?.(file);}} />
+            onFile={(file) => {invalidateRun(); setCarrier(file); onCarrierChange?.(file); onWorkingFile?.(file);}} />
          <DropZone label="Recovery file" title="Choose recovery file" hint="Drop or choose a .stegloc-text file" accept=".stegloc-text" file={recovery}
-            onFile={(file) => {setRecovery(file); onRecoveryChange?.(file);}} />
+            onFile={(file) => {invalidateRun(); setRecovery(file); onRecoveryChange?.(file);}} />
        </div>
          <div className="recovery-code-input">
-           <div className="field"><label htmlFor="text-showcase-code">Recovery code</label><input id="text-showcase-code" value={code} placeholder="Paste the code from the text protection step" onChange={(event) => {setCode(event.target.value); onCodeChange?.(event.target.value);}} /><span className="field-hint">Keep this separate from the carrier and recovery file.</span></div>
+           <div className="field"><label htmlFor="text-showcase-code">Recovery code</label><input id="text-showcase-code" value={code} placeholder="Paste the code from the text protection step" onChange={(event) => {codeFileRevision.current++; invalidateRun(); setCode(event.target.value); onCodeChange?.(event.target.value);}} /><span className="field-hint">Keep this separate from the carrier and recovery file.</span></div>
           <DropZone label="Recovery code file" title="Drop recovery-code.txt" hint="or click to upload the downloaded code" accept=".txt,text/plain" file={recoveryCodeFile}
-            onFile={(file) => { setRecoveryCodeFile(file); if (!file) return; void file.text().then((value) => { setCode(value.trim()); onCodeChange?.(value.trim()); }); }} />
+            onFile={(file) => { const revision = ++codeFileRevision.current; invalidateRun(); setRecoveryCodeFile(file); if (!file) return;
+              setCode(""); void file.text().then((value) => { if (revision !== codeFileRevision.current) return;
+                setCode(value.trim()); onCodeChange?.(value.trim()); }).catch((cause) => { if (revision === codeFileRevision.current) setError(errorText(cause)); }); }} />
         </div>
-        <KeyField label="Ed25519 public key" value={publicKey} onChange={(value) => {setPublicKey(value); onPublicKeyChange?.(value);}}
+        <KeyField label="Ed25519 public key" value={publicKey} onChange={(value) => {invalidateRun(); setPublicKey(value); onPublicKeyChange?.(value);}}
          placeholder="-----BEGIN PUBLIC KEY----- (load sender.pem or paste it)" />
        <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}>{busy ? "Running the tests…" : "Run text tamper tests"}</button>
       {error && <p role="alert">{error}</p>}

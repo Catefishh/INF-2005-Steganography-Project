@@ -9,6 +9,7 @@ from .stego import lsb
 from .stego.carriers.image import inspect_image
 from .stego.carriers.audio import inspect_audio
 from .stego.carriers.video import inspect_video
+from .stego.carriers.video_mp4 import inspect_mp4, is_mp4
 from .stego.protocol import CARRIER_HASH_PLACEHOLDER, format_depth, format_uint64, measure_encrypted_envelope_length, PROTOCOL_ID, HASH_ALGORITHM, SIGNATURE_ALGORITHM, MAX_CONTENT_BYTES
 
 def _inspect(data: bytes):
@@ -16,6 +17,8 @@ def _inspect(data: bytes):
         return inspect_image(data)
     if data[:4] == b"RIFF" and data[8:12] == b"AVI ":
         return inspect_video(data)
+    if is_mp4(data):
+        return inspect_mp4(data)
     return inspect_audio(data)
 
 

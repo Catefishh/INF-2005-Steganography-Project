@@ -7,6 +7,7 @@ import hashlib
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 
 from ..stego.carriers.video import inspect_video
+from ..stego.carriers.video_mp4 import extension as mp4_extension, inspect_mp4, is_mp4
 from ..stego.protocol import MAX_CONTENT_BYTES
 from ..stego.v2_security import load_signing_key, load_verification_key
 from ..workflows import estimate, protect_audio, protect_video, verify_audio, verify_image, verify_video
@@ -22,7 +23,9 @@ def _media(data: bytes):
         return "audio", protect_audio, verify_audio, ".wav"
     if data[:4] == b"RIFF" and data[8:12] == b"AVI ":
         return "video", protect_video, verify_video, ".avi"
-    raise ValueError("cover must be a supported PNG, BMP, PCM WAV or uncompressed AVI")
+    if is_mp4(data):
+        return "video", protect_video, verify_video, mp4_extension(data)
+    raise ValueError("cover must be a supported image, PCM WAV, or lossless-compatible video")
 
 
 
@@ -72,8 +75,9 @@ def attach(app: FastAPI) -> None:
             kind, sender, _, extension = _media(carrier)
             if start_frame is not None or start_x is not None or start_y is not None:
                 if kind != "video" or None in (start_frame, start_x, start_y) or start_slot is not None:
-                    raise ValueError("AVI frame start requires frame, X and Y, and cannot be combined with a slot")
-                start_slot = inspect_video(carrier).slot_for(start_frame, start_x, start_y, start_channel)
+                    raise ValueError("Video frame start requires frame, X and Y, and cannot be combined with a slot")
+                start_slot = (inspect_mp4(carrier) if is_mp4(carrier) else inspect_video(carrier)).slot_for(
+                    start_frame, start_x, start_y, start_channel)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -83,7 +87,10 @@ def attach(app: FastAPI) -> None:
             session.jobs[session.active_job].phase = "publishing"
             registry = request.app.state.registry
             output = registry.artifact(session, result.carrier, "stego" + extension,
-                                       "video/x-msvideo" if kind == "video" else "audio/wav" if kind == "audio" else "image/png" if extension == ".png" else "image/bmp", "stego")
+                                       {".avi": "video/x-msvideo", ".mp4": "video/mp4", ".mov": "video/quicktime",
+                                        ".3gp": "video/3gpp", ".m4v": "video/x-m4v", ".mkv": "video/x-matroska",
+                                        ".webm": "video/webm", ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv",
+                                        ".wav": "audio/wav", ".png": "image/png", ".bmp": "image/bmp"}[extension], "stego")
             sidecar = registry.artifact(session, result.sidecar, "recovery.stegloc", "application/octet-stream", "sidecar")
             return {"carrier": {"id": output, "filename": "stego" + extension, "size": len(result.carrier)},
                     "recovery": {"id": sidecar, "filename": "recovery.stegloc", "size": len(result.sidecar)},

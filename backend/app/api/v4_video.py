@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from ..stego.carriers.video import inspect_video
+from ..stego.carriers.video_mp4 import inspect_mp4, is_mp4
 from ..stego.v2_security import (_decrypt_and_verify_locator, _parse_sidecar,
     decode_recovery_code, derive_keys, load_verification_key)
 from ..workflows import verify_video
@@ -23,7 +24,7 @@ def attach(app: FastAPI, store) -> None:
                         start_x: int | None = Form(None), start_y: int | None = Form(None),
                         start_channel: int = Form(0)):
         _, session = _session(request)
-        carrier = await _read(stego, "Protected AVI")
+        carrier = await _read(stego, "Protected video")
         sidecar = await _read(recovery, "Recovery", 8192)
         if len(recovery_code) > 100 or len(public_key) > 32768:
             raise HTTPException(400, "Verification input is too long")
@@ -51,7 +52,7 @@ def attach(app: FastAPI, store) -> None:
                         "expected_trusted": baseline.overall is Verdict.AUTHENTIC}}
             if baseline.overall is not Verdict.AUTHENTIC:
                 return response(baseline.overall.value, baseline.stages)
-            adapter = inspect_video(carrier)
+            adapter = inspect_mp4(carrier) if is_mp4(carrier) else inspect_video(carrier)
             secret = decode_recovery_code(recovery_code)
             salt, _, _, _ = _parse_sidecar(sidecar)
             loc = _decrypt_and_verify_locator(sidecar, derive_keys(secret, salt).locator, key)

@@ -6,6 +6,7 @@ from .stego import lsb
 from .stego.carriers.image import ImageError, canonical_hash, inspect_image
 from .stego.carriers.audio import AudioError, canonical_hash as audio_canonical_hash, inspect_audio
 from .stego.carriers.video import VideoError, canonical_hash as video_canonical_hash, inspect_video
+from .stego.carriers.video_mp4 import canonical_hash as mp4_canonical_hash, inspect_mp4, is_mp4
 from .stego.protocol import format_uint64
 from .stego.v2_security import AuthenticationError, ConsistencyError, IntegrityError, RecoveryError, SignatureVerificationError, decode_recovery_code, decrypt_payload, derive_keys, verify_signed_package, _decrypt_and_verify_locator, _parse_sidecar
 from .v2_results import Verdict, VerificationResult, _stages, _passed, _failed
@@ -79,13 +80,14 @@ def verify_image(data, sidecar, recovery_code, public_key) -> VerificationResult
 
 def verify_video(data, sidecar, recovery_code, public_key) -> VerificationResult:
     try:
-        adapter = inspect_video(data)
+        adapter = inspect_mp4(data) if is_mp4(data) else inspect_video(data)
     except VideoError as exc:
         stages = _stages()
         _failed(stages, "extraction", str(exc))
         return VerificationResult(Verdict.CANNOT_VERIFY, stages)
-    return _verify_adapter(adapter, sidecar, recovery_code, public_key, video_canonical_hash,
-                           "recipient has no original AVI for byte-length comparison")
+    return _verify_adapter(adapter, sidecar, recovery_code, public_key,
+                           mp4_canonical_hash if is_mp4(data) else video_canonical_hash,
+                           "recipient has no original video for byte-length comparison")
 
 
 def verify_audio(data, sidecar, recovery_code, public_key) -> VerificationResult:

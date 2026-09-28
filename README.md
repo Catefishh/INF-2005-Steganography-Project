@@ -4,15 +4,15 @@ Image senders can choose **DCT · lossless PNG** in Embed & Sign. It uses one bi
 
 ## Demonstration workflow
 
-1. Select an image or PCM WAV cover, or import MP3/MOV/MP4 and explicitly prepare a lossless cover. Video preparation selects a short silent segment and writes uncompressed AVI (64 MiB maximum). MP3 preparation writes PCM WAV. The Windows desktop build bundles FFmpeg and ffprobe; source runs require them on `PATH` or in `build/ffmpeg`.
+1. Select an image, PCM WAV, or video cover. MP4, MOV, M4V, MKV, WebM, FLV, WMV and 3GP can keep their container when the app finds compatible constant-frame-rate video. Other videos, including MPEG-PS, use AVI preparation (64 MiB maximum). Audio is retained in both paths. MP3 preparation writes PCM WAV. The Windows desktop build bundles FFmpeg and ffprobe; source runs require them on `PATH` or in `build/ffmpeg`.
 2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
 3. Extract and verify. Compare the signed expected payload digest with the decoded digest. A wrong manual start keeps the same file and offers immediate retry or the authenticated stored location.
 4. Inspect the prepared cover against the stego file with side-by-side, swipe, overlay, and heatmap views. For video, inspect individual frames and the timeline. For WAV, the strip shows changes across time and channels.
 5. Open Tamper tests with a protected image, WAV, AVI, or text carrier from the relevant embedding workflow. Watch each case finish, including wrong-location correction and a controlled legacy payload-hash mismatch, then download the evidence ZIP. Passwords, recovery codes, private keys, and extracted plaintext are excluded from that ZIP.
 
-Prepared MOV/MP4 video uses the Ed25519 workflow with a separate recovery file and code. MP3 becomes WAV; MOV/MP4 becomes silent AVI. The downloaded stego format is the prepared lossless format. Working files live only for the current app session.
+Video uses the Ed25519 workflow with a separate recovery file and code. Its frames are encoded losslessly after LSB embedding, so output size can grow and playback depends on the player's codec support. MP3 becomes WAV. Working files live only for the current app session.
 
-INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image and WAV covers using LSB replacement, with a DCT option for images. It supports SHA-256/RSA signing and an Ed25519 media protocol with a separate recovery file/code and restricted AVI video carrier.
+INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image, WAV and supported video covers using LSB replacement, with a DCT option for images. It supports SHA-256/RSA signing and an Ed25519 media protocol with a separate recovery file/code.
 
 | Page | What it does |
 | --- | --- |

@@ -5,22 +5,24 @@ export function DropZone({ title, hint, accept, file, onFile, icon = "upload", l
   title: string; hint: string; accept?: string; file: File | null; onFile: (file: File | null) => void;
   icon?: IconName; label?: ReactNode; id?: string; tone?: "" | "bad";
 }) {
-  const slot = <DropSlot title={title} hint={hint} accept={accept} file={file} onFile={onFile} icon={icon} id={id} tone={tone} />;
+  const labelId = useId();
+  const slot = <DropSlot title={title} hint={hint} accept={accept} file={file} onFile={onFile} icon={icon} id={id} tone={tone} labelId={label ? labelId : undefined} />;
   if (!label) return slot;
   return (
     <div className="slot">
-      <span className="slot-label">{label}</span>
+      <span className="slot-label" id={labelId}>{label}</span>
       {slot}
     </div>
   );
 }
 
-function DropSlot({ title, hint, accept, file, onFile, icon, id, tone }: {
+function DropSlot({ title, hint, accept, file, onFile, icon, id, tone, labelId }: {
   title: string; hint: string; accept?: string; file: File | null; onFile: (file: File | null) => void;
-  icon: IconName; id?: string; tone: "" | "bad";
+  icon: IconName; id?: string; tone: "" | "bad"; labelId?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const titleId = useId();
   const open = () => input.current?.click();
   return (
     <div
@@ -28,6 +30,8 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone }: {
       className={`drop${over ? " over" : ""}${file ? " filled" : ""}${tone ? ` ${tone}` : ""}`}
       role="button"
       tabIndex={0}
+      aria-label={labelId ? undefined : file ? `Replace ${file.name}` : title}
+      aria-labelledby={labelId ? `${labelId} ${titleId}` : undefined}
       onClick={open}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -54,11 +58,11 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone }: {
       }} />
       <span className="drop-icon"><Icon name={file ? "check" : icon} size={22} /></span>
       <span className="drop-text">
-        <strong>{file ? file.name : title}</strong>
+        <strong id={titleId}>{file ? file.name : title}</strong>
         <small>{file ? `${formatBytes(file.size)} · drop or click to replace` : hint}</small>
       </span>
       {file && (
-        <button type="button" className="icon-btn" aria-label="Remove file" onClick={(event) => {
+        <button type="button" className="icon-btn" aria-label={`Remove ${file.name}`} onKeyDown={(event) => event.stopPropagation()} onClick={(event) => {
           event.stopPropagation();
           onFile(null);
         }}>

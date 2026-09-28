@@ -42,6 +42,33 @@ def test_untrusted_host_is_rejected() -> None:
     assert response.status_code == 400
 
 
+def test_stored_audio_supports_seek_ranges():
+    app = create_app()
+    client = TestClient(app, base_url="http://localhost")
+    saved = app.state.store.put(b"0123456789", "clip.wav", "audio/wav")
+    url = f"/api/files/{saved['id']}"
+
+    full = client.get(url)
+    assert full.status_code == 200
+    assert full.headers["accept-ranges"] == "bytes"
+    assert full.content == b"0123456789"
+
+    for value, expected, span in (
+        ("bytes=3-5", b"345", "bytes 3-5/10"),
+        ("bytes=7-", b"789", "bytes 7-9/10"),
+        ("bytes=-4", b"6789", "bytes 6-9/10"),
+    ):
+        response = client.get(url, headers={"Range": value})
+        assert response.status_code == 206
+        assert response.content == expected
+        assert response.headers["content-range"] == span
+        assert response.headers["content-length"] == str(len(expected))
+
+    outside = client.get(url, headers={"Range": "bytes=10-"})
+    assert outside.status_code == 416
+    assert outside.headers["content-range"] == "bytes */10"
+
+
 def test_desktop_requires_bootstrap_and_keeps_downloads_authenticated(tmp_path):
     (tmp_path / "index.html").write_text("desktop shell", encoding="utf-8")
     token = "test-desktop-secret"

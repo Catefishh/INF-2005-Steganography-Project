@@ -9,7 +9,7 @@ import { errorText, type Handoff, type Vault } from "../util";
 import { artifactUrl, requestJson, type Job } from "../api/jobs";
 import { TextShowcase } from "./TextShowcase";
 
-const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi";
+const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.3gp,.m4v";
 const STEGO_SLOT_ID = "tamper-file-slot";
 const COVER_SLOT_ID = "tamper-cover-slot";
 
@@ -20,6 +20,13 @@ const NEEDS_ORIGINAL = new Set(["clean_cover"]);
 
 /** The test that should come back clean. */
 const POSITIVE_ID = "baseline";
+type TestKind = "reference" | "inputs" | "modified";
+const INPUT_CASES = new Set(["wrong_key", "wrong_passphrase", "wrong_start", "corrected_start"]);
+const NO_TESTS: Record<TestKind, boolean> = {reference: false, inputs: false, modified: false};
+const ALL_TESTS: Record<TestKind, boolean> = {reference: true, inputs: true, modified: true};
+function testKind(id: string): TestKind {
+  return id === POSITIVE_ID || id === "clean_cover" ? "reference" : INPUT_CASES.has(id) ? "inputs" : "modified";
+}
 
 export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vault; handoff: Handoff | null; onWorkingFile?: (file: File | null) => void; goTo: (page: "keys") => void }) {
   const [stego, setStego] = useState<File | null>(null);
@@ -39,25 +46,42 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
   const [selectedVariant, setSelectedVariant] = useState<Scenario | null>(null);
   const [resultInputs, setResultInputs] = useState<string[] | null>(null);
   const [staleDismissed, setStaleDismissed] = useState(false);
+  const [testsOpen, setTestsOpen] = useState<boolean | null>(null);
+  const [selectedTests, setSelectedTests] = useState<Record<TestKind, boolean> | null>(null);
   const outcomeRef = useRef<HTMLHeadingElement>(null);
   const requestRevision = useRef(0);
+  const lastVaultPublic = useRef("");
+
+  function invalidateRun() {
+    requestRevision.current += 1;
+    setBusy(false);
+    setJobId("");
+    setJobPhase("");
+    setJobTotal(0);
+    setScenarios(null);
+    setSelectedVariant(null);
+    setResultInputs(null);
+    setError("");
+    setTestsOpen(null);
+    setSelectedTests(null);
+  }
 
   useEffect(() => {
     if (!handoff) return;
-    requestRevision.current += 1;
+    invalidateRun();
     setStego(handoff.stego);
     setCover(handoff.cover);
     setPassphrase(handoff.passphrase);
     setRecovery(handoff.recovery ?? null);
     setRecoveryCode(handoff.recoveryCode ?? "");
-    if (handoff.publicPem) setPublicPem(handoff.publicPem);
-    setScenarios(null);
-    setSelectedVariant(null);
-    setResultInputs(null);
+    setPublicPem(handoff.publicPem);
   }, [handoff]);
 
   useEffect(() => {
-    if (vault.publicPem && !/\.avi$/i.test(stego?.name ?? "")) setPublicPem(vault.publicPem);
+    const previous = lastVaultPublic.current;
+    lastVaultPublic.current = vault.publicPem;
+    if (!/\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(stego?.name ?? ""))
+      setPublicPem((current) => current === previous ? vault.publicPem : current);
   }, [vault.publicPem, stego?.name]);
 
   async function run() {
@@ -67,9 +91,15 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     const snapshot = [stego?.name ?? "", cover?.name ?? "", passphrase, publicPem];
     setBusy(true);
     setError("");
+    setJobId("");
+    setJobPhase("");
+    setJobTotal(0);
     setScenarios(null);
+    setSelectedVariant(null);
     setResultInputs(null);
     setStaleDismissed(false);
+    setTestsOpen(null);
+    setSelectedTests(null);
     const form = new FormData();
     form.append("stego", stego, stego.name);
     if (cover) form.append("cover", cover, cover.name);
@@ -107,22 +137,22 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
   const changed = resultInputs ? changedInputs(INPUT_LABELS, resultInputs, currentInputs) : [];
   const stale = scenarios !== null && changed.length > 0 && !staleDismissed;
 
-  const usingVaultKey = Boolean(vault.publicPem) && publicPem === vault.publicPem;
-  const isVideo = /\.avi$/i.test(stego?.name ?? "");
+  const isVideo = /\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(stego?.name ?? "");
+  const usingVaultKey = !isVideo && Boolean(vault.publicPem) && publicPem === vault.publicPem;
   const hasPublicKey = publicPem.trim().length > 0;
-  const missing = isVideo ? [!stego && "protected AVI", !recovery && "recovery file", !recoveryCode && "recovery code", !hasPublicKey && "Ed25519 public key"].filter(Boolean) as string[] :
+  const missing = isVideo ? [!stego && "protected video", !recovery && "recovery file", !recoveryCode && "recovery code", !hasPublicKey && "Ed25519 public key"].filter(Boolean) as string[] :
     tamperMissing({ hasFile: stego !== null, hasPassphrase: passphrase.length > 0, hasPublicKey });
   const ready = missing.length === 0;
 
   const applicable = scenarios?.filter((s) => s.verdict !== "Unsupported") ?? [];
   const unsupported = (scenarios?.length ?? 0) - applicable.length;
   const passed = applicable.filter((s) => s.as_expected).length;
-  const negatives = applicable.filter((s) => s.expected[0] !== "Authentic").length;
-  const rejectedAsExpected = applicable.filter((s) => s.expected[0] !== "Authentic" && s.as_expected).length;
-  const tamperingEvidence = applicable.filter((s) => s.verdict === "Tampered" || s.verdict === "Signature Invalid").length;
-  const inconclusive = applicable.filter((s) => s.verdict === "Cannot Verify").length;
-  const saved = scenarios?.filter((s) => s.file !== null).length ?? 0;
   const baseline = scenarios?.find((s) => s.id === POSITIVE_ID);
+  const baselineGenuine = baseline?.verdict === "Authentic";
+  const fromEmbed = Boolean(handoff && handoff.origin !== "manual" && handoff.stego === stego);
+  const showTests = testsOpen ?? !baselineGenuine;
+  const filters = selectedTests ?? (baselineGenuine ? NO_TESTS : ALL_TESTS);
+  const shownScenarios = scenarios?.filter((scenario) => filters[testKind(scenario.id)]) ?? [];
 
   // The outcome is the point of the screen, so it takes focus and is announced.
   useEffect(() => {
@@ -147,11 +177,11 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
           <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
             title="Drop the protected file" hint="image, audio, or video file produced by Embed & Sign"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="shield" file={stego}
-            onFile={(file) => { requestRevision.current += 1; setStego(file); onWorkingFile?.(file); setScenarios(null); }} />
+            onFile={(file) => { invalidateRun(); setStego(file); if (/\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(file?.name ?? "") && publicPem === vault.publicPem) setPublicPem(""); onWorkingFile?.(file); }} />
           <DropZone label={<>Original cover <span className="opt">(optional)</span></>} id={COVER_SLOT_ID}
             title="Drop the original here" hint="adds a check that the original contains no hidden payload"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="image" file={cover}
-            onFile={(file) => { setCover(file); setScenarios(null); }} />
+            onFile={(file) => { invalidateRun(); setCover(file); }} />
         </div>
       </Panel>
 
@@ -171,7 +201,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                 <b>No public key yet.</b>
                 Without it the signature checks cannot run.
                 <span className="note-actions">
-                  <button type="button" className="btn primary sm" onClick={() => goTo("keys")}>Go to Keys</button>
+                  {!isVideo && <button type="button" className="btn primary sm" onClick={() => goTo("keys")}>Go to Keys</button>}
                   <button type="button" className="btn ghost sm" onClick={() => setKeyEditorOpen(true)}>
                     Paste a public key instead
                   </button>
@@ -189,9 +219,9 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
             </div>
           ) : (
             <>
-              <KeyField label="Sender's RSA public key" value={publicPem} onChange={setPublicPem}
+              <KeyField label={isVideo ? "Sender's Ed25519 public key" : "Sender's RSA public key"} value={publicPem} onChange={setPublicPem}
                 placeholder="-----BEGIN PUBLIC KEY----- (drop public_key.pem here)"
-                vaultPem={vault.publicPem} vaultLabel="Use key from Keys page" />
+                vaultPem={isVideo ? undefined : vault.publicPem} vaultLabel="Use key from Keys page" />
               {usingVaultKey && (
                 <button type="button" className="link-btn self-start" onClick={() => setKeyEditorOpen(false)}>
                   Hide this field
@@ -225,20 +255,19 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
             <StaleBanner reason={staleReason(changed)} busy={busy} onRerun={run} onDismiss={() => setStaleDismissed(true)} />
           )}
           <div className={`result-column${stale ? " stale" : ""}`}>
-            <Outcome tone={passed === applicable.length ? "good" : "bad"}
-              icon={passed === applicable.length ? "shield" : "alert"}
-              label="Result"
-               title={baseline?.verdict === "Authentic" ? "Baseline file is genuine" : "Baseline file could not be confirmed genuine"}
+            <Outcome tone={baselineGenuine ? "good" : "bad"}
+              icon={baselineGenuine ? "shield" : "alert"}
+              label="Original file"
+               title={baselineGenuine ? "Provided file verified as genuine" : "Provided file could not be confirmed genuine"}
                headingRef={outcomeRef}
                summary={
                  <>
-                    {baseline?.verdict === "Authentic" ? "The baseline is genuine and its integrity checks passed." : `The baseline could not be confirmed genuine (${baseline?.verdict ?? "not run"}).`}
-                    {tamperingEvidence > 0 && ` ${tamperingEvidence} test${tamperingEvidence === 1 ? " found" : "s found"} evidence of tampering or an invalid signature.`}
-                    {inconclusive > 0 && ` ${inconclusive} result${inconclusive === 1 ? " is" : "s are"} inconclusive; authenticity could not be established.`}
-                    {negatives > 0 && ` ${rejectedAsExpected} of ${negatives} negative checks produced their expected outcomes.`}
-                   {saved > 0 && ` ${saved} modified file${saved === 1 ? " is" : "s are"} available to download.`}
-                   {unsupported > 0 && ` ${unsupported} spatial-LSB cases do not apply to this DCT file.`}
-                    {passed < applicable.length && " Some checks produced unexpected results; review the evidence below."}
+                    {baselineGenuine ? <>
+                      {fromEmbed ? "This is the file created by Embed & Sign. " : "The provided file contains Stegloc-protected content. "}
+                      Its signature matches the sender&apos;s public key and its integrity checks passed. Open the test cases below and select a category to see how Stegloc detects changes and rejects invalid credentials.
+                      {unsupported > 0 && ` ${unsupported} spatial-LSB cases do not apply to this DCT file.`}
+                      {passed < applicable.length && " Some examples returned unexpected results; open the test cases to review them."}
+                    </> : `The original file did not pass verification (${baseline?.verdict ?? "not run"}). Its authenticity has not been established.`}
                 </>
               }
               actions={
@@ -247,13 +276,29 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                 </button>
               } />
 
-            <div className="table-wrap">
+            <Disclosure title={showTests ? "Hide test cases" : "Show test cases"} open={showTests} onOpenChange={setTestsOpen}>
+              {showTests && <>
+              <fieldset className="tamper-filters">
+                <legend>Filter test cases</legend>
+                {([
+                  ["reference", "Original and reference checks"],
+                  ["inputs", "Changed verification inputs"],
+                  ["modified", "Modified-file examples"],
+                ] as const).map(([kind, label]) => <label key={kind}>
+                  <input type="checkbox" checked={filters[kind]} onChange={(event) => {
+                    setSelectedTests({...filters, [kind]: event.target.checked});
+                    setSelectedVariant(null);
+                  }} /> {label}
+                </label>)}
+              </fieldset>
+              {shownScenarios.length === 0 ? <p className="muted small">Select a category to see its test cases.</p> : <div className="table-wrap">
               <table className="attacks">
+                <caption>Selected test cases</caption>
                 <thead>
                     <tr><th className="col-test">Test</th><th className="col-result">Expected outcome / observed result</th><th className="col-file">Modified file</th></tr>
                 </thead>
                 <tbody>
-                  {scenarios.map((scenario) => (
+                  {shownScenarios.map((scenario) => (
                     <tr key={scenario.id} className={scenario.as_expected ? "" : "mismatch"}>
                       <td>
                         <strong>{scenario.title}</strong>
@@ -289,7 +334,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                   ))}
                 </tbody>
               </table>
-            </div>
+            </div>}
             {selectedVariant?.file && <Panel title="Selected test variant" subtitle="This is a separate test copy. The baseline working file remains unchanged.">
               <p><strong>{selectedVariant.file.filename}</strong> · {selectedVariant.file.size.toLocaleString()} bytes</p>
               <h3>Change made</h3><p>{selectedVariant.change}</p>
@@ -299,6 +344,8 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
               {selectedVariant.elapsed_ms !== undefined && <p className="muted small">Verification took {selectedVariant.elapsed_ms.toLocaleString()} ms.</p>}
               <a className="btn ghost" href={artifactUrl(selectedVariant.file.id)} download={selectedVariant.file.filename}>Download this variant</a>
             </Panel>}
+              </>}
+            </Disclosure>
           </div>
         </>
       )}

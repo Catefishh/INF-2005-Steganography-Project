@@ -10,6 +10,7 @@ import { CharacterChanges } from "./text/CharacterChanges";
 
 export function TextPage() {
   const sessionReady = useRef(false);
+  const estimateRevision = useRef(0);
   const [method, setMethod] = useState("acrostic");
   const [message, setMessage] = useState("");
   const [visible, setVisible] = useState("");
@@ -41,12 +42,16 @@ export function TextPage() {
     } catch (cause) { setError(errorText(cause)); }
   }
   async function previewCapacity() {
+    const revision = ++estimateRevision.current;
     setError("");
     try {
       const form = new FormData(); form.append("message", message); form.append("method", method); form.append("visible", visible);
-      setEstimate(await request("/api/v3/text/estimate", { method: "POST", body: form }));
-    } catch (cause) { setError(errorText(cause)); }
+      const next = await request<typeof estimate>("/api/v3/text/estimate", { method: "POST", body: form });
+      if (revision === estimateRevision.current) setEstimate(next);
+    } catch (cause) { if (revision === estimateRevision.current) setError(errorText(cause)); }
   }
+  function invalidateEstimate() { estimateRevision.current++; setEstimate(null); }
+  function changeVisible(value: string) { setVisible(value); invalidateEstimate(); }
   async function protect() {
     setError(""); setStatus("Preparing text carrier"); setProtected(null); setVerified(null); setGeneratedVisible("");
     try {
@@ -89,10 +94,10 @@ export function TextPage() {
     || carrier.split("\n").map((line) => line[0] || "").join("") === generatedInitials;
 
   return <div className="form-column text-workspace">
-    <CarrierForm method={method} onMethod={(value) => { setMethod(value); setEstimate(null); setGeneratedVisible(""); }}
-      message={message} onMessage={(value) => { setMessage(value); setGeneratedVisible(""); }}
-      visible={method === "acrostic" ? generatedVisible : visible} onVisible={setVisible}
-      onImport={(file) => void importText(file, setVisible)} onEstimate={() => void previewCapacity()} estimate={estimate} />
+    <CarrierForm method={method} onMethod={(value) => { setMethod(value); invalidateEstimate(); setGeneratedVisible(""); }}
+      message={message} onMessage={(value) => { setMessage(value); invalidateEstimate(); setGeneratedVisible(""); }}
+      visible={method === "acrostic" ? generatedVisible : visible} onVisible={changeVisible}
+      onImport={(file) => void importText(file, changeVisible)} onEstimate={() => void previewCapacity()} estimate={estimate} />
     <Panel title="Sender keys and protection">
       <div className="field"><label htmlFor="text-password">Key password</label><input id="text-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></div>
       <button type="button" className="btn ghost" disabled={!password} onClick={() => void keys()}>Generate Ed25519 keys</button>

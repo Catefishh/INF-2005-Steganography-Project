@@ -15,6 +15,7 @@ from backend.app.api.v4_media import _binary, _run
 from backend.app.cancellation import installed
 from backend.app.main import create_app
 from backend.app.stego.carriers.video import inspect_video
+from backend.app.stego.carriers.video_mp4 import inspect_mp4
 from backend.app.stego.covers import load_cover
 from backend.app.stego import engine, text_v3
 from backend.app.stego.security import generate_rsa_keys
@@ -28,8 +29,13 @@ def _sample(path: Path, kind: str) -> bytes:
         command = [ffmpeg, "-nostdin", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
                    "-ar", "22050", "-ac", "1", "-y", str(path)]
     else:
+        codecs = {"webm": ("libvpx-vp9", "libopus"), "flv": ("flv", "libmp3lame"),
+                  "wmv": ("wmv2", "wmav2"), "mpg": ("mpeg2video", "mp2")}
+        video_codec, audio_codec = codecs.get(kind, ("mpeg4", "aac"))
         command = [ffmpeg, "-nostdin", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=8:duration=1",
-                   "-c:v", "mpeg4", "-y", str(path)]
+                   "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", video_codec,
+                   "-c:a", audio_codec, "-shortest", "-y",
+                   *(["-f", "mp4", "-brand", "M4V "] if kind == "m4v" else []), str(path)]
     subprocess.run(command, check=True, capture_output=True, timeout=20)
     return path.read_bytes()
 
@@ -57,7 +63,11 @@ def test_real_media_preparation(tmp_path, kind):
             adapter = inspect_video(converted)
             assert (adapter.width, adapter.height) == (64, 48)
             assert adapter.frame_count > 0
-            assert prepared.json()["conversion"]["audio_omitted"] is True
+            assert prepared.json()["conversion"]["audio_omitted"] is False
+            audio = subprocess.run([_binary("ffmpeg"), "-nostdin", "-v", "error", "-i", "pipe:0",
+                "-map", "0:a:0", "-f", "s16le", "pipe:1"], input=converted,
+                capture_output=True, timeout=20, check=True).stdout
+            assert any(audio)
 
 
 def test_media_rejects_invalid_source_and_oversized_video(tmp_path):
@@ -134,6 +144,94 @@ def test_video_wrong_slot_retry_and_binary_payload(tmp_path):
         assert client.get(f"/api/v2/artifacts/{content['id']}").content == payload
 
 
+@pytest.mark.parametrize("kind", ["mp4", "mov"])
+def test_original_mp4_is_a_lossless_lsb_carrier_with_audio(tmp_path, kind):
+    source = _sample(tmp_path / ("source." + kind), kind)
+    with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
+        assert client.post("/api/v2/session").status_code == 200
+        keys = client.post("/api/v2/keys/generate", data={"password": "video test key"}).json()
+        protected = client.post("/api/v2/jobs/protect", data={"private_key": keys["private_key"],
+            "key_password": "video test key", "depth": "3"},
+            files={"cover": ("source." + kind, source),
+                   "content_file": ("message.txt", b"hidden in original video", "text/plain")})
+        assert protected.status_code == 200, protected.text
+        result = finished(client, protected.json()["id"])["result"]
+        assert result["carrier"]["filename"] == "stego." + kind
+        stego = client.get(f"/api/v2/artifacts/{result['carrier']['id']}").content
+        recovery = client.get(f"/api/v2/artifacts/{result['recovery']['id']}").content
+        assert inspect_mp4(stego).audio_hash == inspect_mp4(source).audio_hash
+        compared = client.post("/api/v4/video/compare", files={"file": ("stego." + kind, stego),
+            "reference": ("source." + kind, source)})
+        assert compared.status_code == 200, compared.text
+        assert (compared.json()["width"], compared.json()["height"]) == (64, 48)
+        checked = client.post("/api/v4/video/verify", data={"recovery_code": result["recovery_code"],
+            "public_key": keys["public_key"]}, files={"stego": ("stego." + kind, stego),
+            "recovery": ("recovery.stegloc", recovery)})
+        assert checked.status_code == 200, checked.text
+        assert checked.json()["verdict"] == "Authentic"
+        assert client.get(checked.json()["download_url"]).content == b"hidden in original video"
+        signed = tmp_path / ("signed." + kind)
+        edited = tmp_path / ("audio-edited." + kind)
+        signed.write_bytes(stego)
+        subprocess.run([_binary("ffmpeg"), "-nostdin", "-v", "error", "-y", "-i", str(signed),
+            "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy", "-af", "volume=0.5", "-c:a", "aac",
+            str(edited)], check=True, capture_output=True, timeout=20)
+        tampered = client.post("/api/v4/video/verify", data={"recovery_code": result["recovery_code"],
+            "public_key": keys["public_key"]}, files={"stego": ("stego." + kind, edited.read_bytes()),
+            "recovery": ("recovery.stegloc", recovery)})
+        assert tampered.status_code == 200, tampered.text
+        assert tampered.json()["verdict"] == "Tampered"
+        showcased = client.post("/api/v4/jobs/showcase", data={"recovery_code": result["recovery_code"],
+            "public_key": keys["public_key"]}, files={"stego": ("stego." + kind, stego),
+            "recovery": ("recovery.stegloc", recovery)})
+        assert showcased.status_code == 200, showcased.text
+        suite = finished(client, showcased.json()["id"])
+        assert suite["status"] == "succeeded", suite.get("error")
+        assert [case["verdict"] for case in suite["result"]["cases"]] == [
+            "Authentic", "Signature Invalid", "Tampered", "Tampered"]
+
+
+@pytest.mark.parametrize("kind", ["mkv", "webm", "flv", "wmv", "3gp", "m4v"])
+def test_other_video_containers_keep_audio_and_verify(tmp_path, kind):
+    source = _sample(tmp_path / ("source." + kind), kind)
+    with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
+        probe = client.post("/api/v4/media/probe", files={"file": ("source." + kind, source)})
+        assert probe.status_code == 200, probe.text
+        assert probe.json()["native_video"] is True
+        assert probe.json()["detected_extension"] == "." + kind
+        client.post("/api/v2/session")
+        keys = client.post("/api/v2/keys/generate", data={"password": "video test key"}).json()
+        started = client.post("/api/v2/jobs/protect", data={"private_key": keys["private_key"],
+            "key_password": "video test key", "depth": "3"}, files={"cover": ("source." + kind, source),
+            "content_file": ("message.txt", b"hidden video content", "text/plain")})
+        assert started.status_code == 200, started.text
+        result = finished(client, started.json()["id"])["result"]
+        assert result["carrier"]["filename"] == "stego." + kind
+        stego = client.get(f"/api/v2/artifacts/{result['carrier']['id']}").content
+        recovery = client.get(f"/api/v2/artifacts/{result['recovery']['id']}").content
+        assert inspect_mp4(stego).audio_hash == inspect_mp4(source).audio_hash
+        checked = client.post("/api/v4/video/verify", data={"recovery_code": result["recovery_code"],
+            "public_key": keys["public_key"]}, files={"stego": ("stego." + kind, stego),
+            "recovery": ("recovery.stegloc", recovery)})
+        assert checked.status_code == 200, checked.text
+        assert checked.json()["verdict"] == "Authentic"
+        assert client.get(checked.json()["download_url"]).content == b"hidden video content"
+
+
+def test_legacy_mpeg_requires_avi_preparation(tmp_path):
+    source = _sample(tmp_path / "source.mpg", "mpg")
+    with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
+        probe = client.post("/api/v4/media/probe", files={"file": ("source.mpg", source)})
+        assert probe.status_code == 200, probe.text
+        assert probe.json()["native_video"] is False
+        prepared = client.post("/api/v4/media/prepare", data={"duration": "1", "fps": "8",
+            "max_width": "64", "max_height": "48"}, files={"file": ("source.mpg", source)})
+        assert prepared.status_code == 200, prepared.text
+        avi = client.get(f"/api/files/{prepared.json()['file']['id']}").content
+        assert inspect_video(avi).frame_count > 0
+        assert b"01wb" in avi
+
+
 def test_live_showcase_existing_file_and_export():
     private, public = generate_rsa_keys()
     cover = image_bytes()
@@ -153,6 +251,7 @@ def test_live_showcase_existing_file_and_export():
             time.sleep(0.01)
         assert state["status"] == "succeeded", state.get("error")
         rows = state["result"]["cases"]
+        assert state["completed"] == state["total"] == len(rows) == 9
         assert rows[0]["verdict"] == "Authentic"
         assert any(row["id"] == "payload_hash_mismatch" and row["verdict"] == "Tampered" for row in rows)
         evidence = client.get(f"/api/v4/jobs/{started.json()['id']}/evidence")
