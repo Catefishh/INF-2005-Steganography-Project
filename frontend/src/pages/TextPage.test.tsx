@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { TextPage } from "./TextPage";
 import { TextShowcase } from "./TextShowcase";
@@ -11,6 +11,24 @@ vi.mock("../api/jobs", () => ({
   requestJson: vi.fn(), runTextJob: vi.fn(), artifactUrl: (id: string) => `/api/v2/artifacts/${id}`,
 }));
 vi.mock("../api/text", () => ({ generatedText: vi.fn(), recoveryFile: vi.fn() }));
+
+it("drops a stale carrier estimate after message or visible text changes", async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(requestJson).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
+  render(<TextPage />);
+  fireEvent.change(screen.getByLabelText("Message to hide"), {target: {value: "first"}});
+  fireEvent.click(screen.getByRole("button", {name: "Estimate carrier length"}));
+  fireEvent.change(screen.getByLabelText("Message to hide"), {target: {value: "second"}});
+  await act(async () => { finish({frame_bytes: 12, required_lines_or_symbols: 5}); });
+  expect(screen.queryByText(/Encrypted frame:/)).toBeNull();
+
+  vi.mocked(requestJson).mockResolvedValue({frame_bytes: 14, required_lines_or_symbols: 6} as never);
+  fireEvent.change(screen.getByLabelText("Method"), {target: {value: "whitespace"}});
+  fireEvent.click(screen.getByRole("button", {name: "Estimate carrier length"}));
+  await waitFor(() => expect(screen.getByText(/Encrypted frame: 14 bytes/)).toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText(/Visible cover text/), {target: {value: "new cover"}});
+  expect(screen.queryByText(/Encrypted frame:/)).toBeNull();
+});
 
 it("shows the generated acrostic in the visible cover field after protection", async () => {
   vi.mocked(requestJson).mockImplementation(async (path) => path.includes("keys/generate")
@@ -66,6 +84,27 @@ it("renders in-depth tamper evidence when a result is returned", async () => {
   await waitFor(() => expect(screen.getByText("Verification explanation")).toBeInTheDocument());
   expect(screen.getByText("Verification stages")).toBeInTheDocument();
   expect(screen.getByText("Payload hash: match")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Ed25519 public key"), {target: {value: "different key"}});
+  expect(screen.queryByText("Test results")).toBeNull();
+  expect(screen.queryByRole("link", {name: "Download evidence ZIP"})).toBeNull();
+});
+
+it("ignores text tamper results returned after recovery inputs change", async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(requestJson).mockImplementation(async (path) => {
+    if (path === "/api/v2/session") return {} as never;
+    if (path === "/api/v4/jobs/text-showcase") return {id: "job"} as never;
+    return await new Promise((resolve) => { finish = resolve; });
+  });
+  render(<TextShowcase back={() => undefined} initialCarrier={new File(["carrier"], "carrier.txt")}
+    initialRecovery={new File(["recovery"], "recovery.stegloc-text")} initialCode="old" initialPublicKey="public" />);
+  fireEvent.click(screen.getByRole("button", {name: "Run text tamper tests"}));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  fireEvent.change(screen.getByLabelText("Recovery code"), {target: {value: "new"}});
+  await act(async () => { finish({status: "succeeded", phase: "complete", completed: 1, total: 1,
+    cases: [], result: {cases: []}}); });
+  expect(screen.queryByText("Test results")).toBeNull();
+  expect(screen.getByRole("button", {name: "Run text tamper tests"})).toBeEnabled();
 });
 
 it("opens character evidence and marks hidden carrier characters", () => {

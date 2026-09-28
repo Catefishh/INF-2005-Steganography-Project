@@ -5,6 +5,7 @@ from .stego import lsb
 from .stego.carriers.image import canonical_hash, inspect_image
 from .stego.carriers.audio import canonical_hash as audio_canonical_hash, inspect_audio
 from .stego.carriers.video import VideoError, canonical_hash as video_canonical_hash, inspect_video
+from .stego.carriers.video_mp4 import canonical_hash as mp4_canonical_hash, inspect_mp4, is_mp4
 from .stego.protocol import CARRIER_HASH_PLACEHOLDER, measure_encrypted_envelope_length
 from .stego.v2_security import create_bundle, derive_keys, generate_recovery_secret, generate_salt
 from .v2_record import _record
@@ -46,6 +47,9 @@ def protect_audio(data: bytes, content: bytes, private_key, *, metadata=None, de
 
 
 def protect_video(data: bytes, content: bytes, private_key, *, metadata=None, depth=3, start=None, secret=None, salt=None) -> ProtectionResult:
+    if is_mp4(data):
+        return _protect(inspect_mp4(data), data, content, private_key, mp4_canonical_hash,
+                        metadata=metadata, depth=depth, start=start, secret=secret, salt=salt)
     return _protect(inspect_video(data), data, content, private_key, video_canonical_hash,
                     metadata=metadata, depth=depth, start=start, secret=secret, salt=salt, keep_size=True)
 

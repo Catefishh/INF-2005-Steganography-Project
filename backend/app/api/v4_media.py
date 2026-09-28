@@ -9,6 +9,7 @@ import struct
 import subprocess
 import sys
 import time
+from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -16,6 +17,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from ..stego.carriers.video import MAX_AVI_BYTES, inspect_video
+from ..stego.carriers.video_mp4 import extension as video_extension, inspect_mp4, is_mp4, MAX_FILE_BYTES, MAX_RAW_BYTES
 from ..stego.covers import load_cover
 from ..cancellation import check as cancel_check
 from ..stego.analysis_parts.common import png_data_url
@@ -58,7 +60,8 @@ def _chunk(name: bytes, body: bytes) -> bytes:
     return name + struct.pack("<I", len(body)) + body + (b"\0" if len(body) & 1 else b"")
 
 
-def _avi(raw: bytes, width: int, height: int, fps: int) -> bytes:
+def _avi(raw: bytes, width: int, height: int, fps: int, audio: bytes = b"", sample_rate: int = 0,
+         channels: int = 0) -> bytes:
     stride = (width * 3 + 3) & ~3
     frame_size = stride * height
     if frame_size == 0 or len(raw) % (width * height * 3):
@@ -66,13 +69,25 @@ def _avi(raw: bytes, width: int, height: int, fps: int) -> bytes:
     frames = len(raw) // (width * height * 3)
     if not frames:
         raise ValueError("The selected video segment contains no frames.")
-    avih = struct.pack("<14I", 1_000_000 // fps, 0, 0, 0, frames, 0, 1, frame_size, width, height, 0, 0, 0, 0)
+    block_align = channels * 2
+    if audio and (not 1 <= channels <= 2 or not 8000 <= sample_rate <= 48000 or len(audio) % block_align):
+        raise ValueError("Decoded audio format is invalid.")
+    avih = struct.pack("<14I", 1_000_000 // fps, 0, 0, 0, frames, 0, 2 if audio else 1,
+                       frame_size, width, height, 0, 0, 0, 0)
     strh = bytearray(56)
     strh[:8] = b"vidsDIB "
     struct.pack_into("<III", strh, 20, 1, fps, 0)
     struct.pack_into("<I", strh, 32, frames)
     strf = struct.pack("<IiiHHIIiiII", 40, width, height, 1, 24, 0, frame_size, 0, 0, 0, 0)
     header = _chunk(b"avih", avih) + _chunk(b"LIST", b"strl" + _chunk(b"strh", bytes(strh)) + _chunk(b"strf", strf))
+    if audio:
+        audio_header = bytearray(56)
+        audio_header[:4] = b"auds"
+        struct.pack_into("<II", audio_header, 20, block_align, sample_rate * block_align)
+        struct.pack_into("<IIII", audio_header, 32, len(audio) // block_align,
+                         sample_rate * block_align // fps, 0, block_align)
+        audio_format = struct.pack("<HHIIHH", 1, channels, sample_rate, sample_rate * block_align, block_align, 16)
+        header += _chunk(b"LIST", b"strl" + _chunk(b"strh", bytes(audio_header)) + _chunk(b"strf", audio_format))
     movi = bytearray()
     index = bytearray()
     row_size = width * 3
@@ -83,8 +98,14 @@ def _avi(raw: bytes, width: int, height: int, fps: int) -> bytes:
             row = pixels[y * row_size:(y + 1) * row_size]
             rows.append(row + b"\0" * (stride - row_size))
         body = b"".join(rows)
+        index.extend(struct.pack("<4sIII", b"00db", 0x10, len(movi) + 4, len(body)))
         movi.extend(_chunk(b"00db", body))
-        index.extend(struct.pack("<4sIII", b"00db", 0x10, 0, len(body)))
+        if audio:
+            start = (frame * len(audio) // frames // block_align) * block_align
+            end = ((frame + 1) * len(audio) // frames // block_align) * block_align
+            packet = audio[start:end]
+            index.extend(struct.pack("<4sIII", b"01wb", 0, len(movi) + 4, len(packet)))
+            movi.extend(_chunk(b"01wb", packet))
     result = _chunk(b"RIFF", b"AVI " + _chunk(b"LIST", b"hdrl" + header) +
                     _chunk(b"LIST", b"movi" + bytes(movi)) + _chunk(b"idx1", bytes(index)))
     if len(result) > MAX_AVI_BYTES:
@@ -131,26 +152,28 @@ def attach(app: FastAPI, store) -> None:
         original = await _read(reference, "Original video") if reference and reference.filename else None
         try:
             def work():
-                video = inspect_video(data)
+                video = inspect_mp4(data) if is_mp4(data) else inspect_video(data)
                 if not 0 <= frame < video.frame_count:
                     raise ValueError("Frame is out of range")
                 def pixels(adapter, index):
                     begin = index * adapter.width * adapter.height * 3
                     end = begin + adapter.width * adapter.height * 3
-                    return np.frombuffer(adapter.slots()[begin:end], dtype=np.uint8).reshape(adapter.height, adapter.width, 3)[:, :, ::-1]
+                    image = np.frombuffer(adapter.slots()[begin:end], dtype=np.uint8).reshape(adapter.height, adapter.width, 3)
+                    return image if hasattr(adapter, "fps") else image[:, :, ::-1]
                 stride = max(1, math.ceil(max(video.width, video.height) / 512))
                 current = pixels(video, frame)
                 result = {"width": video.width, "height": video.height, "frame_count": video.frame_count,
-                    "fps": video.rate / video.scale, "frame": frame,
+                    "fps": float(video.fps if hasattr(video, "fps") else Fraction(video.rate, video.scale)), "frame": frame,
                     "stego_preview": png_data_url(current[::stride, ::stride].copy()),
                     "original_preview": None, "heatmap": None, "timeline": None,
                     "pixels_changed": None, "bits_changed": None}
                 if original is None:
                     return result
-                before = inspect_video(original)
-                if (before.width, before.height, before.frame_count, before.rate, before.scale) != (
-                    video.width, video.height, video.frame_count, video.rate, video.scale):
-                    raise ValueError("Original and protected AVI need matching dimensions, timing and frame count")
+                before = inspect_mp4(original) if is_mp4(original) else inspect_video(original)
+                timing = lambda adapter: adapter.fps if hasattr(adapter, "fps") else Fraction(adapter.rate, adapter.scale)
+                if (before.width, before.height, before.frame_count, timing(before)) != (
+                    video.width, video.height, video.frame_count, timing(video)):
+                    raise ValueError("Original and protected videos need matching dimensions, timing and frame count")
                 a = np.frombuffer(before.slots(), dtype=np.uint8).reshape(video.frame_count, video.height, video.width, 3)
                 b = np.frombuffer(video.slots(), dtype=np.uint8).reshape(video.frame_count, video.height, video.width, 3)
                 timeline = [int(np.count_nonzero(np.any(a[i] != b[i], axis=2)))
@@ -182,12 +205,38 @@ def attach(app: FastAPI, store) -> None:
         data = await _read(file, "Cover")
         try:
             def work():
-                return _source(data, file.filename or "source", lambda _path, info, _folder: {
-                    "kind": _kind(info), "duration": float(info.get("format", {}).get("duration", 0)),
+                def describe(_path, info, _folder):
+                    kind = _kind(info)
+                    native = False
+                    if kind == "video":
+                        videos = [s for s in info["streams"] if s.get("codec_type") == "video"]
+                        audios = [s for s in info["streams"] if s.get("codec_type") == "audio"]
+                        if data[:4] == b"RIFF" and data[8:12] == b"AVI ":
+                            try:
+                                inspect_video(data)
+                                native = True
+                            except ValueError:
+                                pass
+                        elif video_extension(data) and len(videos) == 1 and len(audios) <= 1 and len(data) <= MAX_FILE_BYTES:
+                            video = videos[0]
+                            try:
+                                fps = Fraction(video["avg_frame_rate"])
+                                nominal = Fraction(video["r_frame_rate"])
+                                width, height = int(video["width"]), int(video["height"])
+                                duration = float(info.get("format", {}).get("duration", 0))
+                                native = (0 < fps <= 60 and fps == nominal and 1 <= width <= 1920 and
+                                          1 <= height <= 1080 and duration > 0 and
+                                          width * height * 3 * math.ceil(duration * float(fps)) <= MAX_RAW_BYTES)
+                            except (KeyError, ValueError, ZeroDivisionError, TypeError):
+                                pass
+                    return {"kind": kind, "native_video": native,
+                    "detected_extension": video_extension(data) if kind == "video" else "",
+                    "duration": float(info.get("format", {}).get("duration", 0)),
                     "streams": [{"type": s.get("codec_type"), "codec": s.get("codec_name"),
                                  "width": s.get("width"), "height": s.get("height"),
                                  "sample_rate": s.get("sample_rate"), "channels": s.get("channels")}
-                                for s in info.get("streams", [])]})
+                                for s in info.get("streams", [])]}
+                return _source(data, file.filename or "source", describe)
             return await run_in_threadpool(work)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -227,14 +276,29 @@ def attach(app: FastAPI, store) -> None:
                         _run([_binary("ffmpeg"), "-nostdin", "-v", "error", "-ss", str(start), "-i", str(source),
                               "-t", str(duration), "-an", "-vf", f"fps={fps},scale={width}:{height}",
                               "-pix_fmt", "bgr24", "-f", "rawvideo", "-fs", str(MAX_AVI_BYTES), str(output)])
-                        content = _avi(output.read_bytes(), width, height, fps)
+                        raw = output.read_bytes()
+                        audio = b""
+                        sample_rate = channels = 0
+                        audio_stream = next((s for s in info["streams"] if s.get("codec_type") == "audio"), None)
+                        if audio_stream:
+                            sample_rate = min(48000, max(8000, int(audio_stream.get("sample_rate") or 44100)))
+                            channels = min(2, max(1, int(audio_stream.get("channels") or 1)))
+                            audio_path = folder / "audio.pcm"
+                            _run([_binary("ffmpeg"), "-nostdin", "-v", "error", "-ss", str(start), "-i", str(source),
+                                  "-t", str(duration), "-map", "0:a:0", "-ac", str(channels), "-ar", str(sample_rate),
+                                  "-f", "s16le", str(audio_path)])
+                            audio = audio_path.read_bytes()
+                            frame_count = len(raw) // (width * height * 3)
+                            wanted = round(frame_count * sample_rate / fps) * channels * 2
+                            audio = (audio[:wanted] + bytes(max(0, wanted - len(audio))))
+                        content = _avi(raw, width, height, fps, audio, sample_rate, channels)
                         extension, mime = ".avi", "video/x-msvideo"
                     return content, kind, extension, mime
                 return _source(data, file.filename or "source", work)
             content, kind, extension, mime = await run_in_threadpool(convert)
             stored = store.put(content, "prepared_" + Path(file.filename or "cover").stem + extension, mime)
             return {"file": stored, "kind": kind, "conversion": {"source_name": file.filename,
-                "output_format": extension[1:].upper(), "audio_omitted": kind == "video",
+                "output_format": extension[1:].upper(), "audio_omitted": False,
                 "start": start, "duration": duration, "fps": fps}}
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

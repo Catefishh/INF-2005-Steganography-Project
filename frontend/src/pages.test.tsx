@@ -5,9 +5,10 @@
 // accessibility properties of the same screens live in a11y.test.tsx, and the logic behind them
 // in logic.test.ts.
 
-import { act, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
+import { AttackPage } from "./pages/AttackPage";
 import { api, type VerifyStep } from "./api";
 import * as jobs from "./api/jobs";
 import { setFiles } from "./test/setup";
@@ -163,9 +164,67 @@ it("keys: generates a pair, then guards replacing it", async () => {
   vi.mocked(api.generateKeys).mockClear();
   fireEvent.click(within(view()).getByRole("button", { name: /Replace key pair/ }));
   // The consequence is spelled out before anything is thrown away.
-  expect(within(view()).getByRole("dialog")).toHaveTextContent(/stop passing the check/i);
-  fireEvent.click(within(view()).getByRole("button", { name: /Keep the current pair/ }));
+  const dialog = screen.getByRole("dialog");
+  expect(dialog).toHaveTextContent(/stop passing the check/i);
+  expect(dialog.parentElement?.parentElement).toBe(document.body);
+  fireEvent.click(within(dialog).getByRole("button", { name: /Keep the current pair/ }));
   expect(api.generateKeys).not.toHaveBeenCalled();
+});
+
+it.each(["private", "public"] as const)("keys: removing the %s file clears pair readiness", async (removed) => {
+  vi.mocked(api.inspectKey).mockImplementation(async (pem) => ({
+    type: pem.includes("PRIVATE") ? "private" : "public", encrypted: false, bits: 2048, fingerprint: "matching-key",
+  }));
+  render(<App />);
+  fireEvent.click(within(view()).getByRole("button", { name: /Already have a key pair/ }));
+
+  for (const kind of ["private", "public"] as const) {
+    const slot = within(view()).getByText(`${kind === "private" ? "Private" : "Public"} key file`).closest(".slot") as HTMLElement;
+    const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = Object.assign(new File([kind], `${kind}.pem`), {
+      text: async () => `-----BEGIN ${kind.toUpperCase()} KEY-----`,
+    });
+    setFiles(input, file);
+    fireEvent.change(input);
+    if (kind === "private") await waitFor(() => expect(within(view()).getByText(/Only the private key is loaded/)).toBeInTheDocument());
+  }
+  await waitFor(() => expect(within(view()).getByText(/Key pair ready/)).toBeInTheDocument());
+  expect(document.querySelector(".rail-keys")).toHaveTextContent("keys ready");
+
+  const slot = within(view()).getByText(`${removed}.pem`).closest(".slot") as HTMLElement;
+  fireEvent.click(within(slot).getByRole("button", { name: `Remove ${removed}.pem` }));
+  expect(within(view()).getByText(new RegExp(`Only the ${removed === "private" ? "public" : "private"} key is loaded`))).toBeInTheDocument();
+  expect(within(view()).queryByText(/Key pair ready/)).not.toBeInTheDocument();
+  expect(document.querySelector(".rail-keys")).toHaveTextContent("keys needed");
+  if (removed === "private") {
+    await screenNamed("Embed & Sign");
+    expect(within(view()).getByText("No key pair yet.")).toBeInTheDocument();
+  } else {
+    await screenNamed("Extract & Verify");
+    expect(within(view()).getByText("No public key yet.")).toBeInTheDocument();
+    await screenNamed("Tamper tests");
+    expect(within(view()).getByText("No public key yet.")).toBeInTheDocument();
+  }
+});
+
+it("keys: a removed file cannot finish loading into the vault", async () => {
+  let finish!: (value: Awaited<ReturnType<typeof api.inspectKey>>) => void;
+  vi.mocked(api.inspectKey).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  render(<App />);
+  fireEvent.click(within(view()).getByRole("button", {name: /Already have a key pair/}));
+  const slot = within(view()).getByText("Private key file").closest(".slot") as HTMLElement;
+  const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
+  setFiles(input, Object.assign(new File(["private"], "private.pem"), {text: async () => "private"}));
+  fireEvent.change(input);
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  const remove = within(slot).getByRole("button", {name: "Remove private.pem"});
+  const openPicker = vi.spyOn(input, "click");
+  fireEvent.keyDown(remove, {key: "Enter"});
+  expect(openPicker).not.toHaveBeenCalled();
+  fireEvent.click(remove);
+  await act(async () => { finish({type: "private", encrypted: false, bits: 2048, fingerprint: "old"}); });
+  expect(within(view()).getByText("No key pair yet")).toBeInTheDocument();
+  expect(document.querySelector(".rail-keys")).toHaveTextContent("keys needed");
 });
 
 it("sender: blocks until it has what it needs, then embeds and offers the download", async () => {
@@ -352,7 +411,9 @@ it("keeps text work independent of the media working file", async () => {
   expect(within(view()).getByLabelText("Message to hide")).toHaveValue("text stays");
 });
 
-it("keeps the video inline workflow on an embed result URL without an RSA result", async () => {
+it("returns to the AVI form when a result URL has no video result", async () => {
+  vi.spyOn(api, "probeMedia").mockResolvedValue({kind: "video", native_video: true, detected_extension: ".avi",
+    duration: 1, streams: [{type: "video", codec: "rawvideo", width: 64, height: 48}]});
   await appWithKeys();
   await screenNamed("Embed & Sign");
   const bytes = new Uint8Array(16);
@@ -362,10 +423,53 @@ it("keeps the video inline workflow on an embed result URL without an RSA result
   const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
   setFiles(input, new File([bytes], "clip.avi", {type: "video/x-msvideo"}));
   fireEvent.change(input);
-  await waitFor(() => expect(within(view()).getByRole("heading", {name: "Lossless video carrier"})).toBeInTheDocument());
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "Lossless AVI carrier"})).toBeInTheDocument());
   act(() => { window.history.pushState(null, "", "/embed/result"); window.dispatchEvent(new PopStateEvent("popstate")); });
-  await waitFor(() => expect(window.location.pathname).toBe("/embed/result"));
-  expect(within(view()).getByRole("heading", {name: "Lossless video carrier"})).toBeInTheDocument();
+  await waitFor(() => expect(window.location.pathname).toBe("/embed"));
+  expect(within(view()).getByRole("heading", {name: "Lossless AVI carrier"})).toBeInTheDocument();
+});
+
+it("keeps a WebM cover in its original format and offers AVI for MPEG only", async () => {
+  const probe = vi.spyOn(api, "probeMedia")
+    .mockResolvedValueOnce({kind: "video", native_video: true, detected_extension: ".webm", duration: 1,
+      streams: [{type: "video", codec: "vp9", width: 64, height: 48}]})
+    .mockResolvedValueOnce({kind: "video", native_video: false, detected_extension: "", duration: 1,
+      streams: [{type: "video", codec: "mpeg2video", width: 64, height: 48}]});
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "source.webm", "video/webm");
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "Original video carrier"})).toBeInTheDocument());
+  expect(within(view()).queryByText("Prepare lossless AVI for this video")).toBeNull();
+  const slot = within(view()).getByText("Video file").closest(".slot") as HTMLElement;
+  const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
+  setFiles(input, new File([new Uint8Array(64)], "source.mpg", {type: "video/mpeg"}));
+  fireEvent.change(input);
+  await waitFor(() => expect(within(view()).getByText("Prepare lossless AVI for this video")).toBeInTheDocument());
+  expect(probe).toHaveBeenCalledTimes(2);
+});
+
+it.each(["avi", "mp4", "mov", "mkv", "webm", "flv", "wmv", "3gp", "m4v"])("opens the video verifier for a manually selected %s without filling an RSA key", async (kind) => {
+  await appWithKeys();
+  await screenNamed("Extract & Verify");
+  pick("File to check", "received." + kind, kind === "avi" ? "video/x-msvideo" : "video/" + kind);
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "The file you received"})).toBeInTheDocument());
+  expect(within(view()).getByText("Recovery code file")).toBeInTheDocument();
+  expect(within(view()).getByLabelText("Sender's Ed25519 public key")).toHaveValue("");
+  act(() => {window.history.pushState(null, "", "/verify/result"); window.dispatchEvent(new PopStateEvent("popstate"));});
+  await waitFor(() => expect(window.location.pathname).toBe("/verify"));
+});
+
+it("asks for video recovery material instead of an RSA passphrase for MP4 tamper tests", async () => {
+  await appWithKeys();
+  await screenNamed("Tamper tests");
+  const input = within(view()).getByText(/Protected file/).closest(".slot")!.querySelector<HTMLInputElement>('input[type="file"]')!;
+  setFiles(input, new File(["mp4"], "protected.mp4", {type: "video/mp4"}));
+  fireEvent.change(input);
+  expect(within(view()).getByText("Recovery code")).toBeInTheDocument();
+  expect(within(view()).queryByRole("button", {name: "Go to Keys"})).toBeNull();
+  fireEvent.click(within(view()).getByRole("button", {name: "Paste a public key instead"}));
+  expect(within(view()).getByLabelText("Sender's Ed25519 public key")).toHaveValue("");
+  expect(within(view()).queryByText("Shared password")).toBeNull();
 });
 
 it("sender: says so when the payload will not fit, and offers the ways out", async () => {
@@ -381,6 +485,21 @@ it("sender: says so when the payload will not fit, and offers the ways out", asy
   for (const label of ["Choose a larger cover", "Choose something smaller", "Use more bits per value"]) {
     expect(within(view()).getByRole("button", { name: label })).toBeInTheDocument();
   }
+  const coverPicker = view().querySelector<HTMLInputElement>("#embed-cover-slot input[type=file]")!;
+  const smallerPicker = view().querySelector<HTMLInputElement>('input[aria-label="Choose a smaller file"]')!;
+  const openCover = vi.spyOn(coverPicker, "click");
+  const openSmaller = vi.spyOn(smallerPicker, "click");
+  fireEvent.click(within(view()).getByRole("button", {name: "Choose a larger cover"}));
+  fireEvent.click(within(view()).getByRole("button", {name: "Choose something smaller"}));
+  expect(openCover).toHaveBeenCalledOnce();
+  expect(openSmaller).toHaveBeenCalledOnce();
+  setFiles(smallerPicker, new File(["small"], "small.txt", {type: "text/plain"}));
+  fireEvent.change(smallerPicker);
+  expect(within(view()).getByText("small.txt")).toBeInTheDocument();
+  expect(within(view()).getByRole("button", {name: "File"})).toHaveClass("on");
+  await waitFor(() => expect(within(view()).getByRole("button", {name: "Choose something smaller"})).toBeInTheDocument());
+  fireEvent.click(within(view()).getByRole("button", {name: "Choose something smaller"}));
+  expect(openSmaller).toHaveBeenCalledTimes(2);
 });
 
 it("receiver: reads the message, and reading the override panel does not arm it", async () => {
@@ -474,7 +593,9 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
 });
 
 it("tester: explains expected outcomes, file integrity, and tampered variants", async () => {
-  const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
+  const cases = [...(await vi.mocked(api.attacks)(new FormData())).scenarios,
+    {id: "wrong_key", title: "Wrong public key", change: "Use an unrelated key.", expected: ["Signature Invalid"],
+      verdict: "Signature Invalid", summary: "Signature rejected.", as_expected: true, file: null}];
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
     if (path === "/api/v2/session") return {status: "ready"} as never;
     if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
@@ -487,7 +608,21 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   fireEvent.change(within(view()).getByLabelText("Shared password"), { target: { value: "hunter2hunter2" } });
   fireEvent.click(within(view()).getByRole("button", { name: /Run tamper tests/ }));
 
-  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("baseline is genuine"));
+  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("Provided file verified as genuine"));
+  expect(view().querySelector(".outcome")).toHaveTextContent("Stegloc-protected content");
+  expect(view().querySelector(".outcome")).toHaveTextContent("signature matches the sender's public key");
+  expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
+  fireEvent.click(within(view()).getByRole("button", {name: "Show test cases"}));
+  expect(within(view()).getByRole("button", {name: "Hide test cases"})).toHaveAttribute("aria-expanded", "true");
+  expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
+  fireEvent.click(within(view()).getByRole("checkbox", {name: "Changed verification inputs"}));
+  expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("Wrong public key");
+  expect(within(view()).getByRole("table", {name: "Selected test cases"})).not.toHaveTextContent("Nothing changed");
+  fireEvent.click(within(view()).getByRole("checkbox", {name: "Changed verification inputs"}));
+  fireEvent.click(within(view()).getByRole("checkbox", {name: "Original and reference checks"}));
+  expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("Nothing changed");
+  expect(within(view()).getByRole("table", {name: "Selected test cases"})).not.toHaveTextContent("One bit changed outside the hidden data");
+  fireEvent.click(within(view()).getByRole("checkbox", {name: "Modified-file examples"}));
   const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/v4/jobs/showcase")?.[1]?.body as FormData;
   expect(sent.get("stego")).toBeInstanceOf(File);
   expect(sent.has("payload")).toBe(false);
@@ -496,12 +631,72 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   expect(within(view()).getByRole("link", { name: /Save harbour_flip.png/ })).toBeInTheDocument();
   expect(within(view()).getByText("file unchanged")).toBeInTheDocument();
   expect(within(view()).getAllByText(/Expected outcome:/)).toHaveLength(2);
-  expect(within(view()).getByText(/baseline is genuine/)).toBeInTheDocument();
+  expect(within(view()).getByText(/Provided file verified as genuine/)).toBeInTheDocument();
   expect(within(view()).queryByText(/behaved correctly/)).toBeNull();
   expect(within(view()).getByText(/correct passphrase is accepted/)).toBeInTheDocument();
   fireEvent.click(within(view()).getAllByRole("button", { name: "Examine variant" })[0]);
   expect(within(view()).getAllByText(/Flip the lowest bit/)).toHaveLength(2);
   expect(within(view()).getAllByText(/integrity check detected a change/)).toHaveLength(2);
+  fireEvent.click(within(view()).getByRole("button", {name: "Hide test cases"}));
+  expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
+});
+
+it("tester: shows the failure details when the original is not genuine", async () => {
+  const cases = [{id: "baseline", title: "Nothing changed", change: "The untouched file.",
+    expected: ["Authentic"], verdict: "Cannot Verify", summary: "No valid payload.", as_expected: false, file: null}];
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+    if (path === "/api/v2/session") return {status: "ready"} as never;
+    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    return {status: "succeeded", phase: "complete", total: 1, cases, result: {cases}} as never;
+  });
+  await appWithKeys();
+  await screenNamed("Tamper tests");
+  pick("Protected file", "suspect.png");
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: "Run tamper tests"}));
+  await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("could not be confirmed genuine"));
+  expect(within(view()).getByRole("button", {name: "Hide test cases"})).toHaveAttribute("aria-expanded", "true");
+  expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("Nothing changed");
+});
+
+it("tester: identifies the unchanged file handed off by Embed & Sign", async () => {
+  const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+    if (path === "/api/v2/session") return {status: "ready"} as never;
+    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    return {status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}} as never;
+  });
+  const stego = new File(["protected"], "protected.png");
+  render(<AttackPage vault={{privatePem: "", publicPem: "sender key", privateFingerprint: null,
+    publicFingerprint: "fingerprint", bits: null}} handoff={{id: "embed", stego, cover: null,
+    passphrase: "password", publicPem: "sender key", serial: 1}} goTo={() => undefined} />);
+  fireEvent.click(within(document.body).getByRole("button", {name: "Run tamper tests"}));
+  await waitFor(() => expect(document.querySelector(".outcome")).toHaveTextContent("Provided file verified as genuine"));
+  expect(document.querySelector(".outcome")).toHaveTextContent("created by Embed & Sign");
+});
+
+it.each(["Protected file", "Original cover"])("tester: changing %s drops an in-flight result", async (changed) => {
+  const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
+  let finish!: (value: unknown) => void;
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+    if (path === "/api/v2/session") return {status: "ready"} as never;
+    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    return await new Promise((resolve) => { finish = resolve; });
+  });
+  await appWithKeys();
+  await screenNamed("Tamper tests");
+  pick("Protected file", "first.png");
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Run tamper tests/}));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+
+  pick(changed, "replacement.png");
+  await act(async () => { finish({status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}}); });
+  expect(view().querySelector(".outcome")).toBeNull();
+  const run = within(view()).getByRole("button", {name: /Run tamper tests/});
+  expect(run).toHaveAttribute("aria-busy", "false");
+  if (changed === "Original cover") expect(run).toBeEnabled();
+  expect(within(view()).queryByRole("link", {name: /Download evidence ZIP/})).toBeNull();
 });
 
 it("tester: text carriers use only existing protected files", async () => {

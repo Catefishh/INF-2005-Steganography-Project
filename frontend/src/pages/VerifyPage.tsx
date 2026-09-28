@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, fileUrl, type CoverInfo, type SignedRecord, type VerifyResponse } from "../api";
 import {
   ActionBar, Disclosure, DropZone, ErrorNote, Icon, InputStrip, KeyField, MediaPreview, Outcome, Panel,
@@ -11,7 +11,7 @@ import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Pag
 import { VideoVerify } from "./VideoWorkflow";
 import { failedStep, skippedSteps, stepsValue, verdictReading } from "../verdict";
 
-const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi";
+const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.3gp,.m4v";
 const STEGO_SLOT_ID = "verify-file-slot";
 
 /** The inputs a verdict is a statement about. Named so the stale banner can name them too. */
@@ -76,6 +76,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
 
   const stegoUrl = useObjectUrl(stego);
   const outcomeRef = useRef<HTMLHeadingElement>(null);
+  const lastVaultPublic = useRef("");
 
   useEffect(() => {
     if (!handoff) return;
@@ -88,7 +89,10 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   }, [handoff]);
 
   useEffect(() => {
-    if (vault.publicPem) { setPublicPem(vault.publicPem); setPublicKeyError(""); }
+    const previous = lastVaultPublic.current;
+    lastVaultPublic.current = vault.publicPem;
+    setPublicPem((current) => current === previous ? vault.publicPem : current);
+    if (vault.publicPem) setPublicKeyError("");
   }, [vault.publicPem]);
 
   useEffect(() => {
@@ -191,15 +195,22 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   }
 
   const hasResult = result !== null;
+  const videoHandoff = useMemo<Handoff | null>(() => {
+    const selected = stego ?? handoff?.stego;
+    if (!selected || !/\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(selected.name)) return null;
+    if (handoff?.stego === selected && handoff.protocol === "v2-video") return handoff;
+    return {id: crypto.randomUUID(), origin: "manual", protocol: "v2-video", stego: selected,
+      cover: null, passphrase: "", publicPem: "", serial: Date.now()};
+  }, [stego, handoff]);
   const correctedRef = useRef(false);
   useEffect(() => {
-    if (showResult && !hasResult && !correctedRef.current
+    if (showResult && !hasResult && !correctedRef.current && !videoHandoff
       && window.location.pathname === pathFor("verify", "result")) {
       correctedRef.current = true;
       onShowResult(false);
     }
     if (!showResult) correctedRef.current = false;
-  }, [showResult, hasResult, onShowResult]);
+  }, [showResult, hasResult, onShowResult, videoHandoff]);
 
   // The outcome must be the first thing read, not something to scroll to find.
   useEffect(() => {
@@ -212,8 +223,9 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     void submit(false);
   }
 
-  if (handoff && /\.avi$/i.test(handoff.stego.name)) {
-    return <VideoVerify handoff={handoff} onWorkingFile={onWorkingFile} />;
+  if (videoHandoff) {
+    return <VideoVerify handoff={videoHandoff} onWorkingFile={(file) => {setStego(file); onWorkingFile?.(file);}}
+      showResult={showResult} onShowResult={onShowResult} />;
   }
 
   if (showResult && result) {

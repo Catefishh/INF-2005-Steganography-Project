@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, fetchAsFile, fileUrl, type CoverInfo, type HideReport, type HideResponse, type StoredFile } from "../../api";
 import {
-  ActionBar, ByteDiagram, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField,
+  ActionBar, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField, LsbDepthPicker,
   LectureTable, MediaPreview, Meter, Metric, Outcome, Panel, PassphraseField, Spinner, Waveform,
 } from "../../components";
 import { differenceLabel, differenceReading, qualityReading, roomReading, touchedReading } from "../../readings";
@@ -43,40 +43,8 @@ export function EmbeddingOptions({ open, onOpenChange, summary, info, nLsb, onNL
 }) {
   return (
     <Disclosure title="Embedding options" value={summary} open={open} onOpenChange={onOpenChange}>
-      <div className="field">
-        <div className="field-head">
-          <span className="field-label">Bits used in each value</span>
-          <span className="field-hint">1 is the safest</span>
-        </div>
-        <div className="lsb-picker" role="radiogroup" aria-label="Bits used in each value" ref={depthRef}
-          onKeyDown={(event) => {
-            const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1
-              : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
-            if (step === 0) return;
-            event.preventDefault();
-            // One stop in the tab order, and the arrows move between the eight choices, so the
-            // group behaves as the single control it is rather than as eight buttons.
-            const next = Math.min(8, Math.max(1, nLsb + step));
-            onNLsb(next);
-            depthRef.current?.querySelectorAll<HTMLButtonElement>("button")[next - 1]?.focus();
-          }}>
-          {Array.from({ length: 8 }, (_, index) => index + 1).map((n) => (
-            <button key={n} type="button" role="radio" aria-checked={nLsb === n} tabIndex={nLsb === n ? 0 : -1}
-              className={`lsb-btn${nLsb === n ? " on" : ""}${n > 3 ? " risky" : ""}`} onClick={() => onNLsb(n)}
-              title={info?.capacity ? `${info.capacity[n - 1].max_package_bytes.toLocaleString()} bytes capacity` : undefined}>
-              {n}
-            </button>
-          ))}
-        </div>
-        <ByteDiagram nLsb={nLsb} caption={capacity !== null
-          ? `the highlighted bit${nLsb === 1 ? " is" : "s are"} replaced — ${capacity.toLocaleString()} bytes of room`
-          : `the lowest ${nLsb} bit${nLsb === 1 ? "" : "s"} of every value ${nLsb === 1 ? "is" : "are"} replaced`} />
-        {nLsb > 3 && (
-          <p className="muted small">
-            More bits fit more in, but past 3 the change can become visible or audible.
-          </p>
-        )}
-      </div>
+      <LsbDepthPicker value={nLsb} onChange={onNLsb} capacity={capacity}
+        capacityByDepth={info?.capacity?.map((row) => row.max_package_bytes)} depthRef={depthRef} />
 
       <div className="field">
         <span className="field-label">Where the hidden data starts</span>

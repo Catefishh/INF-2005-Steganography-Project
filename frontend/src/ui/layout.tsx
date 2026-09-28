@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { missingDetail, missingHeading } from "../requirements";
 const ICONS = {
@@ -186,7 +187,7 @@ export function ConfirmDialog({ title, confirmLabel, cancelLabel = "Cancel", dan
     };
   }, [onCancel]);
 
-  return (
+  return createPortal(
     <div className="scrim" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={headingId} ref={dialog}>
         <h2 id={headingId}>{title}</h2>
@@ -196,7 +197,8 @@ export function ConfirmDialog({ title, confirmLabel, cancelLabel = "Cancel", dan
           <button type="button" className={`btn ${danger ? "solid-danger" : "primary"}`} onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

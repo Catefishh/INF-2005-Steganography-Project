@@ -166,14 +166,15 @@ h1, h2, h3, h4, p { margin: 0; }
   border: 1.5px dashed var(--line-strong); border-radius: 12px; background: var(--surface-2); cursor: pointer;
   transition: border-color 0.15s, background 0.15s, transform 0.15s;
 }
-.drop:hover, .drop:focus-visible { border-color: var(--teal); outline: none; }
+.drop:hover { border-color: var(--teal); }
+.drop:focus-visible { border-color: var(--teal); outline: 3px solid var(--focus); outline-offset: 3px; }
 .drop.over { border-color: var(--teal); background: var(--teal-soft); transform: scale(1.01); }
 .drop.filled { border-style: solid; border-color: #9fd9d4; background: #f2fbfa; }
 .drop-icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--surface); color: var(--teal-strong); border: 1px solid var(--line); }
 .drop-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .drop-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drop-text small { color: var(--muted); }
-.icon-btn { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--muted); }
+.icon-btn { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--muted); }
 .icon-btn:hover { color: var(--coral); border-color: var(--coral); }
 
 .slot { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -417,7 +418,7 @@ textarea.pem.over { border-color: var(--teal); background: var(--teal-soft); }
 .meter.bad .meter-reading { color: #b3321f; font-weight: 600; }
 .meter.warn .meter-reading { color: #8a5a07; font-weight: 600; }
 .meter-track { height: 10px; border-radius: 999px; background: var(--neutral-soft); overflow: hidden; }
-.meter-track span { display: block; height: 100%; border-radius: inherit; background: var(--teal); transition: width 0.3s ease; }
+.meter-track span { display: block; height: 100%; border-radius: inherit; background: var(--teal); }
 .meter.warn .meter-track span { background: var(--amber); }
 .meter.bad .meter-track span { background: var(--coral); }
 .meter small { color: var(--muted); font-size: 0.8rem; }
@@ -591,6 +592,10 @@ table.lecture td { white-space: nowrap; }
 .bits-low.changed { background: var(--coral-soft); color: #b3321f; font-weight: 700; }
 .payload-bits { color: var(--teal-strong); font-weight: 700; }
 table.attacks tr.mismatch { background: #fff6f4; }
+table.attacks caption { padding: 10px 12px; text-align: left; color: var(--ink); font-size: 0.95rem; font-weight: 700; }
+.tamper-filters { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; padding: 0; border: 0; }
+.tamper-filters legend { margin-bottom: 8px; color: var(--ink); font-size: 0.82rem; font-weight: 700; }
+.tamper-filters label { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 0.82rem; cursor: pointer; }
 table.attacks td:nth-child(4) { white-space: nowrap; }
 /* Three columns instead of six: the test and what it changes share one cell, and the expected
    verdict is its last sentence. */

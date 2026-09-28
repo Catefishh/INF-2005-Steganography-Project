@@ -1,4 +1,4 @@
-"""Exact-size LSB carrier for one-stream, uncompressed 24-bit AVI files."""
+"""Exact-size LSB carrier for uncompressed 24-bit AVI with optional PCM audio."""
 from __future__ import annotations
 
 import hashlib
@@ -132,8 +132,8 @@ def inspect_video(data: bytes) -> VideoAdapter:
     avih = header[b"avih"][0]
     declared_frames, streams, main_width, main_height = struct.unpack_from("<I4xI4xII", data, avih + 16)
     streams_list = _lists(data, *hdrl[0], b"strl")
-    if streams != 1 or len(streams_list) != 1:
-        raise VideoError("AVI must contain one video stream and no audio")
+    if streams not in (1, 2) or len(streams_list) != streams:
+        raise VideoError("AVI requires one video stream and optional PCM audio")
     stream_chunks = list(_chunks(data, *streams_list[0]))
     if sum(name == b"strh" for name, _, _, _ in stream_chunks) != 1 or sum(name == b"strf" for name, _, _, _ in stream_chunks) != 1:
         raise VideoError("AVI requires one stream header and format")
@@ -150,26 +150,47 @@ def inspect_video(data: bytes) -> VideoAdapter:
         raise VideoError("AVI frames must use uncompressed 24-bit BI_RGB")
     if width != main_width or abs(height) != main_height or not scale or not rate or declared_frames != stream_frames or not declared_frames:
         raise VideoError("AVI dimensions, timing or frame counts disagree")
+    if streams == 2:
+        audio_chunks = list(_chunks(data, *streams_list[1]))
+        if sum(name == b"strh" for name, _, _, _ in audio_chunks) != 1 or sum(name == b"strf" for name, _, _, _ in audio_chunks) != 1:
+            raise VideoError("AVI audio stream headers are missing")
+        audio_stream = {name: (body, finish) for name, body, finish, _ in audio_chunks if name in (b"strh", b"strf")}
+        audio_header = audio_stream[b"strh"][0]
+        audio_format = audio_stream[b"strf"][0]
+        if (audio_stream[b"strh"][1] - audio_header < 56 or audio_stream[b"strf"][1] - audio_format < 16 or
+                data[audio_header:audio_header + 4] != b"auds"):
+            raise VideoError("AVI audio stream is invalid")
+        audio_length, audio_sample_size = struct.unpack_from("<I8xI", data, audio_header + 32)
+        codec, channels, sample_rate, bytes_per_second, block_align, bits = struct.unpack_from("<HHIIHH", data, audio_format)
+        if (codec != 1 or not 1 <= channels <= 2 or not 8000 <= sample_rate <= 48000 or bits != 16 or
+                block_align != channels * 2 or bytes_per_second != sample_rate * block_align or
+                audio_sample_size != block_align):
+            raise VideoError("AVI audio must be 16-bit PCM")
     stride = (width * 3 + 3) & ~3
     frame_bytes = stride * abs(height)
     if width * abs(height) > 100_000_000 or frame_bytes * declared_frames > MAX_AVI_BYTES or image_size not in (0, frame_bytes):
         raise VideoError("AVI frame dimensions are unsafe")
-    frames = [(body, finish, size) for name, body, finish, size in _chunks(data, *movi[0]) if name == b"00db"]
+    movie_chunks = list(_chunks(data, *movi[0]))
+    frames = [(body, finish, size) for name, body, finish, size in movie_chunks if name == b"00db"]
     if len(frames) != declared_frames or any(size != frame_bytes for _, _, size in frames):
         raise VideoError("AVI frame count or raw frame size is invalid")
-    if any(name not in (b"00db", b"JUNK") for name, _, _, _ in _chunks(data, *movi[0])):
+    if any(name not in ((b"00db", b"01wb", b"JUNK") if streams == 2 else (b"00db", b"JUNK"))
+           for name, _, _, _ in movie_chunks):
         raise VideoError("AVI movie list contains unsupported chunks")
+    if streams == 2 and sum(size for name, _, _, size in movie_chunks if name == b"01wb") != audio_length * block_align:
+        raise VideoError("AVI audio length does not match its stream header")
     indexes = [(body, finish) for name, body, finish, _ in top if name == b"idx1"]
     if len(indexes) > 1:
         raise VideoError("AVI has multiple indexes")
     if indexes:
         start, end = indexes[0]
-        if end - start != declared_frames * 16:
-            raise VideoError("AVI index length does not match frame count")
-        for i, (_, _, size) in enumerate(frames):
+        indexed = [(name, size) for name, _, _, size in movie_chunks if name != b"JUNK"]
+        if end - start != len(indexed) * 16:
+            raise VideoError("AVI index length does not match movie chunks")
+        for i, (expected_name, size) in enumerate(indexed):
             name, _, _, indexed_size = struct.unpack_from("<4sIII", data, start + i * 16)
-            if name != b"00db" or indexed_size != size:
-                raise VideoError("AVI index does not match video frames")
+            if name != expected_name or indexed_size != size:
+                raise VideoError("AVI index does not match movie chunks")
     frame_offsets = []
     slots = bytearray()
     for body, _, _ in frames:

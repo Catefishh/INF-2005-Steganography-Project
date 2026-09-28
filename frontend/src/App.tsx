@@ -18,7 +18,7 @@ const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Gro
   { id: "keys", icon: "key", label: "Keys", role: "Start here", group: "Set up",
     lede: "You need one key pair before you can embed or verify a file. It takes one click." },
   { id: "hide", icon: "shield", label: "Embed & Sign", role: "Sender", group: "Send and receive",
-    lede: "Hide a message or a file inside a picture or a sound clip, and sign it so the receiver can tell it came from you." },
+    lede: "Hide a message or a file inside a picture, sound clip, or video, and sign it so the receiver can tell it came from you." },
   { id: "verify", icon: "eye", label: "Extract & Verify", role: "Receiver", group: "Send and receive",
     lede: "Find out whether a file you received really came from the person who claims to have sent it, and read what is inside." },
   { id: "text", icon: "eye", label: "Text Steganography", role: "Sender and receiver", group: "Send and receive",
@@ -45,7 +45,8 @@ export default function App() {
   const embedAvailable = useRef(false);
 
   const pathname = usePathname();
-  const hasKeys = Boolean(vault.privatePem || vault.publicPem);
+  const hasKeys = Boolean(vault.privatePem && vault.publicPem && vault.privateFingerprint &&
+    vault.privateFingerprint === vault.publicFingerprint);
   const route = resolveRoute(pathname, hasKeys);
   const current = PAGES.find((item) => item.id === route.page) ?? PAGES[0];
 
@@ -60,8 +61,10 @@ export default function App() {
   }, [handoff?.id]);
 
   function replaceWorkingFile(file: File | null) {
+    const video = /\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(file?.name ?? "");
     setHandoff(file ? { id: crypto.randomUUID(), origin: "manual", stego: file, cover: null,
-      passphrase: "", publicPem: vault.publicPem, serial: Date.now() } : null);
+      protocol: video ? "v2-video" : "legacy", passphrase: "", publicPem: video ? "" : vault.publicPem,
+      serial: Date.now() } : null);
     if (!file) setWorkspaceEpoch((value) => value + 1);
     if (!file) { embedAvailable.current = false; lastEmbedView.current = "form"; }
   }
