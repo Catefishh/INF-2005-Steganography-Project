@@ -486,7 +486,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onR
           startMode={startMode} onStartMode={setStartMode}
           startX={startX} startY={startY} startSeconds={startSeconds}
           onStartX={setStartX} onStartY={setStartY} onStartSeconds={setStartSeconds}
-          manualSlot={manualSlot} />}
+          manualSlot={manualSlot} coverUrl={coverUrl} />}
 
         <Panel step="3" title="Lock and sign it"
           subtitle="The receiver needs the same password. Your private key proves the file came from you.">

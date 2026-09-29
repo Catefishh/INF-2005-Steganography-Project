@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import type { CoverInfo } from "../../api";
 import { Disclosure, Icon, LsbDepthPicker } from "../../components";
+import { BitPlaneViewer } from "../../ui/BitPlaneViewer";
 
 /**
  * Depth and start point.
@@ -12,7 +14,7 @@ import { Disclosure, Icon, LsbDepthPicker } from "../../components";
  * start is never invisible.
  */
 export function EmbeddingOptions({ open, onOpenChange, summary, info, nLsb, onNLsb, capacity, depthRef,
-  startMode, onStartMode, startX, startY, startSeconds, onStartX, onStartY, onStartSeconds, manualSlot }: {
+  startMode, onStartMode, startX, startY, startSeconds, onStartX, onStartY, onStartSeconds, manualSlot, coverUrl }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   summary: string;
@@ -30,7 +32,10 @@ export function EmbeddingOptions({ open, onOpenChange, summary, info, nLsb, onNL
   onStartY: (value: string) => void;
   onStartSeconds: (value: string) => void;
   manualSlot: number | null;
+  coverUrl: string | null;
 }) {
+  const [pickerOrigin, setPickerOrigin] = useState<HTMLElement | null>(null);
+  useEffect(() => setPickerOrigin(null), [coverUrl, info?.kind]);
   return (
     <Disclosure title="Embedding options" value={summary} open={open} onOpenChange={onOpenChange}>
       <LsbDepthPicker value={nLsb} onChange={onNLsb} capacity={capacity}
@@ -56,9 +61,7 @@ export function EmbeddingOptions({ open, onOpenChange, summary, info, nLsb, onNL
             <div className="note note-info">
               <Icon name="info" />
               <span>
-                <b>This replaces that protection with a location you type.</b>
-                Use it to show what happens when the receiver looks in the wrong place. Everything else still needs
-                the password.
+                Choosing a start point replaces the password-derived location.
               </span>
             </div>
             {info?.kind === "audio" ? (
@@ -72,22 +75,19 @@ export function EmbeddingOptions({ open, onOpenChange, summary, info, nLsb, onNL
                   {info.duration ? ` of ${info.n_slots.toLocaleString()}. Must be inside the ${info.duration.toFixed(2)} s clip.` : "."}
                 </small>
               </div>
-            ) : (
-              <div className="inline-fields">
-                <label>Across (X)
-                  <input type="number" min={0} max={info?.width ? info.width - 1 : undefined} value={startX}
-                    onChange={(event) => onStartX(event.target.value)} />
-                </label>
-                <label>Down (Y)
-                  <input type="number" min={0} max={info?.height ? info.height - 1 : undefined} value={startY}
-                    onChange={(event) => onStartY(event.target.value)} />
-                </label>
+            ) : info?.kind === "image" ? (
+              <div className="field">
+                <button type="button" className="btn ghost" disabled={!coverUrl}
+                  onClick={(event) => setPickerOrigin(event.currentTarget)}>Open image to choose a pixel</button>
                 <small className="field-hint">
-                  Pixel {startX}, {startY} — red value. Position {manualSlot?.toLocaleString() ?? "-"}
-                  {info ? ` of ${info.n_slots.toLocaleString()}` : ""}. (0, 0) is not allowed.
+                  Selected pixel ({startX}, {startY}) — red value. Position {manualSlot?.toLocaleString() ?? "-"}
+                  {` of ${info.n_slots.toLocaleString()}`}.
                 </small>
+                {pickerOrigin && coverUrl && <BitPlaneViewer src={coverUrl} label="Choose starting pixel" sampling=""
+                  origin={pickerOrigin} onClose={() => setPickerOrigin(null)} initialPoint={{x: Number(startX), y: Number(startY)}}
+                  onPick={(x, y) => { onStartX(String(x)); onStartY(String(y)); setPickerOrigin(null); }} />}
               </div>
-            )}
+            ) : null}
           </>
         )}
       </div>

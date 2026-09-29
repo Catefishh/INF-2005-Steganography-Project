@@ -662,6 +662,8 @@ details.advanced > :not(summary) { margin: 0 12px 12px; }
 .bit-viewer-image { display: inline-block; position: relative; }
 .bit-viewer-scroll img { display: block; width: auto; max-width: none; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
 .bit-viewer-selection { position: absolute; border: 2px solid var(--coral); background: #ff6b6b44; pointer-events: none; }
+.bit-viewer-point { position: absolute; width: 12px; height: 12px; border: 2px solid white; border-radius: 50%; outline: 2px solid var(--coral); transform: translate(-50%, -50%); pointer-events: none; }
+.bit-viewer-hover { position: fixed; z-index: 2; padding: 3px 6px; border-radius: 5px; background: var(--ink); color: white; font: 700 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
 .dct-code { overflow-wrap: anywhere; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.78rem; color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
