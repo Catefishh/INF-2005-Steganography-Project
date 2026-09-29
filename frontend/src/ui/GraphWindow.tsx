@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Histogram } from "./charts";
 import { EvidenceAreaChart, EvidenceBarChart } from "./evidenceChart";
 import { closeGraphWindow, requestGraph, watchGraph, type GraphSnapshot } from "./graphHandoff";
+import { useDragZoom } from "./useDragZoom";
 
-const LEVELS = [1, 1.5, 2, 3, 4];
 
 export function GraphWindow({ id, onClose }: { id: string; onClose?: () => void }) {
   const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [zoomIndex, setZoomIndex] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
+  const {viewport, zoom, setZoom, reset, selection, drag} = useDragZoom();
 
   useEffect(() => {
     let alive = true;
@@ -40,7 +40,6 @@ export function GraphWindow({ id, onClose }: { id: string; onClose?: () => void 
     window.close();
   }
 
-  const zoom = LEVELS[zoomIndex];
   return <main className="graph-screen">
     <header className="graph-screen-header">
       <div><span className="topbar-context">Inspect a file / Graph detail</span>
@@ -57,23 +56,25 @@ export function GraphWindow({ id, onClose }: { id: string; onClose?: () => void 
       <div className="chart-toolbar" role="group" aria-label="Graph controls">
         <strong>Graph workspace</strong>
         <div className="graph-screen-zoom">
-          <button type="button" className="btn ghost sm" aria-label="Zoom out" disabled={zoomIndex === 0}
-            onClick={() => setZoomIndex((value) => value - 1)}>−</button>
+          <button type="button" className="btn ghost sm" aria-label="Zoom out" disabled={zoom <= 1}
+            onClick={() => setZoom((value) => Math.max(1, value / 1.5))}>−</button>
           <output aria-label="Graph zoom level">{Math.round(zoom * 100)}%</output>
-          <button type="button" className="btn ghost sm" aria-label="Zoom in" disabled={zoomIndex === LEVELS.length - 1}
-            onClick={() => setZoomIndex((value) => value + 1)}>+</button>
-          <button type="button" className="btn ghost sm" disabled={zoomIndex === 0}
-            onClick={() => setZoomIndex(0)}>Reset zoom</button>
+          <button type="button" className="btn ghost sm" aria-label="Zoom in" disabled={zoom >= 16}
+            onClick={() => setZoom((value) => Math.min(16, value * 1.5))}>+</button>
+          <button type="button" className="btn ghost sm" disabled={zoom <= 1}
+            onClick={reset}>Reset zoom</button>
         </div>
       </div>
-      <div className="graph-screen-viewport" tabIndex={zoomIndex > 0 ? 0 : undefined}>
-        <div className="graph-screen-canvas" style={{ width: `${zoom * 100}%` }}>
+      <p className="field-hint">Drag over the graph to zoom into a region.</p>
+      <div ref={viewport} className="graph-screen-viewport" tabIndex={zoom > 1 ? 0 : undefined}>
+        <div className="graph-screen-canvas" style={{ width: `${zoom * 100}%` }} {...drag}>
           {snapshot.kind === "histogram" ? <>
             <Histogram series={snapshot.series} colors={snapshot.colors} />
             <div className="axis"><span>{snapshot.min}</span><span>{snapshot.axis}</span><span>{snapshot.max}</span></div>
           </> : snapshot.kind === "chi-square"
             ? <EvidenceAreaChart label={snapshot.title} unit="p" max={1} height={440} points={snapshot.points} />
             : <EvidenceBarChart label={snapshot.title} unit={snapshot.unit} max={snapshot.max} height={440} points={snapshot.points} />}
+          {selection}
         </div>
       </div>
       {snapshot.kind === "histogram" && <details className="evidence-data" open={snapshot.series[0]?.length <= 8}>

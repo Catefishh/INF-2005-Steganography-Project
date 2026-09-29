@@ -24,13 +24,11 @@ it("keeps revealed results in the DOM immediately and hides inactive views seman
   expect(screen.getByRole("button", { name: "Result action" })).toBeInTheDocument();
 });
 
-it("keeps text-carrier controls connected to the page callbacks", () => {
+it("keeps the text-carrier method control connected to the page", () => {
   const onMethod = vi.fn();
-  const onEstimate = vi.fn();
   render(<CarrierForm method="acrostic" onMethod={onMethod} message="hello" onMessage={vi.fn()}
-    visible="" onVisible={vi.fn()} onImport={vi.fn()} onEstimate={onEstimate} estimate={null} />);
+    visible="" onVisible={vi.fn()} onImport={vi.fn()} estimate={null} />);
   fireEvent.change(screen.getByLabelText("Method"), { target: { value: "whitespace" } });
-  fireEvent.click(screen.getByRole("button", { name: "Estimate carrier length" }));
   expect(onMethod).toHaveBeenCalledWith("whitespace");
-  expect(onEstimate).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "Estimate carrier length" })).toBeNull();
 });

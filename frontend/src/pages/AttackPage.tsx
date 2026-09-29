@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, fileUrl, type Scenario } from "../api";
+import type { Scenario } from "../api";
 import {
   ActionBar, Disclosure, DropZone, ErrorNote, Icon, KeyField, Outcome, Panel, PassphraseField, Spinner, StaleBanner, VerdictChip,
 } from "../components";

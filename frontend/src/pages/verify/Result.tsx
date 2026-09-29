@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { api, fileUrl, type CoverInfo, type SignedRecord, type VerifyResponse } from "../../api";
+import { useState } from "react";
+import { fileUrl, type SignedRecord, type VerifyResponse } from "../../api";
 import {
-  ActionBar, Disclosure, DropZone, ErrorNote, Icon, InputStrip, KeyField, MediaPreview, Outcome, Panel,
-  PassphraseField, Spinner, StaleBanner, VerifySteps,
+  Disclosure, Icon, InputStrip, MediaPreview, Outcome, Panel,
+  PassphraseField, Spinner, VerifySteps,
 } from "../../components";
-import { verifyMissing } from "../../requirements";
-import { changedInputs, staleReason } from "../../stale";
-import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Page, type Vault } from "../../util";
+import { formatBytes, shortHash } from "../../util";
 import { failedStep, skippedSteps, stepsValue, verdictReading } from "../../verdict";
 import { HashEvidence } from "../../ui/hashEvidence";
 

@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { Analysis } from "../../api";
 import { inspectCopy } from "../../analysis";
 import { Metric, Panel } from "../../components";
+import { InspectableImage } from "../../ui/InspectableImage";
+import { BitPlaneViewer } from "../../ui/BitPlaneViewer";
 
 /** The panel that only an exact comparison can produce: what changed, where, and by how much. */
 export function DiffPanel({ analysis }: { analysis: Analysis }) {
@@ -9,9 +11,12 @@ export function DiffPanel({ analysis }: { analysis: Analysis }) {
   const [split, setSplit] = useState(50);
   const [opacity, setOpacity] = useState(55);
   const [mode, setMode] = useState<"swipe" | "side" | "heatmap" | "overlay">("swipe");
+  const [viewOrigin, setViewOrigin] = useState<HTMLElement | null>(null);
   const copy = inspectCopy(analysis.info.kind);
   const percent = analysis.info.n_slots > 0 ? (compare.slots_changed / analysis.info.n_slots) * 100 : 0;
   const oneBitPerValue = compare.slots_changed > 0 && compare.bits_changed === compare.slots_changed;
+  const currentImage = mode === "heatmap" ? compare.heatmap ?? compare.amplified ?? compare.changed_map : compare.stego_preview;
+  const currentLabel = mode === "heatmap" ? "Amplified difference heatmap" : "Protected carrier";
 
   return (
     <Panel title={copy.differenceTitle} subtitle="Every changed value, against the original you supplied.">
@@ -44,8 +49,11 @@ export function DiffPanel({ analysis }: { analysis: Analysis }) {
             <button key={choice} type="button" className={mode === choice ? "on" : ""} aria-pressed={mode === choice}
               onClick={() => setMode(choice)}>{choice === "side" ? "Side by side" : choice[0].toUpperCase() + choice.slice(1)}</button>)}
         </div>
-        {mode === "side" ? <div className="planes two"><figure><img src={compare.original_preview} alt="Original cover" /><figcaption>Before</figcaption></figure>
-          <figure><img src={compare.stego_preview} alt="Protected carrier" /><figcaption>After</figcaption></figure></div> :
+        {mode !== "side" && <button type="button" className="btn ghost sm" onClick={(event) => setViewOrigin(event.currentTarget)}>
+          Pop out {currentLabel.toLowerCase()}
+        </button>}
+        {mode === "side" ? <div className="planes two"><figure><InspectableImage src={compare.original_preview} alt="Original cover" /><figcaption>Before</figcaption></figure>
+          <figure><InspectableImage src={compare.stego_preview} alt="Protected carrier" /><figcaption>After</figcaption></figure></div> :
         <div className="comparison-images">
           <img src={compare.original_preview} alt="Original cover image" />
           {mode === "swipe" && <img className="comparison-stego" src={compare.stego_preview} alt="Stego image" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />}
@@ -56,21 +64,23 @@ export function DiffPanel({ analysis }: { analysis: Analysis }) {
         {mode === "swipe" && <label>Before/after split: {split}% <input type="range" min="0" max="100" value={split} onChange={(event) => setSplit(Number(event.target.value))} /></label>}
         {mode === "overlay" && <label>Change overlay: {opacity}% <input type="range" min="0" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label>}
         {mode === "heatmap" && <p>Dark = no pixel difference; orange/red = a larger channel change, amplified 64× for visibility. Statistics use full-resolution values.</p>}
+        {viewOrigin && mode !== "side" && currentImage && <BitPlaneViewer key={currentImage} src={currentImage} label={currentLabel} sampling=""
+          origin={viewOrigin} onClose={() => setViewOrigin(null)} />}
       </div>}
 
       <div className="planes two">
         <figure>
-          <img src={compare.changed_map} alt="The locations that changed" />
+          <InspectableImage src={compare.changed_map} alt="The locations that changed" />
           <figcaption>White marks every changed {copy.unit} — {compare.slots_changed.toLocaleString()} in total</figcaption>
         </figure>
         {compare.amplified && (
           <figure>
-            <img src={compare.amplified} alt="The changed locations, brightened" />
+            <InspectableImage src={compare.amplified} alt="The changed locations, brightened" />
             <figcaption>The same locations, brightness multiplied 64× so a ±1 change becomes visible</figcaption>
           </figure>
         )}
       </div>
-      {compare.audio_change_strip && <figure><img src={compare.audio_change_strip} alt="Changes across time and channels" />
+      {compare.audio_change_strip && <figure><InspectableImage src={compare.audio_change_strip} alt="Changes across time and channels" />
         <figcaption>{compare.audio_change_note}</figcaption></figure>}
     </Panel>
   );

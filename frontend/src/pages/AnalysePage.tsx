@@ -98,7 +98,9 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
   const missing = inspectMissing({ hasFile: suspect !== null });
   const ready = missing.length === 0;
 
-  if (handoff && /\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(handoff.stego.name)) return <VideoInspect handoff={handoff} />;
+  if (suspect && /\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(suspect.name))
+    return <VideoInspect file={suspect} reference={reference}
+      onFile={(file) => changeFile(file, "suspect")} onReference={(file) => changeFile(file, "reference")} />;
 
   return (
     <div className="form-column">

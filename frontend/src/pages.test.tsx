@@ -586,6 +586,16 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
   expect(view().querySelector(".outcome")).toHaveTextContent("Reading of the evidence");
   expect(within(view()).getByText(/cannot establish embedding or authenticity/)).toBeInTheDocument();
 
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+  const popOut = within(view()).getByRole("button", {name: "Pop out image"});
+  fireEvent.click(popOut);
+  const composite = screen.getByRole("dialog", {name: "Lowest bit of red, green and blue as one image"});
+  expect(within(composite).getByRole("img")).toHaveAttribute("src", "data:image/png;base64,x");
+  fireEvent.click(within(composite).getByRole("button", {name: "Zoom in"}));
+  fireEvent.click(within(composite).getByRole("button", {name: "Close"}));
+  expect(document.activeElement).toBe(popOut);
+
   vi.mocked(api.analyse).mockClear();
   fireEvent.click(within(view()).getByRole("button", { name: "Green" }));
   await waitFor(() => expect(api.analyse).toHaveBeenCalled());

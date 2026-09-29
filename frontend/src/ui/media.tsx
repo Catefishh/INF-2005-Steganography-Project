@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./layout";
 export function CompareSlider({ before, after }: { before: string; after: string }) {
   const [position, setPosition] = useState(50);

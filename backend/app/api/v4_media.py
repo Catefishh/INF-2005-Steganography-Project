@@ -165,6 +165,7 @@ def attach(app: FastAPI, store) -> None:
                 result = {"width": video.width, "height": video.height, "frame_count": video.frame_count,
                     "fps": float(video.fps if hasattr(video, "fps") else Fraction(video.rate, video.scale)), "frame": frame,
                     "stego_preview": png_data_url(current[::stride, ::stride].copy()),
+                    "lsb_preview": png_data_url(((current[::stride, ::stride] & 1) * 255).astype(np.uint8)),
                     "original_preview": None, "heatmap": None, "timeline": None,
                     "pixels_changed": None, "bits_changed": None}
                 if original is None:

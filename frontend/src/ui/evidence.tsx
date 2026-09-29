@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { ReactNode } from "react";
 import type { HideStep, LectureRow, VerdictName, VerifyStep } from "../api";
 import { stepTone } from "../verdict";
 import { Icon } from "./layout";

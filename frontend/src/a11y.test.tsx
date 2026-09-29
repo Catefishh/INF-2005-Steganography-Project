@@ -159,11 +159,7 @@ describe("every screen — labels, busy state and heading order", () => {
   });
 
   it("Embed & Sign, including the result", async () => {
-    function Harness() {
-      const [showResult, setShowResult] = [false, () => undefined] as const;
-      return <HidePage vault={VAULT} onHandoff={() => undefined} goTo={() => undefined} showResult={showResult} onShowResult={() => undefined} />;
-    }
-    render(<Harness />);
+    render(<HidePage vault={VAULT} onHandoff={() => undefined} goTo={() => undefined} showResult={false} onShowResult={() => undefined} />);
     expectNoSkippedLevels(headingLevels(document.body));
 
     const input = document.querySelectorAll<HTMLInputElement>('input[type="file"]')[0];
@@ -174,11 +170,7 @@ describe("every screen — labels, busy state and heading order", () => {
   });
 
   it("Extract & Verify, including the result", async () => {
-    function Harness() {
-      const [showResult, setShowResult] = [false, () => undefined] as const;
-      return <VerifyPage vault={VAULT} handoff={null} goTo={() => undefined} showResult={showResult} onShowResult={() => undefined} />;
-    }
-    render(<Harness />);
+    render(<VerifyPage vault={VAULT} handoff={null} goTo={() => undefined} showResult={false} onShowResult={() => undefined} />);
     expectNoSkippedLevels(headingLevels(document.body));
 
     const input = document.querySelectorAll<HTMLInputElement>('input[type="file"]')[0];

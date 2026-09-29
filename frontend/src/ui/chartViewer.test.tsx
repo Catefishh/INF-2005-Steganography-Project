@@ -22,6 +22,24 @@ it("opens a separate browser graph tab while preserving source zoom", () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
+it("zooms an inline graph to the dragged region and resets", () => {
+  render(<ChartViewer title="Test histogram" snapshot={snapshot}><svg role="img" aria-label="Test data" /></ChartViewer>);
+  const graph = screen.getByRole("img", {name: "Test data"});
+  const content = graph.parentElement as HTMLElement;
+  const viewport = content.parentElement as HTMLElement;
+  Object.defineProperties(viewport, {clientWidth: {value: 600}, clientHeight: {value: 300}});
+  vi.spyOn(content, "getBoundingClientRect").mockReturnValue({left: 0, top: 0, width: 600, height: 300} as DOMRect);
+  fireEvent.pointerDown(graph, {button: 0, pointerId: 1, clientX: 100, clientY: 50});
+  fireEvent.pointerMove(graph, {pointerId: 1, clientX: 300, clientY: 150});
+  expect(content.querySelector(".drag-zoom-selection")).toBeInTheDocument();
+  fireEvent.pointerUp(graph, {pointerId: 1, clientX: 300, clientY: 150});
+  expect(screen.getByLabelText("Test histogram zoom level")).toHaveTextContent("300%");
+  expect(viewport.scrollLeft).toBe(300);
+  fireEvent.click(screen.getByRole("button", {name: "Reset zoom for Test histogram"}));
+  expect(screen.getByLabelText("Test histogram zoom level")).toHaveTextContent("100%");
+  expect(viewport.scrollLeft).toBe(0);
+});
+
 it("calls the desktop window bridge and reports a blocked popup", async () => {
   window.pywebview = { api: { open_graph: vi.fn().mockResolvedValue(true), close_graph: vi.fn() } };
   const view = render(<ChartViewer title="Test histogram" snapshot={snapshot}><svg role="img" /></ChartViewer>);
