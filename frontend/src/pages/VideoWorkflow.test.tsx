@@ -9,7 +9,7 @@ import { VideoEmbed, VideoVerify } from "./VideoWorkflow";
 it("uses the uploaded MP4 as the carrier without offering AVI and lets the user clear it", () => {
   const source = new File(["mp4"], "source.mp4", {type: "video/mp4"});
   const clear = vi.fn();
-  render(<VideoEmbed cover={source} source={source} onHandoff={() => undefined}
+  render(<VideoEmbed cover={source} source={source} onHandoff={() => undefined} goTo={() => undefined}
     showResult={false} onShowResult={() => undefined} onCoverFile={clear} />);
   expect(screen.getByRole("heading", {name: "Original video carrier"})).toBeInTheDocument();
   expect(screen.getAllByText("source.mp4").length).toBeGreaterThan(0);
@@ -19,7 +19,7 @@ it("uses the uploaded MP4 as the carrier without offering AVI and lets the user 
 });
 
 it("uses the image cover's accessible bit picker for video", () => {
-  render(<VideoEmbed cover={new File(["mp4"], "source.mp4")} source={null} onHandoff={() => undefined}
+  render(<VideoEmbed cover={new File(["mp4"], "source.mp4")} source={null} onHandoff={() => undefined} goTo={() => undefined}
     showResult={false} onShowResult={() => undefined} />);
   const choices = screen.getAllByRole("radio", {name: /^[1-8]$/});
   expect(choices).toHaveLength(8);
@@ -38,7 +38,7 @@ it("can clear a prepared AVI without clearing its source video", () => {
   const source = new File(["mp4"], "source.mp4");
   const prepared = new File(["avi"], "prepared.avi");
   const clearPrepared = vi.fn();
-  render(<VideoEmbed cover={prepared} source={source} onHandoff={() => undefined}
+  render(<VideoEmbed cover={prepared} source={source} onHandoff={() => undefined} goTo={() => undefined}
     showResult={false} onShowResult={() => undefined} onCoverFile={() => undefined}
     onChooseAvi={clearPrepared} />);
   fireEvent.click(screen.getByRole("button", {name: "Clear prepared AVI"}));
@@ -48,7 +48,7 @@ it("can clear a prepared AVI without clearing its source video", () => {
 it("offers AVI preparation if a native container cannot be decoded", async () => {
   vi.spyOn(jobs, "requestJson").mockRejectedValue(new Error("Decoded video exceeds 512 MiB"));
   const prepareAvi = vi.fn();
-  render(<VideoEmbed cover={new File(["webm"], "source.webm")} source={null} onHandoff={() => undefined}
+  render(<VideoEmbed cover={new File(["webm"], "source.webm")} source={null} onHandoff={() => undefined} goTo={() => undefined}
     showResult={false} onShowResult={() => undefined} onChooseAvi={prepareAvi} />);
   const input = screen.getByText("File to hide").closest(".slot")!.querySelector<HTMLInputElement>('input[type="file"]')!;
   setFiles(input, new File(["message"], "message.txt"));
@@ -75,9 +75,11 @@ it("shows the AVI result separately and downloads its recovery code", async () =
   const download = vi.spyOn(util, "downloadText");
   vi.spyOn(globalThis, "fetch").mockResolvedValue({ok: true, blob: async () => new Blob(["data"])} as Response);
   const cover = new File(["avi"], "cover.avi");
+  const handoff = vi.fn();
+  const goTo = vi.fn();
   function Page() {
     const [showResult, setShowResult] = useState(false);
-    return <VideoEmbed cover={cover} source={null} onHandoff={() => undefined}
+    return <VideoEmbed cover={cover} source={null} onHandoff={handoff} goTo={goTo}
       showResult={showResult} onShowResult={setShowResult} />;
   }
   render(<Page />);
@@ -91,11 +93,20 @@ it("shows the AVI result separately and downloads its recovery code", async () =
   await waitFor(() => expect(screen.getByLabelText("Private key")).toHaveValue("private"));
   fireEvent.click(screen.getByRole("button", {name: "Embed in AVI"}));
   await waitFor(() => expect(screen.getByRole("heading", {name: "Video protected"})).toBeInTheDocument());
+  expect(handoff).toHaveBeenCalledWith(expect.objectContaining({
+    protocol: "v2-video", recoveryCode, publicPem: "public",
+    stego: expect.objectContaining({name: "protected.avi"}),
+    recovery: expect.objectContaining({name: "recovery.stegloc"}),
+  }));
   expect(screen.queryByRole("heading", {name: "Choose what to hide"})).toBeNull();
   expect(screen.getByRole("link", {name: /Download protected AVI/})).toHaveAttribute("download", "protected.avi");
   fireEvent.click(screen.getByRole("button", {name: "Download recovery code"}));
   expect(download).toHaveBeenCalledWith("stegloc-recovery-code.txt", recoveryCode);
   expect(screen.getByLabelText("Recovery code (share separately)").closest(".field")).toBeInTheDocument();
+  for (const [label, page] of [["Verify it as the receiver would", "verify"], ["Inspect it for traces", "analyse"], ["Run the tamper tests", "attacks"]] as const) {
+    fireEvent.click(screen.getByRole("button", {name: label}));
+    expect(goTo).toHaveBeenLastCalledWith(page);
+  }
   fireEvent.click(screen.getByRole("button", {name: "Edit and run again"}));
   expect(screen.getByRole("heading", {name: "Choose what to hide"})).toBeInTheDocument();
 });

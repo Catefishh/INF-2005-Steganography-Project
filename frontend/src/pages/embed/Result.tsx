@@ -1,13 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { api, fetchAsFile, fileUrl, type CoverInfo, type HideReport, type HideResponse, type StoredFile } from "../../api";
+import { useEffect, useRef } from "react";
+import { fileUrl, type HideReport, type StoredFile } from "../../api";
 import {
-  ActionBar, ByteDiagram, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField,
-  LectureTable, MediaPreview, Meter, Metric, Outcome, Panel, PassphraseField, Spinner, Waveform,
+  CompareSlider, Disclosure, HideTimeline, Icon, InputStrip,
+  LectureTable, MediaPreview, Metric, Outcome, Panel,
 } from "../../components";
 import { differenceLabel, differenceReading, qualityReading, roomReading, touchedReading } from "../../readings";
-import { embedMissing } from "../../requirements";
-import { LONG_MESSAGE, SHORT_MESSAGE } from "../../samples";
-import { errorText, formatBytes, shortHash, useDebounced, useObjectUrl, type Handoff, type Page, type Vault } from "../../util";
+import { formatBytes, shortHash, type Page } from "../../util";
 import { HashEvidence } from "../../ui/hashEvidence";
 
 

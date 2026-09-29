@@ -160,10 +160,15 @@ def test_original_mp4_is_a_lossless_lsb_carrier_with_audio(tmp_path, kind):
         stego = client.get(f"/api/v2/artifacts/{result['carrier']['id']}").content
         recovery = client.get(f"/api/v2/artifacts/{result['recovery']['id']}").content
         assert inspect_mp4(stego).audio_hash == inspect_mp4(source).audio_hash
+        solo = client.post("/api/v4/video/compare", files={"file": ("stego." + kind, stego)})
+        assert solo.status_code == 200, solo.text
+        assert solo.json()["lsb_preview"].startswith("data:image/png;base64,")
+        assert solo.json()["heatmap"] is None
         compared = client.post("/api/v4/video/compare", files={"file": ("stego." + kind, stego),
             "reference": ("source." + kind, source)})
         assert compared.status_code == 200, compared.text
         assert (compared.json()["width"], compared.json()["height"]) == (64, 48)
+        assert compared.json()["heatmap"].startswith("data:image/png;base64,")
         checked = client.post("/api/v4/video/verify", data={"recovery_code": result["recovery_code"],
             "public_key": keys["public_key"]}, files={"stego": ("stego." + kind, stego),
             "recovery": ("recovery.stegloc", recovery)})

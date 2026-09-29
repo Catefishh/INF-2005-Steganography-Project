@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatBytes } from "../util";
 import { Icon, type IconName } from "./layout";
 export function DropZone({ title, hint, accept, file, onFile, icon = "upload", label, id, tone = "" }: {

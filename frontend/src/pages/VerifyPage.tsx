@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, fileUrl, type CoverInfo, type SignedRecord, type VerifyResponse } from "../api";
+import { api, type CoverInfo, type VerifyResponse } from "../api";
 import {
-  ActionBar, Disclosure, DropZone, ErrorNote, Icon, InputStrip, KeyField, MediaPreview, Outcome, Panel,
-  PassphraseField, Spinner, StaleBanner, VerifySteps,
+  ActionBar, Disclosure, DropZone, ErrorNote, Icon, KeyField, MediaPreview, Panel,
+  PassphraseField, Spinner, StaleBanner,
 } from "../components";
 import { verifyMissing } from "../requirements";
 import { pathFor } from "../router";
 import { changedInputs, staleReason } from "../stale";
 import { errorText, formatBytes, shortHash, useObjectUrl, type Handoff, type Page, type Vault } from "../util";
 import { VideoVerify } from "./VideoWorkflow";
-import { failedStep, skippedSteps, stepsValue, verdictReading } from "../verdict";
 
 const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.3gp,.m4v";
 const STEGO_SLOT_ID = "verify-file-slot";

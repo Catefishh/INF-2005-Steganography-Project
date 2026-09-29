@@ -1,15 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { api, fetchAsFile, fileUrl, type CoverInfo, type HideReport, type HideResponse, type StoredFile } from "../../api";
-import {
-  ActionBar, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField, LsbDepthPicker,
-  LectureTable, MediaPreview, Meter, Metric, Outcome, Panel, PassphraseField, Spinner, Waveform,
-} from "../../components";
-import { differenceLabel, differenceReading, qualityReading, roomReading, touchedReading } from "../../readings";
-import { embedMissing } from "../../requirements";
-import { LONG_MESSAGE, SHORT_MESSAGE } from "../../samples";
-import { errorText, formatBytes, shortHash, useDebounced, useObjectUrl, type Handoff, type Page, type Vault } from "../../util";
-
-
+import type { CoverInfo } from "../../api";
+import { Disclosure, Icon, LsbDepthPicker } from "../../components";
 
 /**
  * Depth and start point.

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { RsPanel } from "./RsPanel";
 import { BitPlanesPanel } from "./BitPlanesPanel";
 import { HistogramPanel } from "./HistogramPanel";
@@ -6,6 +7,7 @@ import type { Analysis } from "../../api";
 import { evidenceReading } from "../../analysis";
 import { Outcome, Panel } from "../../components";
 import { AnalysisTiming, BpcsSection, ChiSquareSection } from "../analyse/sections";
+import { BitPlaneViewer } from "../../ui/BitPlaneViewer";
 
 
 /**
@@ -23,6 +25,7 @@ export function InspectResult({ analysis, busy, channel, outcomeRef, planesRef, 
   const kind = analysis.info.kind;
   const reading = evidenceReading(analysis);
   const compare = analysis.compare;
+  const [compositeViewer, setCompositeViewer] = useState<{analysis: Analysis; origin: HTMLElement} | null>(null);
 
   return (
     <>
@@ -50,10 +53,17 @@ export function InspectResult({ analysis, busy, channel, outcomeRef, planesRef, 
 
         {analysis.lsb_composite && (
           <Panel title="Lowest bit of red, green and blue as one image">
+            <div className="chart-toolbar">
+              <button type="button" className="btn ghost sm chart-popout"
+                onClick={(event) => setCompositeViewer({analysis, origin: event.currentTarget})}>Pop out image</button>
+            </div>
             <figure className="composite">
               <img src={analysis.lsb_composite} alt="The lowest bit of red, green and blue, shown as a colour image" />
             </figure>
             <p className="field-hint">Even-looking regions can have several causes; use the maps as descriptive evidence.</p>
+            {compositeViewer?.analysis === analysis && <BitPlaneViewer src={analysis.lsb_composite}
+              label="Lowest bit of red, green and blue as one image" sampling="" origin={compositeViewer.origin}
+              onClose={() => setCompositeViewer(null)} />}
           </Panel>
         )}
       </div>

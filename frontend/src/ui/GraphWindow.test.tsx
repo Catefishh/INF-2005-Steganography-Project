@@ -21,6 +21,22 @@ it("uses the whole graph window for measured data, zoom and close", async () => 
   expect(close).toHaveBeenCalledOnce();
 });
 
+it("zooms the separate graph window to a dragged region", async () => {
+  vi.mocked(requestGraph).mockResolvedValue({ kind: "histogram", title: "Inspected value histogram",
+    series: [[2, 4, 8]], colors: ["#006194"], min: "0", max: "255", axis: "Value", notes: [] });
+  render(<GraphWindow id="drag-graph" onClose={() => undefined} />);
+  const graph = await screen.findByRole("img", {name: "Value histogram"});
+  const content = graph.closest(".graph-screen-canvas") as HTMLElement;
+  const viewport = content.parentElement as HTMLElement;
+  Object.defineProperties(viewport, {clientWidth: {value: 600}, clientHeight: {value: 300}});
+  vi.spyOn(content, "getBoundingClientRect").mockReturnValue({left: 0, top: 0, width: 600, height: 300} as DOMRect);
+  fireEvent.pointerDown(graph, {button: 0, pointerId: 1, clientX: 100, clientY: 50});
+  fireEvent.pointerMove(graph, {pointerId: 1, clientX: 300, clientY: 150});
+  fireEvent.pointerUp(graph, {pointerId: 1, clientX: 300, clientY: 150});
+  expect(screen.getByLabelText("Graph zoom level")).toHaveTextContent("300%");
+  expect(viewport.scrollLeft).toBe(300);
+});
+
 it("explains when the source analysis is unavailable", async () => {
   vi.mocked(requestGraph).mockResolvedValue(null);
   render(<GraphWindow id="missing" onClose={() => undefined} />);

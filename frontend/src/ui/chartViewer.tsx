@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { registerGraph, unregisterGraph, updateGraph, type GraphSnapshot } from "./graphHandoff";
+import { useDragZoom } from "./useDragZoom";
 
-const ZOOM_LEVELS = [1, 1.5, 2, 3, 4];
 
 export function ChartViewer({ title, snapshot, children, footer }: {
   title: string;
@@ -9,12 +9,11 @@ export function ChartViewer({ title, snapshot, children, footer }: {
   children: ReactNode;
   footer?: ReactNode;
 }) {
-  const [zoomIndex, setZoomIndex] = useState(0);
   const [error, setError] = useState("");
   const popOutButton = useRef<HTMLButtonElement>(null);
   const graphIds = useRef(new Set<string>());
   const timers = useRef(new Set<ReturnType<typeof setInterval>>());
-  const zoom = ZOOM_LEVELS[zoomIndex];
+  const {viewport, zoom, setZoom, reset, selection, drag} = useDragZoom();
 
   useEffect(() => {
     for (const id of graphIds.current) updateGraph(id, snapshot);
@@ -68,20 +67,21 @@ export function ChartViewer({ title, snapshot, children, footer }: {
   return <div className="chart-viewer">
     <div className="chart-toolbar" role="group" aria-label={`${title} controls`}>
       <span className="chart-toolbar-title">{title}</span>
-      <button type="button" className="btn ghost sm" disabled={zoomIndex === 0}
-        aria-label={`Zoom out ${title}`} onClick={() => setZoomIndex(zoomIndex - 1)}>−</button>
+      <button type="button" className="btn ghost sm" disabled={zoom <= 1}
+        aria-label={`Zoom out ${title}`} onClick={() => setZoom((value) => Math.max(1, value / 1.5))}>−</button>
       <output aria-label={`${title} zoom level`} aria-live="polite">{Math.round(zoom * 100)}%</output>
-      <button type="button" className="btn ghost sm" disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-        aria-label={`Zoom in ${title}`} onClick={() => setZoomIndex(zoomIndex + 1)}>+</button>
-      <button type="button" className="btn ghost sm" disabled={zoomIndex === 0}
-        aria-label={`Reset zoom for ${title}`} onClick={() => setZoomIndex(0)}>Reset zoom</button>
+      <button type="button" className="btn ghost sm" disabled={zoom >= 16}
+        aria-label={`Zoom in ${title}`} onClick={() => setZoom((value) => Math.min(16, value * 1.5))}>+</button>
+      <button type="button" className="btn ghost sm" disabled={zoom <= 1}
+        aria-label={`Reset zoom for ${title}`} onClick={reset}>Reset zoom</button>
       <button ref={popOutButton} type="button" className="btn ghost sm chart-popout"
         aria-label={`Pop out ${title}`} onClick={() => void openGraph()}>Pop out graph</button>
     </div>
-    <div className="chart-viewport" tabIndex={zoomIndex > 0 ? 0 : undefined}
+    <div ref={viewport} className="chart-viewport" tabIndex={zoom > 1 ? 0 : undefined}
       aria-label={`${title} at ${Math.round(zoom * 100)}% zoom`}>
-      <div className="chart-zoom-content" style={{ width: `${zoom * 100}%` }}>{children}</div>
+      <div className="chart-zoom-content" style={{ width: `${zoom * 100}%` }} {...drag}>{children}{selection}</div>
     </div>
+    <p className="field-hint">Drag over the graph to zoom into a region.</p>
     {footer}
     {error && <p className="note note-error" role="alert">{error}</p>}
   </div>;

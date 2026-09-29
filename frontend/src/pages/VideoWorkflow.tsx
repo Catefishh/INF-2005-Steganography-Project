@@ -4,7 +4,7 @@ import { HashEvidence, type HashEvidenceData } from "../ui/hashEvidence";
 import { ActionBar, Disclosure, DropZone, ErrorNote, Icon, InputStrip, KeyField, LsbDepthPicker, Meter, Outcome, Panel } from "../components";
 import { verdictReading } from "../verdict";
 import type { VerdictName } from "../api";
-import type { Handoff } from "../util";
+import type { Handoff, Page } from "../util";
 import { downloadText, errorText, formatBytes } from "../util";
 
 type Stored = {id: string; filename: string; size: number; media_type?: string};
@@ -27,9 +27,9 @@ async function job<T>(path: string, form: FormData, onPhase: (value: string) => 
   return result;
 }
 
-export function VideoEmbed({ cover, source, conversion, onHandoff, showResult, onShowResult, onResultAvailability,
+export function VideoEmbed({ cover, source, conversion, onHandoff, goTo, showResult, onShowResult, onResultAvailability,
   onCoverFile, onChooseAvi }: {cover: File; source: File | null; conversion?: Handoff["conversion"];
-  onHandoff: (value: Handoff) => void; showResult: boolean; onShowResult: (show: boolean) => void;
+  onHandoff: (value: Handoff) => void; goTo: (page: Page) => void; showResult: boolean; onShowResult: (show: boolean) => void;
   onResultAvailability?: (available: boolean) => void; onCoverFile?: (file: File | null) => void;
   onChooseAvi?: () => void}) {
   const originalFormat = !/\.avi$/i.test(cover.name);
@@ -132,6 +132,11 @@ export function VideoEmbed({ cover, source, conversion, onHandoff, showResult, o
       <div className="field"><label htmlFor="video-embed-code">Recovery code (share separately)</label>
         <input id="video-embed-code" type="text" readOnly value={result.recovery_code} /></div>
     </Panel>
+    <Panel title="Or carry on with this file" className="next-steps"><div className="btn-row">
+      <button type="button" className="btn ghost" onClick={() => goTo("verify")}><Icon name="eye" /> Verify it as the receiver would</button>
+      <button type="button" className="btn ghost" onClick={() => goTo("analyse")}><Icon name="layers" /> Inspect it for traces</button>
+      <button type="button" className="btn ghost" onClick={() => goTo("attacks")}><Icon name="zap" /> Run the tamper tests</button>
+    </div></Panel>
     <ErrorNote text={error} />
   </div>;
 

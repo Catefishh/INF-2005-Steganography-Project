@@ -12,8 +12,8 @@ from backend.app.main import create_app
 from backend.app.stego.analysis_parts.quality import ssim
 from backend.app.stego.analysis_parts.rs import analyse as rs_analyse
 from backend.app.stego.analysis_parts.difference import compare as compare_media
-from backend.app.stego.analysis_parts.bit_planes import render as render_planes
-from backend.app.stego.analysis_parts.common import grid as preview_grid
+from backend.app.stego.analysis.bit_planes import analyse as render_planes
+from backend.app.stego.analysis.common import CarrierAnalysis
 from backend.app.stego.covers import load_cover
 from backend.app.stego import text_v3
 from backend.app.stego.v2_security import generate_signing_keys, load_signing_key, load_verification_key
@@ -70,8 +70,8 @@ def test_parity_planes_and_aggregated_isolated_pixel():
     rgb = np.zeros((513, 513, 3), dtype=np.uint8)
     rgb[0, 0, 0] = 1
     cover = load_cover(_png(rgb))
-    grid, stride = preview_grid(cover, 0)
-    planes, _ = render_planes(cover, grid, stride)
+    preview = render_planes(CarrierAnalysis(cover), 0)
+    planes, stride = preview["bit_planes"], preview["stride"]
     assert len(planes) == 8 and _data_url_image(planes[0])[0, 0] == 255
     assert _data_url_image(planes[1])[0, 0] == 0
     altered = rgb.copy()
@@ -88,7 +88,10 @@ def test_text_secure_round_trip_and_tampering(method):
     private_pem, public_pem = generate_signing_keys()
     private, public = load_signing_key(private_pem), load_verification_key(public_pem)
     result = text_v3.protect("Secret 你好 🌍", method, "A visible paragraph.", private)
-    assert text_v3.estimate("Secret 你好 🌍", method)["frame_bytes"] == result["frame_bytes"]
+    estimated = text_v3.estimate("Secret 你好 🌍", method, "A visible paragraph.")
+    assert estimated["frame_bytes"] == result["frame_bytes"]
+    assert estimated["estimated_carrier_bytes"] >= len(result["carrier"].encode("utf-8"))
+    assert estimated["max_carrier_bytes"] == text_v3.MAX_CARRIER
     assert text_v3.verify(result["carrier"], result["recovery"], result["recovery_code"], public)["message"] == "Secret 你好 🌍"
     with pytest.raises(ValueError):
         text_v3.verify(result["carrier"], result["recovery"], "A" * 43, public)

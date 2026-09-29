@@ -17,17 +17,34 @@ it("drops a stale carrier estimate after message or visible text changes", async
   vi.mocked(requestJson).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);
   render(<TextPage />);
   fireEvent.change(screen.getByLabelText("Message to hide"), {target: {value: "first"}});
-  fireEvent.click(screen.getByRole("button", {name: "Estimate carrier length"}));
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
   fireEvent.change(screen.getByLabelText("Message to hide"), {target: {value: "second"}});
-  await act(async () => { finish({frame_bytes: 12, required_lines_or_symbols: 5}); });
+  await act(async () => { finish({frame_bytes: 12, required_lines_or_symbols: 5,
+    estimated_carrier_bytes: 400, max_carrier_bytes: 2_097_152}); });
   expect(screen.queryByText(/Encrypted frame:/)).toBeNull();
 
-  vi.mocked(requestJson).mockResolvedValue({frame_bytes: 14, required_lines_or_symbols: 6} as never);
+  vi.mocked(requestJson).mockResolvedValue({frame_bytes: 14, required_lines_or_symbols: 6,
+    estimated_carrier_bytes: 400, max_carrier_bytes: 2_097_152} as never);
   fireEvent.change(screen.getByLabelText("Method"), {target: {value: "whitespace"}});
-  fireEvent.click(screen.getByRole("button", {name: "Estimate carrier length"}));
   await waitFor(() => expect(screen.getByText(/Encrypted frame: 14 bytes/)).toBeInTheDocument());
   fireEvent.change(screen.getByLabelText(/Visible cover text/), {target: {value: "new cover"}});
   expect(screen.queryByText(/Encrypted frame:/)).toBeNull();
+});
+
+it("updates the text capacity bar when the carrier method changes", async () => {
+  vi.mocked(requestJson).mockImplementation(async (_path, options) => {
+    const method = (options?.body as FormData).get("method");
+    return {frame_bytes: 324, required_lines_or_symbols: method === "acrostic" ? 648 : 2592,
+      estimated_carrier_bytes: method === "acrostic" ? 25_000 : 8_000,
+      max_carrier_bytes: 2_097_152} as never;
+  });
+  render(<TextPage />);
+  fireEvent.change(screen.getByLabelText("Message to hide"), {target: {value: "test"}});
+  await waitFor(() => expect(screen.getByText(/Upper-bound estimate: 24.4 KB/)).toBeInTheDocument());
+  expect(screen.getByText(/At least .* left/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Method"), {target: {value: "zero-width"}});
+  await waitFor(() => expect(screen.getByText(/Estimated size: 7.8 KB/)).toBeInTheDocument());
+  expect(screen.getByText(/2,592 lines or hidden characters required/)).toBeInTheDocument();
 });
 
 it("shows the generated acrostic in the visible cover field after protection", async () => {

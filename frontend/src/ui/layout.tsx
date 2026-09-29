@@ -308,8 +308,8 @@ export function Stat({ label, value, sub, tone = "" }: { label: string; value: R
   );
 }
 
-export function Meter({ used, total, label, reading }: {
-  used: number | null; total: number | null; label?: string; reading?: ReactNode;
+export function Meter({ used, total, label, reading, summary }: {
+  used: number | null; total: number | null; label?: string; reading?: ReactNode; summary?: ReactNode;
 }) {
   const header = label && (
     <div className="meter-head">
@@ -333,9 +333,9 @@ export function Meter({ used, total, label, reading }: {
       {header}
       <div className="meter-track"><span style={{ width: `${Math.min(100, percent)}%` }} /></div>
       <small>
-        {percent > 100
+        {summary ?? (percent > 100
           ? `Too large: needs ${used.toLocaleString()} bytes, cover holds ${total.toLocaleString()} bytes`
-          : `${used.toLocaleString()} of ${total.toLocaleString()} bytes (${percent.toFixed(1)}%)`}
+          : `${used.toLocaleString()} of ${total.toLocaleString()} bytes (${percent.toFixed(1)}%)`)}
       </small>
     </div>
   );

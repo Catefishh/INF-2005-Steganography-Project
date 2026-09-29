@@ -1,10 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { api, fetchAsFile, fileUrl, type CoverInfo, type HideReport, type HideResponse, type StoredFile } from "../api";
+import { api, fetchAsFile, fileUrl, type CoverInfo, type HideResponse } from "../api";
 import {
-  ActionBar, ByteDiagram, CompareSlider, Disclosure, DropZone, ErrorNote, HideTimeline, Icon, InputStrip, KeyField, Reveal,
-  LectureTable, MediaPreview, Meter, Metric, Outcome, Panel, PassphraseField, Spinner, Waveform,
+  ActionBar, DropZone, ErrorNote, Icon, KeyField, Reveal,
+  Meter, Panel, PassphraseField, Spinner, Waveform,
 } from "../components";
-import { differenceLabel, differenceReading, qualityReading, roomReading, touchedReading } from "../readings";
 import { embedMissing } from "../requirements";
 import { LONG_MESSAGE, SHORT_MESSAGE } from "../samples";
 import { VideoEmbed } from "./VideoWorkflow";
@@ -219,7 +218,6 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onR
 
   const dctSelected = info?.kind === "image" && embeddingMethod === "dct";
   const capacity = dctSelected ? info?.dct?.max_package_bytes ?? null : info?.capacity?.[nLsb - 1]?.max_package_bytes ?? null;
-  const fits = packageBytes !== null && capacity !== null && packageBytes <= capacity;
   const overCapacity = packageBytes !== null && capacity !== null && packageBytes > capacity;
   const hasPayload = mode === "text" ? text.length > 0 : payloadFile !== null;
   const usingVaultKey = Boolean(vault.privatePem) && privatePem === vault.privatePem;
@@ -329,6 +327,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onR
   // The result replaces the form rather than being appended below it.
   if (cover && VIDEO_EXTENSIONS.test(cover.name)) {
     return <VideoEmbed cover={cover} source={sourceCover} conversion={conversion} onHandoff={onHandoff}
+      goTo={goTo}
       showResult={showResult} onShowResult={onShowResult} onResultAvailability={onResultAvailability}
       onCoverFile={(file) => void selectCover(file)}
       onChooseAvi={conversion || sourceDetails?.native_video ? () => { submitted.current += 1; setCover(null);

@@ -88,31 +88,13 @@ def mask_slots(slots: bytearray, length: int, depth: int, start: int) -> None:
 def embed(slots: bytearray, payload: bytes, depth: int, start: int = 0) -> None:
     if not fits(len(slots), start, depth, len(payload)):
         raise CapacityError("encrypted package does not fit from selected start")
-    bits = to_bits(payload)
-    padding = (-len(bits)) % depth
-    if padding:
-        bits = np.pad(bits, (0, padding))
-    groups = bits.reshape(-1, depth)
-    weights = 2 ** np.arange(depth - 1, -1, -1)
-    values = groups @ weights
-    mask = 255 ^ ((1 << depth) - 1)
-    target = np.frombuffer(slots, dtype=np.uint8)[start:start + len(values)]
-    target[:] = (target & mask) | values.astype(np.uint8)
+    _write_bits(slots, payload, depth, start)
 
 
 def extract(slots: bytearray, length: int, depth: int, start: int = 0) -> bytes:
     if not fits(len(slots), start, depth, length):
         raise CapacityError("extraction exceeds carrier")
-    count = slots_needed(length, depth)
-    if not count:
-        return b""
-    values = np.frombuffer(slots, dtype=np.uint8, count=count, offset=start) & ((1 << depth) - 1)
-    shifts = np.arange(depth - 1, -1, -1)
-    bits = ((values[:, None] >> shifts) & 1).reshape(-1)
-    tail = bits[length * 8:]
-    if tail.any():
-        raise PaddingError("nonzero padding in last carrier slot")
-    return np.packbits(bits[:length * 8]).tobytes()
+    return _read_bits(slots, length, depth, start, check_padding=True)
 
 
 def to_bin(data):
@@ -156,6 +138,28 @@ def slots_needed(n_bytes, n_lsb):
     return (n_bytes * 8 + n_lsb - 1) // n_lsb
 
 
+def _write_bits(slots, data, depth, start):
+    bits = to_bits(data)
+    padding = (-len(bits)) % depth
+    if padding:
+        bits = np.pad(bits, (0, padding))
+    groups = bits.reshape(-1, depth)
+    values = groups @ (2 ** np.arange(depth - 1, -1, -1))
+    end = start + len(values)
+    target = np.asarray(slots, dtype=np.uint8)[start:end]
+    target[:] = (target & (255 ^ ((1 << depth) - 1))) | values.astype(np.uint8)
+    return end
+
+
+def _read_bits(slots, length, depth, start, *, check_padding=False):
+    used = slots_needed(length, depth)
+    values = np.asarray(slots, dtype=np.uint8)[start:start + used] & ((1 << depth) - 1)
+    bits = np.unpackbits(values[:, None], axis=1)[:, 8 - depth:].reshape(-1)
+    if check_padding and bits[length * 8:].any():
+        raise PaddingError("nonzero padding in last carrier slot")
+    return np.packbits(bits[:length * 8]).tobytes()
+
+
 def encode(slots, secret_data, n_lsb, start=0):
     """Hide `secret_data` (bytes) in the lowest n_lsb bits of slots[start:].
 
@@ -169,24 +173,7 @@ def encode(slots, secret_data, n_lsb, start=0):
     if len(secret_data) > n_bytes:
         raise ValueError("[!] Insufficient bytes, need bigger cover, more LSBs or less data.")
 
-    binary_secret_data = to_bits(secret_data)  # convert data to binary
-    data_len = len(binary_secret_data)  # size of data to hide
-
-    # Pad with 0 bits so that every used slot receives exactly n_lsb bits.
-    padding = (-data_len) % n_lsb
-    bits = np.concatenate([binary_secret_data, np.zeros(padding, dtype=np.uint8)])
-
-    # One row per slot, e.g. n_lsb = 2 -> [[0, 1], [0, 0], [0, 1], [1, 1]] for "G".
-    groups = bits.reshape(-1, n_lsb).astype(np.int64)
-
-    # int("01", 2): the first bit of the group becomes the highest of the n bits.
-    weights = 2 ** np.arange(n_lsb - 1, -1, -1)  # n_lsb = 2 -> [2, 1]
-    new_lsbs = (groups * weights).sum(axis=1).astype(np.uint8)
-
-    end = start + len(new_lsbs)
-    keep_mask = np.uint8((0xFF << n_lsb) & 0xFF)  # slot_bits[:-n] keeps the top 8 - n bits
-    slots[start:end] = (slots[start:end] & keep_mask) | new_lsbs
-    return end
+    return _write_bits(slots, secret_data, n_lsb, start)
 
 
 def decode(slots, n_bytes, n_lsb, start=0):
@@ -196,14 +183,7 @@ def decode(slots, n_bytes, n_lsb, start=0):
     if start < 0 or start + used > len(slots):
         raise ValueError("[!] The requested data runs past the end of the cover.")
 
-    lsb_values = slots[start:start + used] & np.uint8((1 << n_lsb) - 1)
-
-    # Lecture: binary_data += r[-1]. Here we take the last n_lsb bits of each slot.
-    binary_data = np.unpackbits(lsb_values.astype(np.uint8)[:, None], axis=1)[:, 8 - n_lsb:]
-    binary_data = binary_data.reshape(-1)[:n_bytes * 8]
-
-    # Lecture: split by 8-bits and convert from bits to characters (here: bytes).
-    return np.packbits(binary_data).tobytes()
+    return _read_bits(slots, n_bytes, n_lsb, start)
 
 
 def clear_lsbs(slots, n_lsb, start, count):

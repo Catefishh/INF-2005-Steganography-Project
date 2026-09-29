@@ -1,11 +1,11 @@
 import { CarrierForm } from "./text/CarrierForm";
 import { ProtectedSummary, VerificationSummary } from "./text/Results";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Panel, ErrorNote } from "../components";
 import { downloadText, errorText } from "../util";
 
-import { artifactUrl, requestJson as request, runTextJob as runJob } from "../api/jobs";
-import { generatedText, recoveryFile, type Stored, type Protected, type Verified } from "../api/text";
+import { requestJson as request, runTextJob as runJob } from "../api/jobs";
+import { generatedText, recoveryFile, type Protected, type Verified } from "../api/text";
 import { CharacterChanges } from "./text/CharacterChanges";
 
 export function TextPage() {
@@ -23,7 +23,8 @@ export function TextPage() {
   const [password, setPassword] = useState("");
   const [protectedResult, setProtected] = useState<Protected | null>(null);
   const [verified, setVerified] = useState<Verified | null>(null);
-  const [estimate, setEstimate] = useState<{ frame_bytes: number; required_lines_or_symbols: number } | null>(null);
+  const [estimate, setEstimate] = useState<{ frame_bytes: number; required_lines_or_symbols: number;
+    estimated_carrier_bytes: number; max_carrier_bytes: number } | null>(null);
   const [generatedInitials, setGeneratedInitials] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -52,6 +53,11 @@ export function TextPage() {
   }
   function invalidateEstimate() { estimateRevision.current++; setEstimate(null); }
   function changeVisible(value: string) { setVisible(value); invalidateEstimate(); }
+  useEffect(() => {
+    if (!message.trim()) return;
+    const timer = window.setTimeout(() => { void previewCapacity(); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [method, message, visible]);
   async function protect() {
     setError(""); setStatus("Preparing text carrier"); setProtected(null); setVerified(null); setGeneratedVisible("");
     try {
@@ -97,7 +103,7 @@ export function TextPage() {
     <CarrierForm method={method} onMethod={(value) => { setMethod(value); invalidateEstimate(); setGeneratedVisible(""); }}
       message={message} onMessage={(value) => { setMessage(value); invalidateEstimate(); setGeneratedVisible(""); }}
       visible={method === "acrostic" ? generatedVisible : visible} onVisible={changeVisible}
-      onImport={(file) => void importText(file, changeVisible)} onEstimate={() => void previewCapacity()} estimate={estimate} />
+      onImport={(file) => void importText(file, changeVisible)} estimate={estimate} />
     <Panel title="Sender keys and protection">
       <div className="field"><label htmlFor="text-password">Key password</label><input id="text-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></div>
       <button type="button" className="btn ghost" disabled={!password} onClick={() => void keys()}>Generate Ed25519 keys</button>

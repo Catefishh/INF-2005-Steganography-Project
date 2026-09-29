@@ -2,6 +2,7 @@ import type { Analysis, BpcsMetrics, ChiSquareDetails } from "../../api";
 import { Disclosure, Icon, Panel, Stat } from "../../components";
 import { EvidenceAreaChart, EvidenceBarChart } from "../../ui/lazyEvidenceChart";
 import { ChartViewer } from "../../ui/chartViewer";
+import { InspectableImage } from "../../ui/InspectableImage";
 
 function Capacity({ metrics }: { metrics: BpcsMetrics }) {
   return <>{metrics.capacity_bits.toLocaleString()} bits ({metrics.capacity_bytes_floor.toLocaleString()} whole bytes + {metrics.capacity_remainder_bits} bits)</>;
@@ -42,8 +43,8 @@ export function BpcsSection({ result, busy }: { result: Analysis; busy: boolean 
             {bpcs.planes.map((plane) => (
               <figure key={plane.bit_plane}>
                 <div className="bpcs-maps">
-                  <img src={plane.complexity_map} alt={`Bit ${plane.bit_plane} complexity map`} />
-                  <img src={plane.classification_map} alt={`Bit ${plane.bit_plane} complex-block classification map`} />
+                  <InspectableImage src={plane.complexity_map} alt={`Bit ${plane.bit_plane} complexity map`} />
+                  <InspectableImage src={plane.classification_map} alt={`Bit ${plane.bit_plane} complex-block classification map`} />
                 </div>
                 <figcaption>Bit {plane.bit_plane} · {plane.capacity_bits.toLocaleString()} bits theoretical capacity · {plane.complex_blocks.toLocaleString()} of {plane.block_count.toLocaleString()} blocks complex</figcaption>
               </figure>

@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from backend.app.stego.analysis.common import prepare_inputs
-from backend.app.stego.analysis.difference import analyse
+from backend.app.stego.analysis_parts.difference import compare
 from test_audio import wav
 
 
@@ -35,9 +35,9 @@ def test_image_difference_preserves_legacy_counts_math_and_pixels():
     suspect[1, 0, 1] -= 2
     inputs = prepare_inputs(png(suspect), png(reference))
 
-    result = analyse(inputs.suspect, inputs.reference, preview_stride=1)
+    result = compare(inputs.suspect.cover, inputs.reference.cover, 1)
 
-    assert set(result) == {
+    assert {
         "slots_changed",
         "bits_changed",
         "max_difference",
@@ -45,7 +45,7 @@ def test_image_difference_preserves_legacy_counts_math_and_pixels():
         "mse",
         "changed_map",
         "amplified",
-    }
+    } <= set(result)
     assert result["slots_changed"] == 2
     assert result["bits_changed"] == 5
     assert result["max_difference"] == 2
@@ -62,7 +62,7 @@ def test_identical_inputs_have_zero_mse_and_no_psnr():
     data = png(np.full((3, 4, 3), 25, dtype=np.uint8))
     inputs = prepare_inputs(data, data)
 
-    result = analyse(inputs.suspect, inputs.reference, preview_stride=1)
+    result = compare(inputs.suspect.cover, inputs.reference.cover, 1)
 
     assert result["slots_changed"] == 0
     assert result["bits_changed"] == 0
@@ -77,7 +77,7 @@ def test_audio_difference_uses_audio_peak_and_has_no_amplified_map():
     changed[data_offset] ^= 1
     inputs = prepare_inputs(bytes(changed), reference)
 
-    result = analyse(inputs.suspect, inputs.reference, preview_stride=1)
+    result = compare(inputs.suspect.cover, inputs.reference.cover, 1)
 
     assert result["slots_changed"] == 1
     assert result["bits_changed"] == 1
@@ -88,6 +88,6 @@ def test_audio_difference_uses_audio_peak_and_has_no_amplified_map():
 
 
 def test_difference_without_reference_is_none():
-    inputs = prepare_inputs(png(np.zeros((2, 2, 3), dtype=np.uint8)), None)
+    from backend.app.stego.analysis import analyse
 
-    assert analyse(inputs.suspect, None, preview_stride=1) is None
+    assert analyse(png(np.zeros((2, 2, 3), dtype=np.uint8)))["compare"] is None

@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import hashes
 
 from .v2_security import decode_recovery_code, recovery_code
 
-from .text_carrier import MAGIC, DOMAIN, METHODS, MAX_MESSAGE, MAX_CARRIER, encode, decode
+from .text_carrier import MAGIC, DOMAIN, METHODS, MAX_MESSAGE, MAX_CARRIER, STARTERS, encode, decode
 
 def _json(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -36,9 +36,14 @@ def estimate(message: str, method: str, visible: str = "") -> dict:
     })
     frame_bytes = 9 + 16 + 12 + len(package) + 16
     units = frame_bytes * (2 if method == "acrostic" else 8)
+    # The encrypted bytes are unknown until protection. Longest initials give an upper bound.
+    longest = max(range(len(STARTERS)), key=lambda index: len(STARTERS[index]))
+    sample = bytes([longest * 17] if method == "acrostic" else [0]) * frame_bytes
+    carrier_bytes = len(encode(sample, method, visible).encode("utf-8"))
     return {"message_bytes": len(payload), "frame_bytes": frame_bytes,
             "required_lines_or_symbols": units,
-            "method": method, "existing_visible_characters": len(visible)}
+            "method": method, "existing_visible_characters": len(visible),
+            "estimated_carrier_bytes": carrier_bytes, "max_carrier_bytes": MAX_CARRIER}
 
 
 def protect(message: str, method: str, visible: str, private_key) -> dict:

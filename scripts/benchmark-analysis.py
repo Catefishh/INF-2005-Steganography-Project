@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from backend.app.stego.analysis_parts.bpcs import _plane
+from backend.app.stego.analysis.bpcs import block_complexities
 
 
 def reference(channel, bit, block):
@@ -37,8 +37,8 @@ def main():
     for side in (128, 512, 1024):
         image = np.random.default_rng(2005).integers(0, 256, (side, side), dtype=np.uint8)
         slow_result, slow_ms = elapsed(lambda: reference(image, 0, 16))
-        fast_result, fast_ms = elapsed(lambda: _plane(image, 0, 16))
-        assert slow_result == int(fast_result[2].sum())
+        fast_result, fast_ms = elapsed(lambda: block_complexities(image & 1, 16))
+        assert slow_result == int(fast_result[1].sum())
         output.append({"side": side, "block_size": 16, "reference_ms": slow_ms,
                        "vectorized_ms": fast_ms, "speedup": round(slow_ms / fast_ms, 2)})
     print(json.dumps({"method": "median of three runs; fixed seed 2005; one bit plane",
