@@ -227,6 +227,35 @@ it("keys: a removed file cannot finish loading into the vault", async () => {
   expect(document.querySelector(".rail-keys")).toHaveTextContent("keys needed");
 });
 
+it("selects an image start pixel in the pop-out and sends that location", async () => {
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "harbour.png");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  fireEvent.click(within(view()).getByRole("button", {name: /Embedding options/}));
+  fireEvent.click(within(view()).getByRole("button", {name: /Choose a spot/}));
+  expect(within(view()).queryByText(/Use it to show what happens/)).toBeNull();
+  expect(within(view()).queryByLabelText("Across (X)")).toBeNull();
+  fireEvent.click(within(view()).getByRole("button", {name: "Open image to choose a pixel"}));
+  const image = within(screen.getByRole("dialog", {name: "Choose starting pixel"}))
+    .getByRole("button", {name: "Choose starting pixel"});
+  Object.defineProperties(image, {naturalWidth: {value: 640}, naturalHeight: {value: 480}});
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({left: 0, top: 0, width: 640, height: 480} as DOMRect);
+  fireEvent.load(image);
+  fireEvent.pointerDown(image, {button: 0, pointerId: 1, clientX: 64, clientY: 48});
+  fireEvent.pointerUp(image, {pointerId: 1, clientX: 64, clientY: 48});
+  expect(within(view()).getByText(/Selected pixel \(64, 48\)/)).toBeInTheDocument();
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "hello"}});
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
+  await waitFor(() => expect(api.hide).toHaveBeenCalled());
+  const form = vi.mocked(api.hide).mock.calls[0][0];
+  expect(form.get("start_mode")).toBe("manual");
+  expect(form.get("start_x")).toBe("64");
+  expect(form.get("start_y")).toBe("48");
+});
+
 it("sender: blocks until it has what it needs, then embeds and offers the download", async () => {
   await appWithKeys();
   await screenNamed("Embed & Sign");

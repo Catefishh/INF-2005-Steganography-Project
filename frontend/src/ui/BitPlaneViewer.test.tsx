@@ -48,3 +48,28 @@ test("dragging a region zooms and centers it; a tiny drag is ignored", () => {
   expect(viewport.scrollTop).toBe(0);
   view.unmount();
 });
+
+test("clicking the image picks its exact pixel and keyboard arrows can move the choice", () => {
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  const onPick = vi.fn();
+  render(<BitPlaneViewer src="image.png" label="Choose starting pixel" sampling="" origin={null}
+    onClose={vi.fn()} onPick={onPick} initialPoint={{x: 16, y: 16}} />);
+  const image = screen.getByRole("button", {name: "Choose starting pixel"});
+  Object.defineProperties(image, {naturalWidth: {value: 100}, naturalHeight: {value: 80}});
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({left: 10, top: 20, width: 200, height: 160} as DOMRect);
+  fireEvent.load(image);
+  fireEvent.pointerMove(image, {clientX: 60, clientY: 60});
+  expect(screen.getByText("(25, 20)")).toBeInTheDocument();
+  fireEvent.pointerLeave(image);
+  expect(screen.queryByText("(25, 20)")).toBeNull();
+  fireEvent.pointerDown(image, {button: 0, pointerId: 1, clientX: 10, clientY: 20});
+  fireEvent.pointerUp(image, {pointerId: 1, clientX: 10, clientY: 20});
+  expect(onPick).not.toHaveBeenCalled();
+  expect(screen.getByText(/cannot be used/)).toBeInTheDocument();
+  fireEvent.pointerDown(image, {button: 0, pointerId: 1, clientX: 60, clientY: 60});
+  fireEvent.pointerUp(image, {pointerId: 1, clientX: 60, clientY: 60});
+  expect(onPick).toHaveBeenCalledWith(25, 20);
+  fireEvent.keyDown(image, {key: "ArrowRight"});
+  fireEvent.keyDown(image, {key: "Enter"});
+  expect(onPick).toHaveBeenLastCalledWith(26, 20);
+});
