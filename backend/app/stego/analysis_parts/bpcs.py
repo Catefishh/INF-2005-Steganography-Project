@@ -8,6 +8,8 @@ import math
 import numpy as np
 from PIL import Image
 
+from ..analysis.bpcs import _valid_pixel_counts, block_complexities
+
 
 DEFAULT_BLOCK = 16
 DEFAULT_FIRST = 0
@@ -32,27 +34,12 @@ def _url(values: np.ndarray) -> str:
 
 
 def _plane(channel: np.ndarray, bit: int, block: int):
-    pixels = ((channel >> bit) & 1).astype(np.uint8)
-    height, width = pixels.shape
+    height, width = channel.shape
     rows, columns = math.ceil(height / block), math.ceil(width / block)
     if rows > 512 or columns > 512 or rows * columns > MAX_BLOCKS:
         raise ValueError("BPCS would exceed the response limit; choose a larger block")
-    row_starts = np.arange(0, height, block)
-    column_starts = np.arange(0, width, block)
-    horizontal = np.zeros((height, width), dtype=np.uint8)
-    vertical = np.zeros((height, width), dtype=np.uint8)
-    horizontal[:, :-1] = pixels[:, :-1] != pixels[:, 1:]
-    vertical[:-1, :] = pixels[:-1, :] != pixels[1:, :]
-    horizontal[:, block - 1::block] = 0
-    vertical[block - 1::block, :] = 0
-    edges = horizontal.astype(np.int32) + vertical
-    transitions = np.add.reduceat(np.add.reduceat(edges, row_starts, axis=0), column_starts, axis=1)
-    heights = np.minimum(block, height - row_starts)
-    widths = np.minimum(block, width - column_starts)
-    pixels_per_block = heights[:, None] * widths[None, :]
-    maximum = heights[:, None] * np.maximum(0, widths[None, :] - 1) + widths[None, :] * np.maximum(0, heights[:, None] - 1)
-    complexity = np.divide(transitions, maximum, out=np.zeros_like(transitions, dtype=np.float32), where=maximum > 0)
-    return complexity, pixels_per_block, transitions
+    complexity, transitions, _ = block_complexities(((channel >> bit) & 1).astype(np.uint8), block)
+    return complexity.astype(np.float32), _valid_pixel_counts(height, width, block), transitions
 
 
 def analyse(channel: np.ndarray, reference: np.ndarray | None, *, block_size: int = DEFAULT_BLOCK,
