@@ -1,6 +1,23 @@
-import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { formatBytes } from "../util";
+import { KEY_ACCEPT, readKeyFile, uploadError } from "../upload";
 import { Icon, type IconName } from "./layout";
+
+export function FilePicker({ accept, onFile, id, label, hidden = false }: {
+  accept: string; onFile: (file: File) => void; id?: string; label?: string; hidden?: boolean;
+}) {
+  const [error, setError] = useState("");
+  const errorId = useId();
+  return <><input type="file" accept={accept} id={id} aria-label={label} hidden={hidden}
+    aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} onChange={(event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+      const rejected = uploadError(file, accept);
+      setError(rejected);
+      if (!rejected) onFile(file);
+    }} />{error && <span id={errorId} className="note note-error" role="alert">{error}</span>}</>;
+}
 export function DropZone({ title, hint, accept, file, onFile, icon = "upload", label, id, tone = "" }: {
   title: string; hint: string; accept?: string; file: File | null; onFile: (file: File | null) => void;
   icon?: IconName; label?: ReactNode; id?: string; tone?: "" | "bad";
@@ -22,8 +39,15 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone, labelId }
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const [error, setError] = useState("");
+  const errorId = useId();
   const titleId = useId();
   const open = () => input.current?.click();
+  const choose = (next: File) => {
+    const rejected = uploadError(next, accept);
+    setError(rejected);
+    if (!rejected) onFile(next);
+  };
   return (
     <div
       id={id}
@@ -32,6 +56,8 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone, labelId }
       tabIndex={0}
       aria-label={labelId ? undefined : file ? `Replace ${file.name}` : title}
       aria-labelledby={labelId ? `${labelId} ${titleId}` : undefined}
+      aria-describedby={error ? errorId : undefined}
+      aria-invalid={Boolean(error)}
       onClick={open}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -48,12 +74,12 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone, labelId }
         event.preventDefault();
         setOver(false);
         const dropped = event.dataTransfer.files.item(0);
-        if (dropped) onFile(dropped);
+        if (dropped) choose(dropped);
       }}
     >
       <input ref={input} type="file" accept={accept} hidden onClick={(event) => event.stopPropagation()} onChange={(event) => {
          const picked = event.target.files?.[0];
-        if (picked) onFile(picked);
+        if (picked) choose(picked);
         event.target.value = "";
       }} />
       <span className="drop-icon"><Icon name={file ? "check" : icon} size={22} /></span>
@@ -61,9 +87,11 @@ function DropSlot({ title, hint, accept, file, onFile, icon, id, tone, labelId }
         <strong id={titleId}>{file ? file.name : title}</strong>
         <small>{file ? `${formatBytes(file.size)} · drop or click to replace` : hint}</small>
       </span>
+      {error && <span id={errorId} className="note note-error" role="alert">{error}</span>}
       {file && (
         <button type="button" className="icon-btn" aria-label={`Remove ${file.name}`} onKeyDown={(event) => event.stopPropagation()} onClick={(event) => {
           event.stopPropagation();
+          setError("");
           onFile(null);
         }}>
           <Icon name="x" />
@@ -78,9 +106,21 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const [error, setError] = useState("");
+  const errorId = useId();
+  const readRevision = useRef(0);
+  useEffect(() => { readRevision.current++; }, [value]);
+  useEffect(() => () => { readRevision.current++; }, []);
   const fieldId = `${useId()}pem`;
   const readFile = (file: File | null | undefined) => {
-    if (file) void file.text().then(onChange);
+    if (!file) return;
+    const revision = ++readRevision.current;
+    setError("");
+    void readKeyFile(file).then((pem) => {
+      if (revision === readRevision.current) onChange(pem);
+    }).catch((cause: unknown) => {
+      if (revision === readRevision.current) setError(cause instanceof Error ? cause.message : "Could not read the key file.");
+    });
   };
   return (
     <div className="field">
@@ -88,12 +128,12 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
         <label htmlFor={fieldId}>{label}</label>
         <span className="field-actions">
           {vaultPem && vaultPem !== value && (
-            <button type="button" className="link-btn" onClick={() => onChange(vaultPem)}>{vaultLabel}</button>
+            <button type="button" className="link-btn" onClick={() => { readRevision.current++; setError(""); onChange(vaultPem); }}>{vaultLabel}</button>
           )}
           <button type="button" className="link-btn" onClick={() => input.current?.click()}>Load .pem</button>
         </span>
       </div>
-      <input ref={input} type="file" accept=".pem,.key,.pub,.txt" hidden onChange={(event) => {
+      <input ref={input} type="file" accept={KEY_ACCEPT} hidden onChange={(event) => {
         readFile(event.target.files?.[0]);
         event.target.value = "";
       }} />
@@ -102,8 +142,10 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
         className={`pem${over ? " over" : ""}`}
         value={value}
         spellCheck={false}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : undefined}
         placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => { readRevision.current++; setError(""); onChange(event.target.value); }}
         onDragOver={(event) => {
           event.preventDefault();
           setOver(true);
@@ -115,6 +157,7 @@ export function KeyField({ label, value, onChange, placeholder, vaultPem, vaultL
           readFile(event.dataTransfer.files.item(0));
         }}
       />
+      {error && <span id={errorId} className="note note-error" role="alert">{error}</span>}
     </div>
   );
 }

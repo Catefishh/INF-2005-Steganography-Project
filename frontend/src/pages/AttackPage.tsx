@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Scenario } from "../api";
 import {
-  ActionBar, Disclosure, DropZone, ErrorNote, Icon, KeyField, Outcome, Panel, PassphraseField, Spinner, StaleBanner, VerdictChip,
+  ActionBar, Disclosure, DropZone, ErrorNote, FilePicker, Icon, KeyField, Outcome, Panel, PassphraseField, Spinner, StaleBanner, VerdictChip,
 } from "../components";
 import { tamperMissing } from "../requirements";
 import { changedInputs, staleReason } from "../stale";
 import { errorText, type Handoff, type Vault } from "../util";
 import { artifactUrl, requestJson, type Job } from "../api/jobs";
 import { TextShowcase } from "./TextShowcase";
+import { TamperSummary } from "../ui/TamperSummary";
 
 const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.3gp,.m4v";
 const STEGO_SLOT_ID = "tamper-file-slot";
@@ -170,9 +171,9 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
       <Panel step="1" title="Choose the protected file"
         subtitle="Use a file that passes Extract & Verify.">
         <ol className="tamper-guide">
-          <li><strong>Baseline:</strong> verify the protected file without changes.</li>
-          <li><strong>One change:</strong> edit a copy or change a credential for each case.</li>
-          <li><strong>Compare:</strong> show expected and observed verdicts; download modified files.</li>
+          <li><strong>Baseline:</strong> verify the protected workspace file with your selected credentials, without changes.</li>
+          <li><strong>One change:</strong> edit a separate copy or replace a verification input for that case only. The wrong-key case generates an unrelated key; it does not use your selected sender key.</li>
+          <li><strong>Compare:</strong> a deliberately changed file or incorrect credential should fail verification. Open Reasoning to see what each case checks and whether its result was expected.</li>
         </ol>
         <div className="columns">
           <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
@@ -180,7 +181,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="shield" file={stego}
             onFile={(file) => { invalidateRun(); setStego(file); if (/\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(file?.name ?? "") && publicPem === vault.publicPem) setPublicPem(""); onWorkingFile?.(file); }} />
           <DropZone label={<>Original cover <span className="opt">(optional)</span></>} id={COVER_SLOT_ID}
-            title="Drop the original here" hint="adds a check that the original contains no hidden payload"
+            title="Drop the original here" hint="checks this separate reference for no hidden payload; use an unsigned original"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="image" file={cover}
             onFile={(file) => { invalidateRun(); setCover(file); }} />
         </div>
@@ -190,7 +191,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
         {!isVideo && <PassphraseField value={passphrase} onChange={setPassphrase}
           hint="The baseline uses this password; the wrong-password case replaces it for that check." />
         }
-        {isVideo && <div className="inline-fields"><label>Recovery file<input type="file" accept=".stegloc" onChange={(e) => setRecovery(e.target.files?.[0] ?? null)} /></label>
+        {isVideo && <div className="inline-fields"><label>Recovery file<FilePicker accept=".stegloc" onFile={setRecovery} /></label>
           <label>Recovery code<input value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} /></label></div>}
 
         <div className="field">
@@ -278,6 +279,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                 </button>
               } />
 
+            <TamperSummary cases={scenarios} busy={busy} />
             <Disclosure title={showTests ? "Hide test cases" : "Show test cases"} open={showTests} onOpenChange={setTestsOpen}>
               {showTests && <>
               <fieldset className="tamper-filters">
@@ -369,7 +371,7 @@ export function expectation(scenario: Scenario, hasCover: boolean): string {
     flip_payload_bit: "The changed file is identified as tampered because the protected payload changed.",
     wrong_start: "The selected location is rejected; the file itself remains unchanged.",
     corrected_start: "The authenticated location succeeds and the unchanged file is confirmed genuine.",
-    clean_cover: "No signed payload is found in the original cover.",
+    clean_cover: "An unsigned original cover should contain no signed payload. This checks the separate reference file, not the protected workspace file. If it was already protected, its existing payload may require a different sender key.",
     jpeg: "The re-compressed file is rejected or cannot be verified because its protected data may no longer be readable.",
     lsb_noise: "The overwritten file is rejected or cannot be verified because the hidden payload was disrupted.",
     forged_payload: "The modified content is rejected because its signature is invalid.",

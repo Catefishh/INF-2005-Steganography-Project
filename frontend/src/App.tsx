@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Icon, Reveal, type IconName } from "./components";
+import { FilePicker, Icon, Reveal, type IconName } from "./components";
+import { MEDIA_ACCEPT } from "./upload";
 import { Sidebar, SidebarInset, SidebarMenu, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "./ui/sidebar";
 import { AnalysePage } from "./pages/AnalysePage";
 import { AttackPage } from "./pages/AttackPage";
@@ -189,7 +190,7 @@ export default function App() {
           <div><b>Working file</b> <span>{handoff.stego.name} · {handoff.stego.name.split(".").pop()?.toUpperCase()} · {(handoff.stego.size / 1024).toFixed(1)} KiB</span>
             {handoff.sourceCover && handoff.sourceCover !== handoff.cover && <span>Prepared from {handoff.sourceCover.name}</span>}
             <code title={workspaceDigest}>{workspaceDigest || "Calculating SHA-256…"}</code></div>
-          <label className="btn ghost sm">Replace file<input type="file" hidden onChange={(event) => replaceWorkingFile(event.target.files?.[0] ?? null)} /></label>
+          <label className="btn ghost sm">Replace file<FilePicker accept={MEDIA_ACCEPT} hidden onFile={replaceWorkingFile} /></label>
           <button className="btn ghost sm" type="button" onClick={() => replaceWorkingFile(null)}>Clear workspace</button>
         </motion.section>}</AnimatePresence>}
         <Reveal hidden={route.page !== "keys"}><KeysPage vault={vault} setVault={setVault} goTo={goTo} /></Reveal>

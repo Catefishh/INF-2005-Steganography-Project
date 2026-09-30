@@ -5,10 +5,10 @@ import {
   Meter, Panel, PassphraseField, Spinner, Waveform,
 } from "../components";
 import { embedMissing } from "../requirements";
-import { LONG_MESSAGE, SHORT_MESSAGE } from "../samples";
 import { VideoEmbed } from "./VideoWorkflow";
 import { DctResult } from "./embed/DctResult";
 import { errorText, formatBytes, shortHash, useDebounced, useObjectUrl, type Handoff, type Page, type Vault } from "../util";
+import { uploadError } from "../upload";
 
 const VIDEO_EXTENSIONS = /\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i;
 const COVER_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.3gp,.m4v,.mpg,.mpeg,.ts";
@@ -126,7 +126,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onR
       if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "AVI ") detectedSuffix = ".avi";
       if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WAVE") detectedSuffix = ".wav";
     } catch { compatibleHeader = !/\.(mp3|mp4|mov|mkv|webm|flv|wmv|3gp|m4v|mpg|mpeg|ts)$/i.test(file.name); }
-    if (!compatibleHeader && /\.(png|bmp|jpe?g|gif|webp|tiff?|wav)$/i.test(file.name)) {
+    if (!compatibleHeader && !uploadError(file, "image/*,.wav")) {
       if (revision === submitted.current) setCover(file);
     } else if (!compatibleHeader || detectedSuffix === ".avi") {
       try {
@@ -433,18 +433,7 @@ export function HidePage({ vault, onHandoff, goTo, showResult, onShowResult, onR
                 onChange={(event) => setText(event.target.value)} placeholder="Type the message you want to hide…" />
               <div className="field-foot">
                 <small className="field-hint">{payloadSize.toLocaleString()} bytes (UTF-8)</small>
-                <small className="field-hint">
-                  Example text:{" "}
-                  <button type="button" className="link-btn" onClick={() => setText(SHORT_MESSAGE)}>short</button>
-                  {" · "}
-                  <button type="button" className="link-btn" onClick={() => setText(LONG_MESSAGE)}>long</button>
-                  {text.length > 0 && (
-                    <>
-                      {" · "}
-                      <button type="button" className="link-btn" onClick={() => setText("")}>clear</button>
-                    </>
-                  )}
-                </small>
+                {text.length > 0 && <button type="button" className="link-btn" onClick={() => setText("")}>clear</button>}
               </div>
             </div>
           ) : (

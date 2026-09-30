@@ -39,7 +39,7 @@ Follow the supplied Luminous Spatial Glass direction: pale cool canvas, transluc
 
 ## Evidence On Hand
 
-The INF2005 assignment excerpts remain in `docs/reference/assignment-excerpts.md`. The current interface follows the supplied Luminous Spatial Glass specification and the adopted component patterns documented in `docs/ui-library-adoption.md`. Protocol formats and analysis limitations are documented separately.
+The current interface follows the supplied Luminous Spatial Glass specification and the adopted component patterns documented in `docs/ui-library-adoption.md`. Protocol formats and analysis limitations are documented separately.
 
 ## Implementation Status
 

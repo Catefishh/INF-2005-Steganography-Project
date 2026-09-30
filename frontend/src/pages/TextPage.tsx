@@ -1,7 +1,7 @@
 import { CarrierForm } from "./text/CarrierForm";
 import { ProtectedSummary, VerificationSummary } from "./text/Results";
 import { useEffect, useRef, useState } from "react";
-import { Panel, ErrorNote } from "../components";
+import { Panel, ErrorNote, FilePicker } from "../components";
 import { downloadText, errorText } from "../util";
 
 import { requestJson as request, runTextJob as runJob } from "../api/jobs";
@@ -117,12 +117,12 @@ export function TextPage() {
     </Panel>
     <Panel title="Carrier and recipient verification" subtitle="Acrostic sentences can be rewritten while their first letters and line order stay the same.">
       <div className="field"><label htmlFor="text-carrier">Carrier text</label><textarea id="text-carrier" rows={10} value={carrier} onChange={(event) => setCarrier(event.target.value)} /></div>
-      <input type="file" accept=".txt,text/plain" aria-label="Import carrier text" onChange={(event) => void importText(event.target.files?.[0], setCarrier)} />
+      <FilePicker accept=".txt,text/plain" label="Import carrier text" onFile={(file) => void importText(file, setCarrier)} />
       {!acrosticValid && <p className="note note-warn">The acrostic line count or initials changed. Restore them before export.</p>}
       <button type="button" className="btn ghost" disabled={!carrier || !acrosticValid} onClick={() => downloadText("stegloc-text-edited.txt", carrier)}>Save edited carrier</button>
       {carrier && <p className="field-hint">Diagnostic: {diagnostic}. Hidden message and sender are authenticated; visible wording is not.</p>}
       {carrier && <CharacterChanges before={visible} after={carrier} method={method} />}
-      <div className="field"><label htmlFor="text-recovery">Recovery material</label><input id="text-recovery" type="file" accept=".stegloc-text" onChange={(event) => setRecovery(event.target.files?.[0] ?? null)} /></div>
+      <div className="field"><label htmlFor="text-recovery">Recovery material</label><FilePicker id="text-recovery" accept=".stegloc-text" onFile={setRecovery} /></div>
       <div className="field"><label htmlFor="text-code">Recovery code</label><input id="text-code" value={code} onChange={(event) => setCode(event.target.value)} /></div>
       <button type="button" className="btn primary" disabled={!carrier || !recovery || !code || !publicKey || Boolean(status)} onClick={() => void verify()}>Extract and verify</button>
       {verified && <VerificationSummary result={verified} />}

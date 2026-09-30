@@ -1,233 +1,216 @@
-# Stegloc: LSB and DCT steganography with digital signatures
+# Stegloc
 
-Image senders can choose **DCT · lossless PNG** in Embed & Sign. It uses one bit per complete 8×8 RGB channel block, automatically places a signed and encrypted payload, and produces a PNG that can be independently reuploaded to Extract & Verify. Small images may have no usable capacity; the capacity meter includes the encrypted envelope and RSA signature. The lossless output avoids further codec loss, but resizing, JPEG recompression, or other edits may prevent recovery. The DCT cover hash protects RGB pixels outside embedding blocks and all alpha values, while AES-GCM protects recovered payload bytes. See [DCT format and integrity scope](docs/dct-protocol.md).
+Stegloc **0.4.0** is the INF2005 ACW1 steganography application for Windows desktop and local browser use. It hides signed, encrypted messages or files in images, PCM WAV audio, supported video, and text carriers, then checks the sender's signature and content integrity before releasing the recovered payload.
 
-## Demonstration workflow
+The React interface and Python FastAPI service run locally. The Windows distribution includes the frontend and FFmpeg tools and works offline after setup.
 
-1. Select an image, PCM WAV, or video cover. MP4, MOV, M4V, MKV, WebM, FLV, WMV and 3GP can keep their container when the app finds compatible constant-frame-rate video. Other videos, including MPEG-PS, use AVI preparation (64 MiB maximum). Audio is retained in both paths. MP3 preparation writes PCM WAV. The Windows desktop build bundles FFmpeg and ffprobe; source runs require them on `PATH` or in `build/ffmpeg`.
-2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
-3. Extract and verify. Compare the signed expected payload digest with the decoded digest. A wrong manual start keeps the same file and offers immediate retry or the authenticated stored location.
-4. Inspect the prepared cover against the stego file with side-by-side, swipe, overlay, and heatmap views. For video, inspect individual frames and the timeline. For WAV, the strip shows changes across time and channels.
-5. Open Tamper tests with a protected image, WAV, AVI, or text carrier from the relevant embedding workflow. Watch each case finish, including wrong-location correction and a controlled RSA payload-hash mismatch, then download the evidence ZIP. Media evidence exports include the supplied original and protected files, public key, passphrase (or video recovery code), exact case steps, and generated files under `tampered/`. Treat the ZIP as sensitive: private keys and extracted plaintext are excluded, but the verification secret is included.
+## Workflows
 
-Video uses the Ed25519 workflow with a separate recovery file and code. Its frames are encoded losslessly after LSB embedding, so output size can grow and playback depends on the player's codec support. MP3 becomes WAV. Working files live only for the current app session.
+| Screen | Route | Purpose |
+| --- | --- | --- |
+| **Keys** | `/keys` | Generate or load an RSA key pair, check fingerprints, and download the keys |
+| **Embed & Sign** | `/embed` | Hide text or any payload file in an image, audio clip, or video; show capacity and the resulting file |
+| **Extract & Verify** | `/verify` | Reupload a protected file, supply its verification material, and inspect the verdict and verification stages |
+| **Text Steganography** | `/text` | Generate and verify signed, encrypted acrostic, trailing-whitespace, or zero-width text |
+| **Inspect a file** | `/inspect` | Examine bit planes, statistical measurements, and differences against an optional original |
+| **Tamper tests** | `/tamper-tests` | Run controlled positive and negative verification cases and export evidence |
 
-INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside image, WAV and supported video covers using LSB replacement, with a DCT option for images. It supports SHA-256/RSA signing and an Ed25519 media protocol with a separate recovery file/code.
+Embed and verification results have their own `/embed/result` and `/verify/result` routes. Browser Back/Forward navigation works within the studio. A working-file strip carries the selected media file and its SHA-256 between screens; **Replace file** and **Clear workspace** manage that selection. Keys, form inputs, and working files are kept in the current tab, so download them before refreshing or closing it.
 
-| Page | What it does |
-| --- | --- |
-| **Keys** | Generate or load an RSA-2048 key pair (private key signs, public key verifies) |
-| **Embed & sign** (party A) | Drag in a cover and a payload (text or any file), choose 1-8 LSBs and the start location, then embed |
-| **Extract & verify** (party B) | Drag in the received stego file, enter the passphrase and public key, get a verdict |
-| **Steganalysis** | Bit planes, histogram, chi-square attack, difference image (cover vs stego) |
-| **Tamper tests** | Runs live positive/negative cases for media and text, with downloadable evidence and variants |
-| **Text Steganography** | Signed, encrypted messages in acrostic, trailing-whitespace, or zero-width text |
+### Protection formats and keys
 
-## Analysis and text
+| Workflow | Signature and encryption | Recipient needs |
+| --- | --- | --- |
+| Image / WAV spatial LSB | RSA-PSS, SHA-256, AES-256-GCM; passphrase-derived keys | Protected file, passphrase, RSA public key |
+| Image **DCT · lossless PNG** | RSA-PSS, SHA-256, AES-256-GCM; passphrase-derived keys | Protected PNG, passphrase, RSA public key |
+| Video / media recovery | Ed25519, SHA-256, AES-256-GCM; random recovery secret | Protected file, `.stegloc` recovery file, recovery code, Ed25519 public key |
+| Signed text | Ed25519, SHA-256, AES-256-GCM; random recovery secret | Carrier text, `.stegloc-text` recovery file, recovery code, Ed25519 public key |
 
-**Inspect a file** now offers image-only RS statistics, paired cover/stego histograms and bit planes 0–7, an even/odd filter (bit 0: even black, odd white), and full-resolution luminance SSIM. Its before/after slider and change overlay show exactly where pixels differ. RS, histograms and chi-square are descriptive evidence; they cannot prove a message is present. MSE, PSNR and SSIM require a same-size original image. SSIM uses 11×11 windows, so it is unavailable below 11×11 pixels.
+**Keys** manages RSA keys and generates RSA-2048 pairs. Video and text have their own Ed25519 key controls and require a password when generating an encrypted private PEM. RSA keys and Ed25519 keys are not interchangeable. The media recovery API also supports restricted image and WAV carriers; the main image/audio form uses RSA and a passphrase.
 
-The BPCS number in Inspect is a theoretical estimate. Tamper tests run controlled positive and negative verification cases against protected files.
+Keep the private key with the sender. Give the recipient the trusted public key, and share the passphrase or recovery code separately from the protected file and recovery material. Verification does not require the original cover or the private key.
 
-**Text Steganography** (`/text`) uses existing Ed25519 keys and an independent signed text format. Enter a message, select a method, generate an encrypted carrier, and download its text and `.stegloc-text` recovery material. Pass the code separately. Paste or import the carrier on the recipient side with the recovery file, code and public key. The hidden message and sender are authenticated; visible wording is not. Acrostic lines may be rewritten if the A–P initials and order remain exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The input message limit is 32 KiB and the resulting UTF-8 carrier limit is 2 MiB. See [the text format](docs/text-protection.md) for exact framing and limitations.
+## Supported media
 
-For a source-code walkthrough and Q&A, use the [code guide](docs/code-guide.md). It maps each concept to the implementation, call flow, limits and tests.
+Payload files are arbitrary bytes, including MP3, MOV, and MP4. Capacity includes the signed record, signature, encryption, and framing overhead; it is smaller than the raw available bit space.
 
-## Supported protocol formats
+| Cover or source | Protected output | Preservation and limits |
+| --- | --- | --- |
+| PNG, JPEG, GIF, WebP, TIFF, palette or 16-bit images | PNG for spatial LSB | Dimensions retained; decoded pixels are converted to 8-bit RGB/RGBA before embedding. Animated inputs use the first frame. File size can change. |
+| BMP | BMP for spatial LSB | Exact byte length for standard 24-bit BMP; other BMP variants have no exact-size guarantee |
+| Image with DCT selected | PNG | One bit per complete 8×8 RGB channel block; alpha and incomplete edge blocks remain unchanged. File size can change. |
+| Integer PCM WAV, 8/16/24/32-bit, including PCM WAVE_FORMAT_EXTENSIBLE | WAV | The RSA adapter supports any channel count and patches sample low bytes in place, preserving headers, chunks, and exact file length |
+| MP3 audio source | Prepared 16-bit PCM WAV, then protected WAV | Preparation changes the format; embedding preserves the prepared WAV length |
+| Compatible MP4, MOV, M4V, MKV, WebM, FLV, WMV or 3GP | Lossless video in the source container | Audio retained; lossless encoding can substantially increase file size and needs a compatible player |
+| Restricted uncompressed AVI, or a video requiring AVI preparation | AVI | Embedding preserves the prepared AVI's audio, timing, headers, and exact byte length; maximum 64 MiB |
 
-Stegloc supports RSA/passphrase image and WAV protection, RSA DCT PNG protection, Ed25519 media recovery, and signed text in one application. Media recovery uses a separate `.stegloc` file and code; its keys and recovery material differ from the RSA/passphrase workflow.
+Uploads are limited to **200 MiB**. Compatible encoded video must have one video stream and at most one audio stream, a constant frame rate of at most 60 fps, dimensions at most 1920×1080, decoded frames at most 512 MiB, and decoded audio at most 128 MiB. Other sources, including MPEG-PS, can be prepared as a selected AVI segment up to 640×360 and 64 MiB, with audio retained as PCM. Verification reads the received protected file directly; it does not prepare or transcode it.
 
-Inspect a file also provides image-only BPCS settings and complexity maps, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Use `python scripts/benchmark-analysis.py` for the focused BPCS algorithm comparison, or `python -m scripts.benchmark_analysis` for the full deterministic analysis benchmark. See [media protocol and AVI limits](docs/media-recovery.md) for accepted headers, size limits, security handoff and verification boundaries.
+File selection and drag-and-drop enforce each upload's allowed types. Media covers reject text documents; text, recovery, code and key uploads use their own restrictions. Backend parsers validate the actual contents, and media preparation excludes FFmpeg's text renderers and playlists. Payload files remain unrestricted by type because their bytes are hidden inside the cover.
 
-## Desktop studio interface
+The Ed25519 media adapters accept 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, the restricted AVI subset, and compatible encoded video. See [media recovery and video limits](docs/media-recovery.md) for the exact accepted formats.
 
-The application uses a workflow-first collapsible sidebar with transparent frosted glass. The active file and its digest remain visible across screens; the Inspect workspace presents descriptive chi-square and BPCS charts. Use **Pop out graph** to open a separate graph-only Stegloc window (or browser tab) with a larger plot, zoom and measured-value details. The source analysis must remain available in the main window. Sidebar components follow the local [shadcn sidebar pattern](https://ui.shadcn.com/blocks/sidebar); measured charts adapt [shadcn area charts](https://ui.shadcn.com/charts/area) using Recharts. Watermelon UI remains a visual reference and Motion for React handles short, reduced-motion-aware transitions. Fonts and chart code are included in the packaged frontend for offline use. Details: [UI adoption](docs/ui-library-adoption.md).
+## Sender-to-recipient walkthrough
+
+### Images and audio
+
+1. In **Keys**, generate or load an RSA pair. Save the private and public PEM files.
+2. In **Embed & Sign**, select a cover and enter a message or choose a payload file. MP3 sources require PCM WAV preparation. Check the payload SHA-256 and capacity estimate.
+3. For spatial LSB, choose 1–8 low bits per carrier value and an automatic or manual start. The image picker supports zoom, drag-to-zoom, live `(X, Y)` hover coordinates, and arrow-key/Enter selection. Pixel `(0, 0)` is rejected as the start. WAV placement can be selected by time. Higher LSB depths increase capacity but can make changes visible or audible.
+4. For images, optionally choose **DCT · lossless PNG**. DCT uses automatic placement and one bit per transform block; spatial LSB depth and manual pixel settings do not apply. Small images may have no usable capacity.
+5. Enter a passphrase, embed, and download the protected file. Send it to the recipient with the RSA public key and share the passphrase separately.
+6. In **Extract & Verify**, the recipient loads the downloaded file, passphrase, and public key. DCT is detected from the image itself. Review the verdict and download the payload only after successful verification. A wrong spatial start offers a retry or the authenticated stored location without replacing the file.
+
+### Video
+
+Select a video through **Embed & Sign**. The app checks whether it can retain its container or needs AVI preparation. Generate or load an Ed25519 pair in the video form, choose the LSB depth, and embed the payload file. Save the protected video, `.stegloc` recovery file, recovery code, and public key. The recipient supplies those four items in **Extract & Verify**; the private-key password is for sender key use, not recipient recovery.
+
+### Text
+
+In **Text Steganography**, enter a message and choose acrostic, trailing whitespace, or zero-width encoding. Generate or paste Ed25519 keys, then encrypt, sign, and hide the message. Save the UTF-8 carrier, `.stegloc-text` recovery file, code, and public key. The recipient imports or pastes the carrier on the same screen and supplies the recovery material to extract and verify.
+
+The message limit is **32 KiB** and the UTF-8 carrier limit is **2 MiB**. Acrostic sentence bodies may be rewritten if the A–P initials and line order stay exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The hidden message and signer are authenticated; visible wording is outside that guarantee. See [text protection](docs/text-protection.md).
+
+## Inspection and tamper evidence
+
+**Inspect a file** provides bit planes 0–7, channel histograms, Chi-Square measurements, and image-only RS statistics and BPCS complexity maps. Bit 0 is the even/odd filter: even values are black and odd values are white. An original enables paired bit planes and histograms, difference maps, and image MSE, PSNR, and full-resolution luminance SSIM. SSIM requires a same-size image of at least 11×11 pixels. WAV analysis shows changes across time and channels; video has frame comparison and a change timeline.
+
+Image comparisons include side-by-side, swipe, overlay, and heatmap views. Bit-plane thumbnails and the composite RGB lowest-bit image can be enlarged in a zoomable dialog. **Pop out graph** opens a larger chart in a separate desktop window or browser tab while its source analysis remains available. Generated WAV playback supports seeking through the native audio controls.
+
+Chi-Square, RS, histograms, and BPCS are descriptive evidence, not proof of hidden content or authenticity. BPCS capacity is a theoretical analysis estimate, not an embedding method or payload allowance. Preview sampling is labelled in the UI. See [steganalysis methods and limits](docs/steganalysis.md).
+
+**Tamper tests** verifies the supplied file as a baseline, then runs applicable negative cases against protected image, WAV, video, or text inputs. Cases include wrong credentials, incorrect placement and correction, payload/carrier modifications, and a controlled RSA payload-hash mismatch. The summary shows every applicable case and failed verification checks when available. **Test passed** means the file verified as **Authentic**; **Test failed** means verification rejected the file or its inputs. A deliberately modified case should fail verification when the change is detected. Expand **Reasoning** to see the expected verdict, whether the scenario behaved as expected, and the actual verification explanation. A failed baseline stops the remaining cases. DCT cases that require spatial LSB slots are marked not applicable. Results arrive as cases finish, with downloadable variants and an evidence ZIP.
+
+The baseline uses your selected protected file and credentials unchanged. The wrong-key case temporarily substitutes a freshly generated, unrelated public key; it does not change your workspace keys. Carrier and payload edits use separate copies. The optional original-cover case verifies a separate reference and expects **Payload Missing** only for an unsigned original; an already protected reference may contain a payload signed by another key. Each case's **Reasoning** explains its purpose, inputs, expected verdict, and observed verification result.
+
+Media ZIPs contain supplied original/protected files, optional recovery material, the public key, the passphrase or video recovery code, generated variants under `tampered/`, replay steps, `results.json`, an offline `report.html`, and a SHA-256 manifest. **These exports contain verification secrets.** Private keys and extracted plaintext are excluded. The report embeds its heatmap so it can be opened on its own; extract the full ZIP to use its file links. Text exports record test outcomes without the complete media input/credential bundle.
 
 ## Run the packaged Windows app
 
-Open `dist\Stegloc\Stegloc.exe` from a built distribution. Keep the **entire `Stegloc` folder** together, including `_internal`; copying the executable alone will not work. End users do not need Python or Node.js.
+Open `dist\Stegloc\Stegloc.exe` from a built distribution. Keep the **entire `Stegloc` folder**, including `_internal`, together; copying the executable alone will not work. End users do not need Python or Node.js.
 
 The desktop app requires the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). Install the Evergreen Runtime if it is missing.
 
-Processing runs locally and works offline. The app starts its internal server automatically on a private loopback port and stops it when the window closes. Download keys and generated files before exiting: unsaved outputs and session keys are lost on exit.
+The app starts its internal service on a private loopback port and stops it when the window closes. Download keys, payloads, recovery material, and evidence before exiting. Outputs are temporary and can also expire or be evicted by storage limits. Startup diagnostics are written to `%LOCALAPPDATA%\Stegloc\logs\desktop.log`.
 
-## Development setup (Windows PowerShell)
+## Development setup
 
-Requires Python 3.11+ and Node.js 20.19+ (or 22.12+ on newer release lines).
+Use Windows PowerShell from the repository root. Requirements are **Python 3.11+** and **Node.js 20.19+ on the 20.x line, or 22.12+** (see `frontend/package.json`). Source runs need both FFmpeg and ffprobe on `PATH` or in `build/ffmpeg` for MP3 preparation and encoded-video processing. The Windows build script supplies these tools.
 
 ```powershell
-py -3.13 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.lock
-
-Set-Location frontend
-npm install
-Set-Location ..
+npm ci --prefix frontend
 ```
 
-## Run the desktop app from source
+`requirements.lock` pins the Python runtime and test dependencies; `frontend/package-lock.json` pins the frontend dependency tree. Use `npm ci` to install the locked frontend versions.
 
-Install the desktop dependency, build the React assets, then launch with the project Python:
+### Desktop from source
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install ".[desktop]"
-Set-Location frontend
-npm run build
-Set-Location ..
+npm run build --prefix frontend
 .\.venv\Scripts\python.exe desktop.py
 ```
 
-With the virtual environment activated, the launch command is `python desktop.py`. WebView2 is also required for source launches.
+WebView2 is also required for Windows source launches. Rebuild the frontend after editing it; the desktop launcher serves `frontend/dist`.
 
-## Build the Windows distribution
+### Browser development
 
-From the repository root on Windows, run the single build script:
-
-```bat
-build-windows.bat
-```
-
-The script creates `.venv` if needed, installs the pinned Python and frontend dependencies, downloads and verifies FFmpeg when needed, builds the frontend, and packages a windowed application at `dist\Stegloc\Stegloc.exe`. Install Python 3.11+ and Node.js 20.19+ or 22.12+ first. WebView2 is required on machines that run the packaged app. Distribute the entire `dist\Stegloc` folder, for example as a ZIP archive.
-
-## Run in a browser during development
-
-Terminal 1 (API):
+Terminal 1, from the repository root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2 (GUI):
+Terminal 2, from the repository root:
 
 ```powershell
-Set-Location frontend
-npm run dev
+npm run dev --prefix frontend
 ```
 
-Open <http://127.0.0.1:5173>. Vite forwards `/api` calls to the API on port 8000.
+Open <http://127.0.0.1:5173>. Vite forwards `/api` calls to port 8000. Alternatively, run `npm run build --prefix frontend`, start only the API, and open <http://127.0.0.1:8000>. The API is intended for local use and accepts `localhost` and `127.0.0.1` hostnames. `/api/health` reports service availability.
 
-Single-server alternative: `npm run build` inside `frontend`, then start only the API and open <http://127.0.0.1:8000>.
+### Windows distribution build
 
-## Tests
+```powershell
+.\build-windows.bat
+```
+
+The script creates `.venv` if needed, installs pinned Python and frontend dependencies plus desktop/build extras, downloads and checks the pinned FFmpeg archive when its binaries are missing, builds the frontend, and packages `dist\Stegloc\Stegloc.exe`. Close that executable before rebuilding its distribution. Distribute the entire `dist\Stegloc` folder, for example as a ZIP. Initial setup/build requires access to dependency and FFmpeg downloads; running the resulting app is local.
+
+## Checks and benchmarks
+
+Run from the repository root after development setup:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
+npm test --prefix frontend
+npm run build --prefix frontend
 ```
 
-## Demo flow (party A to party B)
+The Python suite covers protocols, security, carriers, APIs, desktop lifecycle, analysis, and workflows. Frontend tests cover forms, routing, accessibility, inspection controls, and media/text flows. The frontend build runs TypeScript checking before bundling. Automated checks do not replace a manual WebView2 or packaged-player check.
 
-1. **Keys**: generate a key pair, then download `private_key.pem` (sender) and `public_key.pem` (receiver).
-2. **Embed & sign**: drop a PNG/BMP/JPEG or a WAV and pick a payload (the *Short* and *Large* brief samples are one click; a file works too). Choose the LSBs and watch the capacity meter. Enter a passphrase, then click **Embed & sign**. Compare cover and stego with the slider or waveforms, then **Download** the stego file.
-3. Email the stego file to party B and share the passphrase separately. B downloads the file.
-4. **Extract & verify**: B drops the downloaded file, types the passphrase, loads `public_key.pem`, then clicks **Extract & verify**. The verdict, every check and the extracted payload are shown.
-5. **Attack lab**: run the suite for the negative cases and download the tampered files as evidence.
+Optional deterministic analysis benchmarks:
 
-## How it works
-
-### LSB replacement (lecture code, extended)
-
-`backend/app/stego/lsb.py` follows the lecture's `to_bin` / `encode` / `decode`. A **slot** is one byte that may carry hidden bits:
-
-- **Image:** every R, G, B byte, in the lecture's loop order (row, pixel, R G B). Alpha is never changed.
-- **Audio:** the least significant byte of every PCM sample.
-
-With `n` LSBs, every slot becomes `int(slot_bits[:-n] + payload_bits[i:i+n], 2)`. Payload bits are taken MSB first, as in the lecture.
-
-### What is hidden
-
-```
-slot 0 ... start ............ start+span ...... last 520 slots
-| unused | PAYLOAD (n LSBs)   | unused          | HEADER (1 LSB) |
+```powershell
+.\.venv\Scripts\python.exe scripts/benchmark-analysis.py
+.\.venv\Scripts\python.exe -m scripts.benchmark_analysis --repeat 3 --output .benchmarks/modular.json
 ```
 
-- **HEADER** (65 bytes): `"STG1" | salt | AES-GCM(start slot, payload length, n LSBs)`.
-- **PAYLOAD**: `AES-GCM(record length | record JSON | signature length | RSA signature | content)`.
-- **Record** (FR3): media ID (UUID4), UTC timestamp, 128-bit nonce, team metadata, cover SHA-256, payload SHA-256, payload name/type/size, LSB count, start and header slots, signer fingerprint.
+The first compares the vectorized BPCS calculation with a reference loop. The second measures the full analysis pipeline and records semantic digests and timings; it can compare a saved report with `--baseline`.
 
-### Security workflow
+## Integrity boundaries
 
-**Sender:**
+- Spatial LSB replaces low bits of RGB bytes or PCM sample low bytes. Its 65-byte `STG1` header occupies the final 520 slots at one bit per slot. The header authenticates encrypted placement; the encrypted package contains the RSA-signed record and exact payload bytes. Placement begins after slot zero.
+- RSA/passphrase workflows derive separate header, payload, and placement keys with PBKDF2-HMAC-SHA256 (200,000 iterations and fresh salt). Media recovery and text use a random recovery secret and HKDF-SHA256. The public key establishes signature validity; a passphrase or recovery code alone does not establish sender identity.
+- The spatial cover hash masks the permitted embedding bits. Image hashing includes decoded RGB and alpha rather than PNG metadata; WAV hashing covers the normalized WAV file. DCT hashes RGB outside occupied channel blocks and every alpha byte. Changes outside these integrity scopes may leave verification successful.
+- DCT lossless PNG export does not make hidden data resilient to JPEG recompression or resizing. Spatial LSB is also fragile: editing, normalization, or transcoding can destroy framing or authentication. A failed extraction can report **Payload Missing**, **Tampered**, or **Cannot Verify**, depending on which check fails.
+- **Authentic** means the required signature, payload, placement, and covered-carrier checks passed. Other verdicts include **Signature Invalid** and **Wrong Start Location**. It does not prove public-key ownership, concealment, replay prevention, or integrity of data outside the format's scope.
+- Encryption protects content, not the fact that embedding occurred. Headers and statistical patterns can reveal use of steganography. Weak passphrases permit offline guessing. Generated RSA private-key downloads are unencrypted PEM; protect them appropriately. Losing recovery material prevents normal Ed25519 recovery.
 
-1. Hash the payload (SHA-256).
-2. Hash the cover, with the LSBs that will carry data set to 0, so the cover and stego give the same hash.
-3. Build the record.
-4. `digest = SHA-256(record)`.
-5. `signature = RSA-PSS-sign(private key, digest)`.
-6. Derive 3 keys from the passphrase (PBKDF2-HMAC-SHA256, 200,000 rounds, random salt).
-7. Choose the start slot = `HMAC-SHA256(start key, salt | cover descriptor | size)` (or manual, never slot 0).
-8. AES-256-GCM encrypt the payload and the header.
-9. LSB-embed the payload at the start and the header at the end.
+## Module ownership and source-to-test map
 
-**Receiver:**
+Browser and desktop use the same local API. [backend/app/main.py](backend/app/main.py) registers the HTTP handlers; [frontend/src/App.tsx](frontend/src/App.tsx) owns screen composition and [frontend/src/router.ts](frontend/src/router.ts) owns navigation. Each row below connects a responsibility to its implementation and tests.
 
-1. Read the header (1 LSB, last 520 slots).
-2. Decrypt the start location with the passphrase.
-3. Extract the payload.
-4. AES-GCM decrypt and authenticate it.
-5. Recompute `SHA-256(record)` and verify the RSA signature with the public key.
-6. Compare the payload SHA-256.
-7. Recompute and compare the cover SHA-256.
+| Module | Responsibility | Owner files | Tests |
+| --- | --- | --- | --- |
+| App and desktop lifecycle | Register HTTP handlers, serve the frontend, and manage the local WebView service | [backend/app/main.py](backend/app/main.py), [backend/desktop.py](backend/desktop.py), [desktop.py](desktop.py) | [tests/test_app.py](tests/test_app.py), [tests/test_desktop.py](tests/test_desktop.py), [tests/test_module_boundaries.py](tests/test_module_boundaries.py) |
+| Spatial LSB | Eligible bytes, depth and start → embedded or recovered bytes | [backend/app/stego/lsb.py](backend/app/stego/lsb.py) | [tests/test_lsb.py](tests/test_lsb.py) |
+| Image/audio covers | Image or PCM WAV → slots and exported media | [backend/app/stego/covers.py](backend/app/stego/covers.py) | [tests/test_image.py](tests/test_image.py), [tests/test_audio.py](tests/test_audio.py) |
+| RSA record and capacity | File details and payload size → framed record and safe placement | [backend/app/stego/lsb_record.py](backend/app/stego/lsb_record.py), [backend/app/stego/lsb_capacity.py](backend/app/stego/lsb_capacity.py) | [tests/test_workflows.py](tests/test_workflows.py) |
+| RSA sender and receiver | Cover/payload/key/passphrase → protected file or checked content | [backend/app/stego/lsb_embed.py](backend/app/stego/lsb_embed.py), [backend/app/stego/lsb_verify.py](backend/app/stego/lsb_verify.py), [backend/app/stego/lsb_report.py](backend/app/stego/lsb_report.py) | [tests/test_workflows.py](tests/test_workflows.py), [tests/test_api.py](tests/test_api.py) |
+| RSA cryptography | Keys, plaintext and digests → signatures and authenticated ciphertext | [backend/app/stego/security.py](backend/app/stego/security.py) | [tests/test_security.py](tests/test_security.py) |
+| DCT PNG | Image and envelope → transform blocks and verifiable PNG | [backend/app/stego/dct_codec.py](backend/app/stego/dct_codec.py), [backend/app/stego/dct_protocol.py](backend/app/stego/dct_protocol.py) | [tests/test_dct.py](tests/test_dct.py), [tests/test_dct_api.py](tests/test_dct_api.py) |
+| Media recovery cryptography | Ed25519 key and recovery secret → signed encrypted bundle and locator | [backend/app/stego/recovery_security.py](backend/app/stego/recovery_security.py), [backend/app/stego/protocol.py](backend/app/stego/protocol.py) | [tests/test_protocol.py](tests/test_protocol.py), [tests/test_recovery_security.py](tests/test_recovery_security.py) |
+| Media sender and receiver | Carrier/payload/key → protected carrier; recovery inputs → checked content | [backend/app/media_record.py](backend/app/media_record.py), [backend/app/media_protect.py](backend/app/media_protect.py), [backend/app/media_verify.py](backend/app/media_verify.py), [backend/app/media_results.py](backend/app/media_results.py) | [tests/test_media_api.py](tests/test_media_api.py), [tests/test_video.py](tests/test_video.py) |
+| Video carriers | AVI or compatible encoded video → frame slots and lossless output | [backend/app/stego/carriers/video.py](backend/app/stego/carriers/video.py), [backend/app/stego/carriers/video_mp4.py](backend/app/stego/carriers/video_mp4.py) | [tests/test_video.py](tests/test_video.py), [tests/test_media_workflows.py](tests/test_media_workflows.py) |
+| Preparation, comparison and retry | Source/options or manual location → prepared cover, differences or verdict | [backend/app/api/media.py](backend/app/api/media.py), [backend/app/api/video_verify.py](backend/app/api/video_verify.py) | [tests/test_media_workflows.py](tests/test_media_workflows.py), [frontend/src/pages/VideoWorkflow.test.tsx](frontend/src/pages/VideoWorkflow.test.tsx) |
+| Signed text | Message/key → encrypted text; recovery inputs → verified message | [backend/app/stego/signed_text.py](backend/app/stego/signed_text.py), [backend/app/stego/text_carrier.py](backend/app/stego/text_carrier.py) | [tests/test_text.py](tests/test_text.py) |
+| Steganalysis | Image/audio and optional original → descriptive statistics and differences | [backend/app/stego/analysis/service.py](backend/app/stego/analysis/service.py), [backend/app/stego/analysis/](backend/app/stego/analysis/), [backend/app/stego/analysis_parts/](backend/app/stego/analysis_parts/) | [tests/test_analysis_service.py](tests/test_analysis_service.py), [tests/test_analysis_chi_square.py](tests/test_analysis_chi_square.py), [tests/test_analysis_bpcs.py](tests/test_analysis_bpcs.py) |
+| Tamper cases and evidence | Protected file and credentials → verdicts, variants and ZIP | [backend/app/stego/attacks.py](backend/app/stego/attacks.py), [backend/app/api/tamper_tests.py](backend/app/api/tamper_tests.py) | [tests/test_workflows.py](tests/test_workflows.py), [tests/test_media_workflows.py](tests/test_media_workflows.py) |
+| Jobs and artifacts | Session and task → progress, cancellation and scoped downloads | [backend/app/api/session_jobs.py](backend/app/api/session_jobs.py), [backend/app/api/sessions.py](backend/app/api/sessions.py), [backend/app/session.py](backend/app/session.py) | [tests/test_media_api.py](tests/test_media_api.py), [tests/test_module_boundaries.py](tests/test_module_boundaries.py) |
+| Interface | User inputs → typed requests and result panels | [frontend/src/api/](frontend/src/api/), [frontend/src/pages/](frontend/src/pages/), [frontend/src/ui/](frontend/src/ui/) | [frontend/src/pages.test.tsx](frontend/src/pages.test.tsx), [frontend/src/logic.test.ts](frontend/src/logic.test.ts) |
+| Upload validation | Allowed file types and PEM checks → accepted selections or inline errors | [frontend/src/upload.ts](frontend/src/upload.ts), [frontend/src/ui/inputs.tsx](frontend/src/ui/inputs.tsx), [backend/app/api/media.py](backend/app/api/media.py) | [frontend/src/ui/inputs.test.tsx](frontend/src/ui/inputs.test.tsx), [tests/test_media_workflows.py](tests/test_media_workflows.py) |
 
-### Start location security
+[engine.py](backend/app/stego/engine.py) dispatches RSA image/audio requests to spatial LSB or DCT. [workflows.py](backend/app/workflows.py) exposes media protection and verification entry points. [media_api.py](backend/app/media_api.py) and [text_api.py](backend/app/text_api.py) register their route modules; [components.tsx](frontend/src/components.tsx) and [api.ts](frontend/src/api.ts) expose shared frontend components and requests.
 
-- The header sits at a fixed, public place so the decoder can always find it. The payload start inside it is AES-GCM encrypted.
-- Without the passphrase the start cannot be read, guessed, or changed without detection.
-- The auto start comes from a keyed HMAC, so it is different for every protection (fresh salt) and never the top-left slot.
+Packaging is defined in [Stegloc.spec](Stegloc.spec) and [build-windows.bat](build-windows.bat). Analysis benchmarks live in [scripts/](scripts/), and example media and evidence live in [demo/](demo/).
 
-### Verdicts (FR10)
+## Call traces
 
-| Verdict | When |
-| --- | --- |
-| Authentic | Signature valid, payload hash and cover hash match |
-| Tampered | Payload bits changed (AES-GCM tag fails), payload hash mismatch, or cover changed outside the hidden bits |
-| Signature Invalid | Wrong public key, or the record was altered by someone who knew the passphrase |
-| Payload Missing | No `STG1` header (clean cover, LSB plane overwritten, JPEG re-compression) |
-| Wrong Start Location | Payload read from a manually entered start that is not the real one |
-| Cannot Verify | Unsupported/corrupt file, invalid key, wrong passphrase (header cannot be decrypted) |
+1. **Spatial image/audio.** Embed form → `api.hide()` → `/api/hide` → `engine.hide()` → `lsb_embed.hide()`. The sender hashes the payload and normalized cover, signs the record digest with RSA, encrypts package/header, then writes bits through `lsb.encode()`. `/api/verify` dispatches to `lsb_verify.verify()` to check the header, package, signature and hashes. `frontend/src/pages/verify/Result.tsx` renders the stages.
+2. **DCT.** The image form supplies method `dct`. `engine.hide()` selects `dct_protocol.hide()` → `DctCarrier.embed_ranges()` → a reopened, checked PNG. Verification detects framing from image data and calls `dct_protocol.verify()`. Recognized invalid DCT framing is rejected rather than retried as spatial LSB.
+3. **Media recovery.** `/api/session` establishes a session. `/api/jobs/media/protect` → `api/media_protection.py` → `media_protect` builds a signed encrypted package. Outputs include a carrier, `.stegloc` and separate code. `/api/jobs/media/verify` → `media_verify` checks locator, ciphertext, signature, payload and canonical carrier before publishing content.
+4. **Video.** `VideoWorkflow.tsx` calls `/api/media/probe` and, when needed, `/api/media/prepare`, then the media protection job. `/api/video/verify` → `video_verify.verify_at()` evaluates stored or manual placement. `VideoInspect.tsx` calls `/api/video/compare` for frame previews and comparison data.
+5. **Text.** `TextPage.tsx` → `api/text.py` → `signed_text.protect()` signs/encrypts the message → `text_carrier.encode()`. Verification decodes and authenticates using `.stegloc-text`, the code and public key. Visible prose is outside the signature.
+6. **Analysis.** `/api/analyse` → `analysis.analyse()` → `analysis/service.py` runs bit-plane, histogram, Chi-Square, BPCS, RS and comparison helpers. `frontend/src/pages/analysis/Results.tsx` presents descriptive findings. An original enables exact differences and quality metrics.
+7. **Evidence.** `AttackPage.tsx` → `/api/jobs/tamper-tests` → `attacks.run_suite()` or `_video_suite()`. Each case uses a separate copy. `/api/jobs/{ident}/evidence` assembles session files, steps and report. `TextShowcase.tsx` uses the separate `/api/jobs/text-tamper-tests` route and text inputs.
 
-## Supported files
+## Further documentation
 
-| Cover | Output | Size preserved? |
-| --- | --- | --- |
-| PCM WAV 8/16/24/32-bit, any channel count (incl. WAVE_FORMAT_EXTENSIBLE) | WAV, patched in place | **Yes, byte-identical length** |
-| MP3 audio source | Prepared 16-bit PCM WAV, then WAV stego | Conversion changes the source format; embedding preserves the prepared WAV length |
-| Compatible MP4, MOV, M4V, MKV, WebM, FLV, WMV or 3GP | Lossless protected video in the source container, with audio retained | No: lossless encoding can increase file size |
-| Video requiring preparation, including MPEG-PS | Selected uncompressed 24-bit AVI segment with PCM audio, then AVI stego | Preparation changes format; embedding preserves prepared AVI length |
-| BMP | BMP | Yes for standard 24-bit BMP |
-| PNG, JPEG, GIF, WEBP, TIFF, palette / 16-bit images | PNG | No: PNG re-compresses (pixels and dimensions are exact) |
+- [Spatial RSA format](docs/protocol.md), [DCT PNG format](docs/dct-protocol.md), [media recovery](docs/media-recovery.md), and [text protection](docs/text-protection.md): framing, verification order, and integrity limits.
+- [Steganalysis](docs/steganalysis.md): measured statistics, capacity estimates, and benchmarks.
+- [UI adoption](docs/ui-library-adoption.md): interface patterns and offline frontend assets.
 
-The Ed25519 media recovery adapters accept 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, the restricted AVI subset up to 64 MiB, and compatible encoded video within the documented limits. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed and encoded video is written losslessly. See [media recovery and video limits](docs/media-recovery.md).
-
-Compressed MP3 covers are decoded to PCM WAV before embedding. Compatible videos retain their container through lossless output; other sources require AVI preparation with audio retained. Embedding operates on decoded pixels or PCM sample bytes. Verification does not prepare or transcode a received protected file. Arbitrary files, including MP3, MOV and MP4, can be hidden as byte-exact payloads.
-
-## Limitations (be honest in the demo)
-
-- LSB replacement is fragile: any re-compression, resizing or editing removes the payload (the verifier then reports *Payload Missing* or *Tampered*, never a false *Authentic*).
-- The `STG1` header marks that this tool was used; steganalysis (chi-square, bit planes) can also reveal embedding. Encryption protects **confidentiality and integrity**, not the fact that data is hidden.
-- The passphrase is the shared secret for the start location and encryption. A weak passphrase can be brute-forced offline (PBKDF2 only slows this down).
-- The cover hash covers pixel/sample values, not PNG metadata chunks.
-- Keys generated in the GUI are for the demo; a real deployment would protect the private key with a password or hardware.
-
-## Project layout
-
-```
-backend/app/main.py            FastAPI app setup, middleware and frontend serving
-backend/app/api/               HTTP routes, uploads, sessions and jobs
-backend/desktop.py             desktop window and internal server lifecycle
-desktop.py                     desktop launch entry point
-Stegloc.spec                   Windows folder distribution
-build-windows.bat              dependency installation and Windows desktop build
-backend/app/stego/lsb.py       LSB encode / decode (lecture style)
-backend/app/stego/covers.py    RSA image/WAV cover objects -> slots
-backend/app/stego/carriers/    media recovery image, WAV and video adapters
-backend/app/stego/security.py  SHA-256, RSA-PSS, PBKDF2, AES-GCM
-backend/app/stego/lsb_*.py  RSA record, capacity, sender, receiver and report
-backend/app/media_*.py            media records, sender, receiver and verdict stages
-backend/app/stego/signed_text.py  signed and encrypted text protection
-backend/app/stego/text_carrier.py  text carrier encoding
-backend/app/stego/dct_*.py     DCT transform slots and signed PNG format
-backend/app/stego/analysis/    analysis coordinator and core analyzers
-backend/app/stego/analysis_parts/  focused statistical and visual analyzers
-backend/app/stego/attacks.py   attack simulation module
-frontend/src/                  React GUI (pages/, ui/, api/)
-tests/                         pytest suite
-```
+Stegloc is one application with distinct protection formats. Stored format identifiers and cryptographic domain strings remain versioned independently of the application release.

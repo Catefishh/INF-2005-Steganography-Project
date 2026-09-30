@@ -115,7 +115,10 @@ def _avi(raw: bytes, width: int, height: int, fps: int, audio: bytes = b"", samp
 
 
 def _probe(path: Path) -> dict:
-    data = _run([_binary("ffprobe"), "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)], 20)
+    # FFmpeg also renders text (tty/ansi), images and playlists as video. Only probe media containers.
+    formats = "aac,ac3,aiff,amr,asf,au,avi,eac3,flac,flv,m4v,matroska,webm,mov,mp3,mpeg,mpegts,ogg,w64,wav"
+    data = _run([_binary("ffprobe"), "-v", "error", "-format_whitelist", formats,
+                 "-protocol_whitelist", "file,pipe", "-show_format", "-show_streams", "-of", "json", str(path)], 20)
     try:
         return json.loads(data)
     except (ValueError, UnicodeError) as exc:

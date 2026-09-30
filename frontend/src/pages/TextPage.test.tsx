@@ -12,6 +12,34 @@ vi.mock("../api/jobs", () => ({
 }));
 vi.mock("../api/text", () => ({ generatedText: vi.fn(), recoveryFile: vi.fn() }));
 
+it("text imports and recovery material keep valid values when a raw picker receives the wrong type", async () => {
+  vi.mocked(requestJson).mockResolvedValue({} as never);
+  vi.mocked(runTextJob).mockClear().mockResolvedValue({verdict: "Authentic", message: "Verified",
+    content: {id: "message", filename: "message.txt", size: 8}} as never);
+  render(<TextPage />);
+  fireEvent.change(screen.getByLabelText("Method"), {target: {value: "whitespace"}});
+  fireEvent.change(screen.getByLabelText(/Visible cover text/), {target: {value: "visible original"}});
+  fireEvent.change(screen.getByLabelText("Carrier text"), {target: {value: "carrier original"}});
+  const wrong = Object.assign(new File(["wrong"], "image.png", {type: "text/plain"}), {text: vi.fn(async () => "wrong")});
+  for (const label of ["Import visible text", "Import carrier text"]) {
+    fireEvent.change(screen.getByLabelText(label), {target: {files: [wrong]}});
+  }
+  expect(wrong.text).not.toHaveBeenCalled();
+  expect(screen.getByLabelText(/Visible cover text/)).toHaveValue("visible original");
+  expect(screen.getByLabelText("Carrier text")).toHaveValue("carrier original");
+  const carrier = new File(["carrier imported"], "carrier.TXT");
+  fireEvent.change(screen.getByLabelText("Import carrier text"), {target: {files: [carrier]}});
+  await waitFor(() => expect(screen.getByLabelText("Carrier text")).toHaveValue("carrier imported"));
+  const recovery = new File(["recovery"], "recovery.STEGLOC-TEXT");
+  fireEvent.change(screen.getByLabelText("Recovery material"), {target: {files: [recovery]}});
+  fireEvent.change(screen.getByLabelText("Recovery material"), {target: {files: [new File(["bad"], "recovery.txt")]}});
+  fireEvent.change(screen.getByLabelText("Public key PEM"), {target: {value: "public"}});
+  fireEvent.change(screen.getByLabelText("Recovery code"), {target: {value: "code"}});
+  fireEvent.click(screen.getByRole("button", {name: "Extract and verify"}));
+  await waitFor(() => expect(runTextJob).toHaveBeenCalledOnce());
+  expect(vi.mocked(runTextJob).mock.calls[0][1].get("recovery")).toBe(recovery);
+});
+
 it("drops a stale carrier estimate after message or visible text changes", async () => {
   let finish!: (value: unknown) => void;
   vi.mocked(requestJson).mockImplementation(() => new Promise((resolve) => { finish = resolve; }) as never);

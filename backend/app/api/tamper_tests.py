@@ -1,6 +1,7 @@
 """Session-scoped live evidence suite for existing RSA image and WAV carriers."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import html
 import io
@@ -58,10 +59,12 @@ def attach(app: FastAPI) -> None:
                 check()
                 try:
                     verdict = signed_text.verify(candidate, material, use_code, use_key)["verdict"]
-                except ValueError:
+                    summary = "Text authentication and signature checks passed"
+                except ValueError as exc:
                     verdict = "Cannot Verify"
+                    summary = str(exc)
                 row = {"id": ident, "title": title, "change": change, "expected": expected,
-                    "verdict": verdict, "summary": "text authentication and signature checks", "as_expected": verdict in expected,
+                    "verdict": verdict, "summary": summary, "as_expected": verdict in expected,
                     "elapsed_ms": round((time.monotonic() - started) * 1000), "file": None}
                 rows.append(row); job.cases.append(row); job.phase = title
                 job.progress = min(99, round(len(rows) / job.total_cases * 100))
@@ -209,12 +212,13 @@ def attach(app: FastAPI) -> None:
                     name = "tampered/" + row["id"] + Path(artifact.filename).suffix
                     add(name, artifact.data)
                     tampered[row["id"]] = name
-            heatmap_included = False
+            heatmap_src = None
             if job.result:
                 descriptor = job.result.get("heatmap")
                 if descriptor and descriptor["id"] in session.artifacts:
-                    add("heatmaps/embedding.png", session.artifacts[descriptor["id"]].data)
-                    heatmap_included = True
+                    heatmap_bytes = session.artifacts[descriptor["id"]].data
+                    add("heatmaps/embedding.png", heatmap_bytes)
+                    heatmap_src = "data:image/png;base64," + base64.b64encode(heatmap_bytes).decode("ascii")
             result = {"status": job.status, "completed": len(rows), "cases": rows,
                 "input_sha256": job.result.get("input_sha256") if job.result else None,
                 "conversion_settings": job.result.get("conversion_settings") if job.result else None,
@@ -314,10 +318,10 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem}.case{padding:1
                     report.append('<li>Enter the passphrase shown above.</li>')
                 report.append('<li>Load the public key shown above and verify. The unchanged baseline should be Authentic.</li>'
                     '<li>Repeat with each file or credential change listed below. Compare the observed verdict and checks.</li></ol></section>')
-            if heatmap_included:
+            if heatmap_src:
                 report.append('<section class="surface" aria-labelledby="heatmap-title"><div class="section-head">'
                     '<h2 id="heatmap-title">Embedding heatmap</h2></div><p class="muted">Pixel differences between the original and protected image.</p>'
-                    '<img class="heatmap" src="heatmaps/embedding.png" alt="Difference heatmap for original and protected image"></section>')
+                    f'<img class="heatmap" src="{heatmap_src}" alt="Difference heatmap for original and protected image"></section>')
             report.append('<section class="surface" aria-labelledby="cases-title"><div class="section-head">'
                 '<h2 id="cases-title">Cases and exact changes</h2><p>Details behind each verdict</p></div>')
             for row in rows:
@@ -404,14 +408,17 @@ def _change_visible_text(carrier: str, method: str) -> str:
 def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, completed, check):
     key = load_verification_key(public_pem)
     rows, files = [], {}
-    def case(ident, title, change, expected, verdict, summary, file=None):
+    def case(ident, title, change, expected, result, summary, file=None):
         check()
+        verdict = result.overall.value
+        failures = [stage["reason"] for stage in result.stages.values() if stage["status"] == "failed"]
         row = {"id": ident, "title": title, "change": change, "expected": expected,
-               "verdict": verdict, "summary": summary, "as_expected": verdict in expected, "file": file}
+               "verdict": verdict, "summary": "; ".join(failures) or summary, "as_expected": verdict in expected, "file": file,
+               "stages": [{"id": name, "status": stage["status"]} for name, stage in result.stages.items()]}
         rows.append(row)
         completed(row)
     baseline = verify_video(carrier, sidecar, code, key)
-    case("baseline", "Unmodified video", "none", ["Authentic"], baseline.overall.value,
+    case("baseline", "Unmodified video", "none", ["Authentic"], baseline,
          "All media verification stages passed" if baseline.overall.value == "Authentic" else "Baseline verification failed")
     if baseline.overall.value != "Authentic":
         return rows, files
@@ -419,7 +426,7 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
     other = load_verification_key(unrelated_pem)
     wrong_key = verify_video(carrier, sidecar, code, other)
     case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Signature Invalid"],
-         wrong_key.overall.value, "Locator or record signature cannot verify")
+         wrong_key, "Locator or record signature cannot verify")
     adapter = inspect_mp4(carrier) if is_mp4(carrier) else inspect_video(carrier)
     suffix = mp4_extension(carrier) if is_mp4(carrier) else ".avi"
     secret = decode_recovery_code(code)
@@ -432,12 +439,12 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
     files["cover_flip"] = ("video_cover_flip" + suffix, cover_flip)
     damaged = verify_video(cover_flip, sidecar, code, key)
     case("cover_flip", "Carrier bit changed", "first frame pixel changed outside payload", ["Tampered"],
-         damaged.overall.value, "Canonical carrier SHA-256 must reject the change", "cover_flip")
+         damaged, "Canonical carrier SHA-256 must reject the change", "cover_flip")
     changed = bytearray(adapter.slots())
     changed[start] ^= 1
     payload_flip = adapter.export_slots(changed)
     files["payload_flip"] = ("video_payload_flip" + suffix, payload_flip)
     damaged = verify_video(payload_flip, sidecar, code, key)
     case("payload_flip", "Payload bit changed", "embedded package bit changed", ["Tampered"],
-         damaged.overall.value, "Encrypted package digest must reject the change", "payload_flip")
+         damaged, "Encrypted package digest must reject the change", "payload_flip")
     return rows, files
