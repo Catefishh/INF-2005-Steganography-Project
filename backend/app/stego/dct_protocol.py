@@ -1,4 +1,4 @@
-"""Signed DCT PNG envelope, independent of the legacy LSB wire format."""
+"""Signed DCT PNG envelope, independent of the spatial LSB wire format."""
 import hashlib
 import hmac
 import json
@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from cryptography.exceptions import InvalidTag
 
 from .dct_codec import DctCarrier, HEADER_BYTES, HEADER_SLOTS
-from .legacy_record import _limit, _pack, _unpack, canonical_json, package_size
-from .legacy_types import CapacityError, Verdict
+from .lsb_record import _limit, _pack, _unpack, canonical_json, package_size
+from .lsb_types import CapacityError, Verdict
 from .security import (decrypt, derive_keys, encrypt, fingerprint, load_private_key,
                        load_public_key, sha256_hex, sign_digest, verify_digest)
 

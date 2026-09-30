@@ -1,1 +1,1 @@
-"""Versioned steganography protocol and security primitives."""
+"""Steganography formats and security primitives."""

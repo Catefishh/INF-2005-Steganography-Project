@@ -1,21 +1,21 @@
-"""V3 text endpoints."""
+"""Signed text endpoints."""
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 
-from ..stego import text_v3
-from ..stego.v2_security import load_signing_key, load_verification_key
+from ..stego import signed_text
+from ..stego.recovery_security import load_signing_key, load_verification_key
 from .session_jobs import _check_origin, _launch, _read, _session
 
 def attach(app: FastAPI) -> None:
-    @app.post("/api/v3/text/estimate")
+    @app.post("/api/text/estimate")
     def text_estimate(request: Request, message: str = Form(""), method: str = Form(...), visible: str = Form("")):
         _check_origin(request)
         try:
-            return text_v3.estimate(message, method, visible)
+            return signed_text.estimate(message, method, visible)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
-    @app.post("/api/v3/jobs/text/protect")
+    @app.post("/api/jobs/text/protect")
     def text_protect(request: Request, message: str = Form(""), method: str = Form(...),
                      visible: str = Form(""), private_key: str = Form(...), key_password: str = Form("")):
         _session(request)
@@ -23,12 +23,12 @@ def attach(app: FastAPI) -> None:
             raise HTTPException(400, "Private key or password is too long")
         try:
             key = load_signing_key(private_key.encode(), key_password.encode() if key_password else None)
-            text_v3.estimate(message, method, visible)
+            signed_text.estimate(message, method, visible)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
         def work(session, check):
-            result = text_v3.protect(message, method, visible, key)
+            result = signed_text.protect(message, method, visible, key)
             check()
             registry = request.app.state.registry
             carrier = result.pop("carrier").encode("utf-8")
@@ -41,12 +41,12 @@ def attach(app: FastAPI) -> None:
 
         return _launch(request, "text-protect", work)
 
-    @app.post("/api/v3/jobs/text/verify")
+    @app.post("/api/jobs/text/verify")
     async def text_verify(request: Request, carrier: UploadFile = File(...), recovery: UploadFile = File(...),
                           recovery_code: str = Form(...), public_key: str = Form(...)):
         _session(request)
         try:
-            text = (await _read(carrier, "text carrier", text_v3.MAX_CARRIER)).decode("utf-8")
+            text = (await _read(carrier, "text carrier", signed_text.MAX_CARRIER)).decode("utf-8")
         except UnicodeDecodeError as exc:
             raise HTTPException(400, "Text carrier must be UTF-8") from exc
         sidecar = await _read(recovery, "text recovery", 4096)
@@ -58,7 +58,7 @@ def attach(app: FastAPI) -> None:
             raise HTTPException(400, str(exc)) from exc
 
         def work(session, check):
-            result = text_v3.verify(text, sidecar, recovery_code, key)
+            result = signed_text.verify(text, sidecar, recovery_code, key)
             check()
             payload = result["message"].encode("utf-8")
             ident = request.app.state.registry.artifact(session, payload, "message.txt", "text/plain; charset=utf-8", "content")

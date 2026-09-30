@@ -39,17 +39,17 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
     const revision = ++requestRevision.current;
     setBusy(true); setRows([]); setError(""); setJobId(""); setPhase("");
     try {
-      await requestJson("/api/v2/session", {method: "POST"});
+      await requestJson("/api/session", {method: "POST"});
       if (revision !== requestRevision.current) return;
       const form = new FormData(); form.append("public_key", publicKey);
       if (carrier) form.append("carrier", carrier);
       if (recovery) form.append("recovery", recovery);
       form.append("recovery_code", code);
-      const started = await requestJson<Job<Result>>("/api/v4/jobs/text-showcase", {method: "POST", body: form});
+      const started = await requestJson<Job<Result>>("/api/jobs/text-tamper-tests", {method: "POST", body: form});
       if (revision !== requestRevision.current) return;
       setJobId(started.id);
       for (let attempt = 0; attempt < 1200; attempt++) {
-        const state = await requestJson<Job<Result> & {cases: Scenario[]; completed: number; total: number}>(`/api/v2/jobs/${encodeURIComponent(started.id)}`);
+        const state = await requestJson<Job<Result> & {cases: Scenario[]; completed: number; total: number}>(`/api/jobs/${encodeURIComponent(started.id)}`);
         if (revision !== requestRevision.current) return;
         setRows(state.cases); setPhase(state.phase); setProgress({completed: state.completed, total: state.total});
         if (state.status === "succeeded") {setRows(state.result?.cases ?? state.cases); break;}
@@ -101,8 +101,8 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
       {error && <p role="alert">{error}</p>}
     </section>
     {jobId && <section className="panel"><h2>Test results</h2><p role="status">{phase}: {progress.completed} of {progress.total} completed</p>
-      {busy && <button className="btn ghost" type="button" onClick={() => void requestJson(`/api/v2/jobs/${encodeURIComponent(jobId)}`, {method: "DELETE"})}>Cancel suite</button>}
-      <a className="btn ghost" href={`/api/v4/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-text-evidence.zip">Download evidence ZIP</a>
+      {busy && <button className="btn ghost" type="button" onClick={() => void requestJson(`/api/jobs/${encodeURIComponent(jobId)}`, {method: "DELETE"})}>Cancel suite</button>}
+      <a className="btn ghost" href={`/api/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-text-evidence.zip">Download evidence ZIP</a>
         <div className="text-test-results">{rows.map((row) => <details className={`text-test-result ${row.as_expected ? "passed" : "failed"}`} key={row.id}>
           <summary><span>{row.as_expected ? "✓" : "!"}</span><b>{row.title}</b><em>{row.as_expected ? "As expected" : "Unexpected"}</em><strong>{row.verdict}</strong></summary>
           <div className="text-test-detail">

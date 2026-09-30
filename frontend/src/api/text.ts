@@ -1,4 +1,4 @@
-/** V3 text result shapes and artifact retrieval. */
+/** signed text result shapes and artifact retrieval. */
 import { artifactUrl } from "./jobs";
 
 export type Stored = { id: string; filename: string; size: number };

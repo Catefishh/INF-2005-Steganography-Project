@@ -75,7 +75,7 @@ class Mp4Adapter:
         return self.export_slots(self._slots)
 
     def export_slots(self, slots: bytearray) -> bytes:
-        from ...api.v4_media import _binary, _run
+        from ...api.media import _binary, _run
         with TemporaryDirectory() as folder:
             directory = Path(folder)
             source = directory / ("source" + self.suffix)
@@ -101,7 +101,7 @@ class Mp4Adapter:
 def inspect_mp4(data: bytes) -> Mp4Adapter:
     if not isinstance(data, bytes) or not is_mp4(data) or len(data) > MAX_FILE_BYTES:
         raise VideoError("Video format is unsupported or exceeds 200 MiB; prepare an AVI cover")
-    from ...api.v4_media import _binary, _run, _source
+    from ...api.media import _binary, _run, _source
 
     suffix = extension(data)
 

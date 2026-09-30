@@ -58,8 +58,6 @@ describe("routing", () => {
     expect(resolveRoute("/", true)).toEqual({ page: "hide", view: "form" });
     expect(resolveRoute("/nonsense", false)).toEqual({ page: "keys", view: "form" });
     expect(resolveRoute("/nonsense", true)).toEqual({ page: "hide", view: "form" });
-    expect(resolveRoute("/v2", false)).toEqual({ page: "keys", view: "form" });
-    expect(resolveRoute("/v2", true)).toEqual({ page: "hide", view: "form" });
     expect(resolveRoute("/demo", false)).toEqual({ page: "keys", view: "form" });
     expect(resolveRoute("/demo", true)).toEqual({ page: "hide", view: "form" });
   });

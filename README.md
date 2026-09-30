@@ -8,7 +8,7 @@ Image senders can choose **DCT · lossless PNG** in Embed & Sign. It uses one bi
 2. Select any payload file, including MP3/MOV/MP4. Check its SHA-256 and the capacity estimate, then embed. The active stego file appears in the working-file strip and stays selected across screens during this app session.
 3. Extract and verify. Compare the signed expected payload digest with the decoded digest. A wrong manual start keeps the same file and offers immediate retry or the authenticated stored location.
 4. Inspect the prepared cover against the stego file with side-by-side, swipe, overlay, and heatmap views. For video, inspect individual frames and the timeline. For WAV, the strip shows changes across time and channels.
-5. Open Tamper tests with a protected image, WAV, AVI, or text carrier from the relevant embedding workflow. Watch each case finish, including wrong-location correction and a controlled legacy payload-hash mismatch, then download the evidence ZIP. Passwords, recovery codes, private keys, and extracted plaintext are excluded from that ZIP.
+5. Open Tamper tests with a protected image, WAV, AVI, or text carrier from the relevant embedding workflow. Watch each case finish, including wrong-location correction and a controlled RSA payload-hash mismatch, then download the evidence ZIP. Media evidence exports include the supplied original and protected files, public key, passphrase (or video recovery code), exact case steps, and generated files under `tampered/`. Treat the ZIP as sensitive: private keys and extracted plaintext are excluded, but the verification secret is included.
 
 Video uses the Ed25519 workflow with a separate recovery file and code. Its frames are encoded losslessly after LSB embedding, so output size can grow and playback depends on the player's codec support. MP3 becomes WAV. Working files live only for the current app session.
 
@@ -29,15 +29,15 @@ INF2005 ACW1: a desktop and web GUI that hides signed, encrypted content inside 
 
 The BPCS number in Inspect is a theoretical estimate. Tamper tests run controlled positive and negative verification cases against protected files.
 
-**Text Steganography** (`/text`) uses existing Ed25519 keys and an independent v3 text format. Enter a message, select a method, generate an encrypted carrier, and download its text and `.stegloc-text` recovery material. Pass the code separately. Paste or import the carrier on the recipient side with the recovery file, code and public key. The hidden message and sender are authenticated; visible wording is not. Acrostic lines may be rewritten if the A–P initials and order remain exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The input message limit is 32 KiB and the resulting UTF-8 carrier limit is 2 MiB. See [the text format](docs/v3-text-protocol.md) for exact framing and limitations.
+**Text Steganography** (`/text`) uses existing Ed25519 keys and an independent signed text format. Enter a message, select a method, generate an encrypted carrier, and download its text and `.stegloc-text` recovery material. Pass the code separately. Paste or import the carrier on the recipient side with the recovery file, code and public key. The hidden message and sender are authenticated; visible wording is not. Acrostic lines may be rewritten if the A–P initials and order remain exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The input message limit is 32 KiB and the resulting UTF-8 carrier limit is 2 MiB. See [the text format](docs/text-protection.md) for exact framing and limitations.
 
 For a source-code walkthrough and Q&A, use the [code guide](docs/code-guide.md). It maps each concept to the implementation, call flow, limits and tests.
 
 ## Supported protocol formats
 
-Stegloc supports the original RSA/passphrase `STG1` format, the v2 Ed25519 media protocol and the v3 signed text format in one application. The v2 API retains Ed25519 protection and verification for existing integrations. It uses a separate `.stegloc` recovery file and code; its key and recovery formats differ from the RSA/passphrase screens for `STG1` files.
+Stegloc supports RSA/passphrase image and WAV protection, RSA DCT PNG protection, Ed25519 media recovery, and signed text in one application. Media recovery uses a separate `.stegloc` file and code; its keys and recovery material differ from the RSA/passphrase workflow.
 
-Inspect a file also provides image-only BPCS settings and complexity maps, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Use `python scripts/benchmark-analysis.py` for the focused BPCS algorithm comparison, or `python -m scripts.benchmark_analysis` for the full deterministic analysis benchmark. See [v2 protocol and AVI limits](docs/v2-protocol.md) for accepted headers, size limits, security handoff and verification boundaries.
+Inspect a file also provides image-only BPCS settings and complexity maps, plus richer Chi-Square validity data. A high Chi-Square p-value is descriptive evidence, not proof of embedding. Use `python scripts/benchmark-analysis.py` for the focused BPCS algorithm comparison, or `python -m scripts.benchmark_analysis` for the full deterministic analysis benchmark. See [media protocol and AVI limits](docs/media-recovery.md) for accepted headers, size limits, security handoff and verification boundaries.
 
 ## Desktop studio interface
 
@@ -190,13 +190,14 @@ slot 0 ... start ............ start+span ...... last 520 slots
 | --- | --- | --- |
 | PCM WAV 8/16/24/32-bit, any channel count (incl. WAVE_FORMAT_EXTENSIBLE) | WAV, patched in place | **Yes, byte-identical length** |
 | MP3 audio source | Prepared 16-bit PCM WAV, then WAV stego | Conversion changes the source format; embedding preserves the prepared WAV length |
-| MP4 or MOV video source | Selected silent uncompressed 24-bit AVI segment, then AVI stego | Conversion changes the source format; embedding preserves the prepared AVI length |
+| Compatible MP4, MOV, M4V, MKV, WebM, FLV, WMV or 3GP | Lossless protected video in the source container, with audio retained | No: lossless encoding can increase file size |
+| Video requiring preparation, including MPEG-PS | Selected uncompressed 24-bit AVI segment with PCM audio, then AVI stego | Preparation changes format; embedding preserves prepared AVI length |
 | BMP | BMP | Yes for standard 24-bit BMP |
 | PNG, JPEG, GIF, WEBP, TIFF, palette / 16-bit images | PNG | No: PNG re-compresses (pixels and dimensions are exact) |
 
-The v2 carrier protocol accepts 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, and a single-stream uncompressed 24-bit AVI up to 64 MiB. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed. This stricter carrier contract belongs to v2 only. See [v2 protocol and AVI limits](docs/v2-protocol.md).
+The Ed25519 media recovery adapters accept 8-bit RGB/RGBA PNG, uncompressed 24-bit BMP, integer PCM mono/stereo WAV, the restricted AVI subset up to 64 MiB, and compatible encoded video within the documented limits. BMP, WAV and accepted AVI preserve exact byte length; PNG is recompressed and encoded video is written losslessly. See [media recovery and video limits](docs/media-recovery.md).
 
-Compressed MP3 covers are explicitly decoded to PCM WAV before embedding. MOV and MP4 covers are explicitly decoded to a selected, silent uncompressed AVI segment. The compressed source is never used as the LSB carrier, and a received stego file is never transcoded during verification. Arbitrary files, including MP3, MOV and MP4, can be hidden as byte-exact payloads.
+Compressed MP3 covers are decoded to PCM WAV before embedding. Compatible videos retain their container through lossless output; other sources require AVI preparation with audio retained. Embedding operates on decoded pixels or PCM sample bytes. Verification does not prepare or transcode a received protected file. Arbitrary files, including MP3, MOV and MP4, can be hidden as byte-exact payloads.
 
 ## Limitations (be honest in the demo)
 
@@ -216,12 +217,14 @@ desktop.py                     desktop launch entry point
 Stegloc.spec                   Windows folder distribution
 build-windows.bat              dependency installation and Windows desktop build
 backend/app/stego/lsb.py       LSB encode / decode (lecture style)
-backend/app/stego/covers.py    legacy image/WAV cover objects -> slots
-backend/app/stego/carriers/    V2 image, WAV and AVI adapters
+backend/app/stego/covers.py    RSA image/WAV cover objects -> slots
+backend/app/stego/carriers/    media recovery image, WAV and video adapters
 backend/app/stego/security.py  SHA-256, RSA-PSS, PBKDF2, AES-GCM
-backend/app/stego/legacy_*.py  legacy record, capacity, sender, receiver and report
-backend/app/v2_*.py            V2 records, sender, receiver and verdict stages
-backend/app/stego/text_*.py    V3 signed text and carrier encoding
+backend/app/stego/lsb_*.py  RSA record, capacity, sender, receiver and report
+backend/app/media_*.py            media records, sender, receiver and verdict stages
+backend/app/stego/signed_text.py  signed and encrypted text protection
+backend/app/stego/text_carrier.py  text carrier encoding
+backend/app/stego/dct_*.py     DCT transform slots and signed PNG format
 backend/app/stego/analysis/    analysis coordinator and core analyzers
 backend/app/stego/analysis_parts/  focused statistical and visual analyzers
 backend/app/stego/attacks.py   attack simulation module

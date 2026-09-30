@@ -11,7 +11,7 @@ from .session_jobs import _session, _check_origin, _job_info
 
 def attach(app: FastAPI) -> None:
     app.state.registry = Registry()
-    @app.post("/api/v2/session")
+    @app.post("/api/session")
     def start_session(request: Request):
         _check_origin(request)
         token, _ = request.app.state.registry.session(request.cookies.get("stegloc_session"))
@@ -21,7 +21,7 @@ def attach(app: FastAPI) -> None:
         response.headers["X-Session-Token"] = token
         return response
 
-    @app.delete("/api/v2/session")
+    @app.delete("/api/session")
     def end_session(request: Request):
         token, _ = _session(request)
         request.app.state.registry.reset(token)
@@ -29,7 +29,7 @@ def attach(app: FastAPI) -> None:
         response.delete_cookie("stegloc_session")
         return response
 
-    @app.get("/api/v2/jobs/{ident}")
+    @app.get("/api/jobs/{ident}")
     def get_job(request: Request, ident: str):
         _, session = _session(request)
         job = session.jobs.get(ident)
@@ -37,7 +37,7 @@ def attach(app: FastAPI) -> None:
             raise HTTPException(404, "job not found")
         return _job_info(ident, job)
 
-    @app.delete("/api/v2/jobs/{ident}")
+    @app.delete("/api/jobs/{ident}")
     def cancel_job(request: Request, ident: str):
         _, session = _session(request)
         job = session.jobs.get(ident)
@@ -46,7 +46,7 @@ def attach(app: FastAPI) -> None:
         job.cancel.set()
         return _job_info(ident, job)
 
-    @app.get("/api/v2/artifacts/{ident}")
+    @app.get("/api/artifacts/{ident}")
     def artifact(request: Request, ident: str):
         _, session = _session(request)
         item = require_artifact(session, ident)

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from backend.app.stego.covers import AudioCover, CoverError, load_cover
-from backend.app.stego.legacy_capacity import resolve_manual_start
+from backend.app.stego.lsb_capacity import resolve_manual_start
 
 
 def wav(*, bits=16, channels=2, frames=80, rate=8000, chunks=None, tag=1, extensible=False):

@@ -14,10 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .api.common import EstimateRequest, KeyInspectRequest, MAX_UPLOAD_BYTES, _read, _optional_int, _optional_float, _bad_request, _looks_like_text
-from .api import analysis as analysis_routes, files as file_routes, keys as key_routes, protection as protection_routes, v4_media, v4_jobs, v4_video
+from .api import analysis as analysis_routes, files as file_routes, keys as key_routes, protection as protection_routes, media, tamper_tests, video_verify
 from .stego.security import generate_rsa_keys
-from .v2_api import attach_v2
-from .v3_api import attach_v3
+from .media_api import attach_media
+from .text_api import attach_text
 
 DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 FRONTEND_DIST = Path(__file__).parents[2] / "frontend" / "dist"
@@ -52,12 +52,12 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
     store = FileStore()
     app.state.store = store
     app.state.generate_rsa_keys = generate_rsa_keys
-    attach_v2(app)
-    attach_v3(app)
+    attach_media(app)
+    attach_text(app)
 
     origins = ([] if desktop_token else
                [o.strip() for o in os.getenv("STEGLOC_DEV_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()])
-    app.state.allowed_v2_origins = origins
+    app.state.allowed_origins = origins
     if any("*" in origin for origin in origins):
         raise ValueError("STEGLOC_DEV_ORIGINS must not contain wildcard origins")
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
@@ -101,9 +101,9 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
 
     key_routes.attach(app)
     protection_routes.attach(app, store)
-    v4_media.attach(app, store)
-    v4_jobs.attach(app)
-    v4_video.attach(app, store)
+    media.attach(app, store)
+    tamper_tests.attach(app)
+    video_verify.attach(app, store)
     analysis_routes.attach(app, store)
     file_routes.attach(app, store)
 
@@ -115,7 +115,7 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
         app.add_api_route("/graph/{graph_id}", graph_entry, methods=["GET"], include_in_schema=False)
         # Client routes must return the SPA shell on refresh and direct navigation.
         for route in ("/keys", "/embed", "/embed/result", "/verify", "/verify/result",
-                      "/inspect", "/tamper-tests", "/v2", "/text"):
+                      "/inspect", "/tamper-tests", "/text"):
             app.add_api_route(route, lambda: FileResponse(dist / "index.html"), methods=["GET"],
                               include_in_schema=False)
         app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")

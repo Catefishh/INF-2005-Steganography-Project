@@ -19,7 +19,7 @@ async function getFile(stored: Stored): Promise<File> {
 }
 
 async function job<T>(path: string, form: FormData, onPhase: (value: string) => void): Promise<T> {
-  await requestJson("/api/v2/session", {method: "POST"});
+  await requestJson("/api/session", {method: "POST"});
   const started = await requestJson<Job<T>>(path, {method: "POST", body: form});
   const result = await pollJob<T>(started.id, {attempts: 1200, onUpdate: onPhase,
     failed: "Operation failed", cancelled: "Operation cancelled", timeout: "Operation timed out"});
@@ -71,7 +71,7 @@ export function VideoEmbed({ cover, source, conversion, onHandoff, goTo, showRes
     const form = new FormData(); form.append("cover", cover); form.append("content_length", String(payload.size));
     form.append("content_name", payload.name); form.append("content_type", payload.type || "application/octet-stream");
     form.append("depth", String(depth));
-    requestJson<typeof capacity>("/api/v2/estimate", {method: "POST", body: form})
+    requestJson<typeof capacity>("/api/media/estimate", {method: "POST", body: form})
       .then((value) => {if (live) setCapacity(value);}).catch((cause) => {if (live) setError(errorText(cause));});
     return () => {live = false;};
   }, [cover, payload, depth]);
@@ -80,7 +80,7 @@ export function VideoEmbed({ cover, source, conversion, onHandoff, goTo, showRes
     setError("");
     try {
       const form = new FormData(); form.append("password", keyPassword);
-      const pair = await requestJson<{private_key: string; public_key: string}>("/api/v2/keys/generate", {method: "POST", body: form});
+      const pair = await requestJson<{private_key: string; public_key: string}>("/api/signing-keys/generate", {method: "POST", body: form});
       setPrivateKey(pair.private_key); setPublicKey(pair.public_key);
     } catch (cause) {setError(errorText(cause));}
   }
@@ -93,7 +93,7 @@ export function VideoEmbed({ cover, source, conversion, onHandoff, goTo, showRes
     try {
       const form = new FormData(); form.append("cover", cover); form.append("content_file", payload);
       form.append("private_key", privateKey); form.append("key_password", keyPassword); form.append("depth", String(depth));
-      const protectedFile = await job<VideoProtected>("/api/v2/jobs/protect", form,
+      const protectedFile = await job<VideoProtected>("/api/jobs/media/protect", form,
         (next) => {if (revision === requestRevision.current) setPhase(next);});
       if (revision !== requestRevision.current) return;
       const [stego, recovery] = await Promise.all([getFile(protectedFile.carrier), getFile(protectedFile.recovery)]);
@@ -101,7 +101,7 @@ export function VideoEmbed({ cover, source, conversion, onHandoff, goTo, showRes
       setResult(protectedFile);
       onResultAvailability?.(true);
       onShowResult(true);
-      onHandoff({id: crypto.randomUUID(), protocol: "v2-video", stego, cover, sourceCover: source, conversion, passphrase: "", publicPem: publicKey,
+      onHandoff({id: crypto.randomUUID(), protocol: "video", stego, cover, sourceCover: source, conversion, passphrase: "", publicPem: publicKey,
         recovery, recoveryCode: protectedFile.recovery_code, serial: Date.now()});
     } catch (cause) {if (revision === requestRevision.current) setError(errorText(cause));}
     finally {if (revision === requestRevision.current) setPhase("");}
@@ -206,7 +206,7 @@ export function VideoVerify({ handoff, onWorkingFile, showResult, onShowResult }
   const [recovery, setRecovery] = useState<File | null>(handoff.recovery ?? null);
   const [code, setCode] = useState(handoff.recoveryCode ?? "");
   const [codeFile, setCodeFile] = useState<File | null>(null);
-  const [publicKey, setPublicKey] = useState(handoff.protocol === "v2-video" ? handoff.publicPem : "");
+  const [publicKey, setPublicKey] = useState(handoff.protocol === "video" ? handoff.publicPem : "");
   const [publicKeyError, setPublicKeyError] = useState("");
   const [result, setResult] = useState<VideoVerified | null>(null);
   const [locationMode, setLocationMode] = useState<"stored" | "slot" | "frame">("stored");
@@ -226,7 +226,7 @@ export function VideoVerify({ handoff, onWorkingFile, showResult, onShowResult }
   }
   useEffect(() => {requestRevision.current += 1; codeFileRevision.current += 1;
     setFile(handoff.stego); setRecovery(handoff.recovery ?? null); setCode(handoff.recoveryCode ?? ""); setCodeFile(null);
-    setPublicKey(handoff.protocol === "v2-video" ? handoff.publicPem : ""); setPublicKeyError("");
+    setPublicKey(handoff.protocol === "video" ? handoff.publicPem : ""); setPublicKeyError("");
     setResult(null); setPhase(""); setError(""); setAttempts([]);}, [handoff.id]);
   useEffect(() => {if (showResult && !result) onShowResult(false);}, [showResult, result, onShowResult]);
   useEffect(() => {if (showResult && result) outcomeRef.current?.focus();}, [showResult, result]);
@@ -259,8 +259,8 @@ export function VideoVerify({ handoff, onWorkingFile, showResult, onShowResult }
       form.append("recovery_code", code); form.append("public_key", publicKey);
       if (mode === "slot") form.append("start_slot", slot);
       if (mode === "frame") {form.append("start_frame", frame); form.append("start_x", x); form.append("start_y", y); form.append("start_channel", channel);}
-      await requestJson("/api/v2/session", {method: "POST"});
-      const checked = await requestJson<VideoVerified>("/api/v4/video/verify", {method: "POST", body: form});
+      await requestJson("/api/session", {method: "POST"});
+      const checked = await requestJson<VideoVerified>("/api/video/verify", {method: "POST", body: form});
       if (requestId !== requestRevision.current) return;
       setResult(checked);
       setAttempts((before) => [...before, {location: mode === "stored" ? "authenticated stored location" : mode === "slot" ? `slot ${slot}` : `frame ${frame}, (${x}, ${y}), channel ${channel}`, verdict: checked.verdict}]);
@@ -323,7 +323,7 @@ export function VideoVerify({ handoff, onWorkingFile, showResult, onShowResult }
       {file && <div className="facts"><span><b>{file.name}</b>{formatBytes(file.size)} · video to check</span></div>}
     </Panel>
     <Panel step="2" title="What you need to open it" subtitle="The recovery file and code locate the payload; the sender's Ed25519 public key checks its signature.">
-      {handoff.protocol !== "v2-video" && <div className="note note-info"><Icon name="key" /><span>Protected videos use an Ed25519 public key from the sender. The RSA key pair on the Keys page does not apply here.</span></div>}
+      {handoff.protocol !== "video" && <div className="note note-info"><Icon name="key" /><span>Protected videos use an Ed25519 public key from the sender. The RSA key pair on the Keys page does not apply here.</span></div>}
       <DropZone label="Recovery file" title="Drop the recovery file" hint="or choose the .stegloc file"
         accept=".stegloc" icon="key" file={recovery} onFile={(next) => {invalidate(); setRecovery(next);}} />
       <div className="recovery-code-input">

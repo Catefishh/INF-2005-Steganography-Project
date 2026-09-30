@@ -43,7 +43,7 @@ The INF2005 assignment excerpts remain in `docs/reference/assignment-excerpts.md
 
 ## Implementation Status
 
-The app combines the RSA/passphrase image/audio workflow, Ed25519 recovery-file media protocol, signed text protocol, attack lab, descriptive steganalysis and Windows desktop distribution. The interface is a single workflow-first studio. Protocol identifiers remain versioned for compatibility; they are not separate product releases. See `docs/v2-protocol.md`, `docs/v3-text-protocol.md`, and the README for format limits and current workflows.
+The app combines the RSA/passphrase image/audio workflow, Ed25519 recovery-file media protocol, signed text protocol, attack lab, descriptive steganalysis and Windows desktop distribution. The interface is a single workflow-first studio. Protocol identifiers remain versioned for compatibility; they are not separate product releases. See `docs/media-recovery.md`, `docs/text-protection.md`, and the README for format limits and current workflows.
 
 ## Product Principles
 

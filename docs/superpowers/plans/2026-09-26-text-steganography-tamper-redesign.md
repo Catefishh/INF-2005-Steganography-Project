@@ -71,7 +71,7 @@
 - Test: `frontend/src/pages/TextPage.test.tsx`
 - Test: `frontend/src/pages.test.tsx`
 
-- [ ] Reuse existing `/api/v4/jobs/text-showcase` polling and evidence ZIP behavior.
+- [ ] Reuse existing `/api/jobs/text-tamper-tests` polling and evidence ZIP behavior.
 - [ ] Show shared workspace readiness and import controls without requiring duplicate setup.
 - [ ] Render pre-run checklist groups for baseline, credential changes, and carrier edits.
 - [ ] Mark method-inapplicable cases unavailable with reasons.
@@ -104,7 +104,7 @@
 - No new files unless verification exposes a focused regression.
 
 - [ ] Run `npm test -- --run` from `frontend`.
-- [ ] Run the relevant Python tests covering text workflows and v4 jobs.
+- [ ] Run the relevant Python tests covering text workflows and media jobs.
 - [ ] Run `git diff --check`.
 - [ ] Review `git status --short` and ensure unrelated pre-existing changes remain untouched.
 - [ ] Summarize test results and any remaining limitations.

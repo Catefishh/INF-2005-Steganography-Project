@@ -78,12 +78,12 @@ def test_dct_showcase_reports_all_applicable_and_skipped_cases():
     stego, _, _ = engine.hide(png(), "cover.png", b"hello", "message.txt", "text/plain",
                               "pw", private, None, method="dct")
     with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
-        client.post("/api/v2/session")
-        started = client.post("/api/v4/jobs/showcase", files={"stego": ("stego.png", stego)},
+        client.post("/api/session")
+        started = client.post("/api/jobs/tamper-tests", files={"stego": ("stego.png", stego)},
                               data={"passphrase": "pw", "public_key": public.decode()})
         assert started.status_code == 200, started.text
         for _ in range(1200):
-            state = client.get(f"/api/v2/jobs/{started.json()['id']}").json()
+            state = client.get(f"/api/jobs/{started.json()['id']}").json()
             if state["status"] in {"succeeded", "failed", "cancelled"}:
                 break
             time.sleep(0.01)

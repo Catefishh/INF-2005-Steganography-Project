@@ -13,7 +13,7 @@
 ## Files and Responsibilities
 
 - Modify `backend/app/stego/lsb.py` only for LSB bounds, zero-length, type, and arithmetic defects.
-- Modify `backend/app/stego/protocol.py`, `v2_security.py`, `text_v3.py`, or `dct_protocol.py` only for confirmed protocol parsing, authentication, framing, or size defects.
+- Modify `backend/app/stego/protocol.py`, `recovery_security.py`, `signed_text.py`, or `dct_protocol.py` only for confirmed protocol parsing, authentication, framing, or size defects.
 - Modify carrier modules under `backend/app/stego/` only for confirmed image/audio/video/text boundary defects.
 - Modify `backend/app/api/*.py` only when expected malformed input escapes as a server error or untrusted content is published.
 - Add regressions to the narrowest existing `tests/test_*.py`; add a new test module only when no existing module owns the behavior.
@@ -47,7 +47,7 @@
   Update `backend/app/stego/lsb.py` with explicit validation and overflow-safe calculations. Preserve the distinction between legacy `encode`/`decode` and authenticated workflow helpers unless the regression demonstrates a shared contract failure.
 
 - [ ] **Step 3: Audit legacy hide/verify publication behavior.**
-  Inspect `legacy_embed.py`, `legacy_verify.py`, `legacy_capacity.py`, and `engine.py` for malformed header handling, manual-start consistency, capacity mismatch, and content release before all integrity checks pass.
+  Inspect `lsb_embed.py`, `lsb_verify.py`, `lsb_capacity.py`, and `engine.py` for malformed header handling, manual-start consistency, capacity mismatch, and content release before all integrity checks pass.
   Add focused tests in `tests/test_app.py`, `tests/test_api.py`, or the closest existing module, then patch the owning function.
 
 - [ ] **Step 4: Run the LSB/legacy regression set.**
@@ -60,33 +60,33 @@
   Add regressions to `tests/test_dct.py` and `tests/test_dct_api.py` for every reproduced issue.
 
 - [ ] **Step 2: Exercise audio/video carrier boundaries.**
-  Review `covers.py` and the v2/v4 media modules for truncated headers, unsupported formats, empty streams, frame/channel offsets, duration limits, and exact final-slot extraction.
-  Add regressions to `tests/test_audio.py`, `tests/test_video_v2.py`, `tests/test_v4_media.py`, or the closest owner.
+  Review `covers.py` and the media preparation and recovery modules for truncated headers, unsupported formats, empty streams, frame/channel offsets, duration limits, and exact final-slot extraction.
+  Add regressions to `tests/test_audio.py`, `tests/test_video.py`, `tests/test_media_workflows.py`, or the closest owner.
 
 - [ ] **Step 3: Implement localized media fixes.**
   Keep carrier parsing strict and bounded. Map expected bad media to the project’s existing error types and ensure failed processing does not write a partial artifact.
 
 - [ ] **Step 4: Run the media regression set.**
-  Run `py -3 -m pytest tests/test_dct.py tests/test_dct_api.py tests/test_audio.py tests/test_video_v2.py tests/test_v4_media.py tests/test_v2_api.py tests/test_v2_security.py -q`.
+  Run `py -3 -m pytest tests/test_dct.py tests/test_dct_api.py tests/test_audio.py tests/test_video.py tests/test_media_workflows.py tests/test_media_api.py tests/test_recovery_security.py -q`.
 
 ## Chunk 4: Protocol, Security, and Text Audit
 
 - [ ] **Step 1: Audit bounded parsing and canonicalization.**
-  Review `protocol.py` and `v2_security.py` for integer conversion, JSON limits, nonce/signature lengths, locator consistency, recovery-code parsing, and authenticated placement checks. Add malformed and tamper regressions before fixes.
+  Review `protocol.py` and `recovery_security.py` for integer conversion, JSON limits, nonce/signature lengths, locator consistency, recovery-code parsing, and authenticated placement checks. Add malformed and tamper regressions before fixes.
 
-- [ ] **Step 2: Audit v3 text framing.**
-  Review `text_v3.py` and `text_carrier.py` for Unicode normalization, line endings, trailing whitespace, zero-width symbols, acrostic count mismatches, carrier-size limits, and visible-text authentication assumptions. Extend `tests/test_v3.py` only for confirmed failures.
+- [ ] **Step 2: Audit signed text framing.**
+  Review `signed_text.py` and `text_carrier.py` for Unicode normalization, line endings, trailing whitespace, zero-width symbols, acrostic count mismatches, carrier-size limits, and visible-text authentication assumptions. Extend `tests/test_text.py` only for confirmed failures.
 
 - [ ] **Step 3: Fix authenticity and release boundaries.**
   Ensure content is returned only after locator/decryption/signature/content-hash/carrier-consistency checks required by the protocol. Expected failures should become structured verification results at API boundaries rather than uncaught 500 responses.
 
 - [ ] **Step 4: Run the protocol/security regression set.**
-  Run `py -3 -m pytest tests/test_protocol.py tests/test_security.py tests/test_v2_security.py tests/test_v2_api.py tests/test_v3.py tests/test_workflows.py -q`.
+  Run `py -3 -m pytest tests/test_protocol.py tests/test_security.py tests/test_recovery_security.py tests/test_media_api.py tests/test_text.py tests/test_workflows.py -q`.
 
 ## Chunk 5: API and Frontend Workflow Audit
 
 - [ ] **Step 1: Test malformed API requests.**
-  Review `backend/app/api/protection.py`, `v2_protection.py`, `v4_media.py`, `v4_video.py`, and `text.py` for invalid optional integers/floats, missing payloads, bad key material, unsupported methods, and storage calls after failed verification.
+  Review `backend/app/api/protection.py`, `media_protection.py`, `media.py`, `video_verify.py`, and `text.py` for invalid optional integers/floats, missing payloads, bad key material, unsupported methods, and storage calls after failed verification.
   Add request-level regressions to the closest API test module.
 
 - [ ] **Step 2: Patch API exception and output handling.**

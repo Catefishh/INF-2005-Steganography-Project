@@ -196,8 +196,8 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   const videoHandoff = useMemo<Handoff | null>(() => {
     const selected = stego ?? handoff?.stego;
     if (!selected || !/\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(selected.name)) return null;
-    if (handoff?.stego === selected && handoff.protocol === "v2-video") return handoff;
-    return {id: crypto.randomUUID(), origin: "manual", protocol: "v2-video", stego: selected,
+    if (handoff?.stego === selected && handoff.protocol === "video") return handoff;
+    return {id: crypto.randomUUID(), origin: "manual", protocol: "video", stego: selected,
       cover: null, passphrase: "", publicPem: "", serial: Date.now()};
   }, [stego, handoff]);
   const correctedRef = useRef(false);

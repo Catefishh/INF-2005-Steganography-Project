@@ -8,7 +8,7 @@ Audit the Stegloc application end to end and repair confirmed bugs and important
 
 The audit covers:
 
-- Python steganography engines and protocol parsers for LSB, DCT, v2 media, and v3 text.
+- Python steganography engines and protocol parsers for LSB, DCT, media recovery, and signed text.
 - Image, audio, video, and text carrier loading, capacity, placement, extraction, and malformed-input handling.
 - FastAPI request validation, exception mapping, verification responses, and output storage behavior.
 - Frontend API and workflow failures that can be reproduced with the existing local test/build setup.

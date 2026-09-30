@@ -17,7 +17,7 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
 }
 
 export function artifactUrl(id: string): string {
-  return `/api/v2/artifacts/${encodeURIComponent(id)}`;
+  return `/api/artifacts/${encodeURIComponent(id)}`;
 }
 
 export async function pollJob<T>(id: string, options: {
@@ -28,7 +28,7 @@ export async function pollJob<T>(id: string, options: {
   timeout?: string;
 }): Promise<T | null> {
   for (let attempt = 0; attempt < options.attempts; attempt++) {
-    const state = await requestJson<Job<T>>(`/api/v2/jobs/${encodeURIComponent(id)}`);
+    const state = await requestJson<Job<T>>(`/api/jobs/${encodeURIComponent(id)}`);
     options.onUpdate(state.phase, state.id);
     if (state.status === "succeeded" && state.result) return state.result;
     if (state.status === "failed") {

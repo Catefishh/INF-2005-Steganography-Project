@@ -1,12 +1,12 @@
-"""Stable public entry point for the legacy STG1 workflow."""
-from .legacy_types import CapacityError, StartLocationError, Verdict
-from .legacy_record import (PROTOCOL, MAGIC, SALT_BYTES, HEADER_PLAIN, HEADER_BYTES, HEADER_SLOTS,
+"""Stable public entry point for the RSA image/audio and DCT workflows."""
+from .lsb_types import CapacityError, StartLocationError, Verdict
+from .lsb_record import (PROTOCOL, MAGIC, SALT_BYTES, HEADER_PLAIN, HEADER_BYTES, HEADER_SLOTS,
     PACKAGE_OVERHEAD, ZERO_HASH, MAX_TEXT_FIELD, _limit, _pack, _unpack, canonical_json, make_record, package_size)
-from .legacy_capacity import (header_slot, usable_payload_slots, max_package_bytes,
+from .lsb_capacity import (header_slot, usable_payload_slots, max_package_bytes,
     estimate_package_bytes as _lsb_estimate, choose_start, resolve_manual_start)
-from .legacy_report import popcount_total, psnr
-from .legacy_embed import hide as _lsb_hide
-from .legacy_verify import open_header, verify as _lsb_verify
+from .lsb_report import popcount_total, psnr
+from .lsb_embed import hide as _lsb_hide
+from .lsb_verify import open_header, verify as _lsb_verify
 from .security import KeyFormatError
 from . import dct_protocol, lsb
 from .dct_codec import DctCarrier, HEADER_BYTES as DCT_HEADER_BYTES, HEADER_SLOTS as DCT_HEADER_SLOTS

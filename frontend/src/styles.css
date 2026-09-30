@@ -195,6 +195,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .field-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .field-actions { display: flex; gap: 12px; }
 .field-hint { color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+.evidence-download .field-hint { margin-top: 12px; }
 input[type="text"], input[type="password"], input[type="number"], textarea {
   width: 100%; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface);
 }

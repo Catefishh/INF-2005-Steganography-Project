@@ -1,4 +1,4 @@
-"""Shared request parsing and response models for legacy routes."""
+"""Shared request parsing and response models for image/audio routes."""
 import math
 
 from fastapi import HTTPException

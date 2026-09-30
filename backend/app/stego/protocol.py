@@ -1,4 +1,4 @@
-"""Deterministic v1 record, locator, and signed-package serialization."""
+"""Deterministic protocol record, locator, and signed-package serialization."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ _LOCATOR_FIELDS = {
 
 
 class ProtocolError(ValueError):
-    """An input does not conform to the frozen v1 wire protocol."""
+    """An input does not conform to the frozen protocol wire protocol."""
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,7 @@ def _require_object(value: Any, fields: set[str], name: str) -> dict[str, Any]:
     if type(value) is not dict:
         raise ProtocolError(f"{name} must be an object")
     if set(value) != fields:
-        raise ProtocolError(f"{name} fields do not match the v1 schema")
+        raise ProtocolError(f"{name} fields do not match the protocol schema")
     if not all(type(key) is str for key in value):
         raise ProtocolError(f"{name} field names must be strings")
     return value
@@ -126,7 +126,7 @@ def _require_text(value: Any, name: str, maximum: int, *, ascii_only: bool = Fal
     except UnicodeEncodeError as exc:
         raise ProtocolError(f"{name} must be ASCII") from exc
     if not encoded or len(encoded) > maximum:
-        raise ProtocolError(f"{name} length is outside the v1 bounds")
+        raise ProtocolError(f"{name} length is outside the protocol bounds")
     return value
 
 
@@ -196,7 +196,7 @@ def validate_record(record: Any) -> dict[str, Any]:
     )
     byte_length = content["byte_length"]
     if type(byte_length) is not int or not 0 <= byte_length <= MAX_CONTENT_BYTES:
-        raise ProtocolError("content.byte_length is outside the v1 bounds")
+        raise ProtocolError("content.byte_length is outside the protocol bounds")
     _require_hex(content["sha256"], "content.sha256", _LOWER_HEX_64)
 
     team = record["team"]
@@ -211,7 +211,7 @@ def validate_record(record: Any) -> dict[str, Any]:
 def serialize_record(record: Any) -> bytes:
     encoded = canonical_json(validate_record(record))
     if len(encoded) > MAX_RECORD_BYTES:
-        raise ProtocolError("record length exceeds the v1 bound")
+        raise ProtocolError("record length exceeds the protocol bound")
     return encoded
 
 
@@ -232,7 +232,7 @@ def _parse_canonical_object(data: bytes, maximum: int, name: str) -> dict[str, A
     if type(data) is not bytes:
         raise ProtocolError(f"{name} bytes must be bytes")
     if not data or len(data) > maximum:
-        raise ProtocolError(f"{name} length is outside the v1 bound")
+        raise ProtocolError(f"{name} length is outside the protocol bound")
     try:
         value = json.loads(
             data.decode("utf-8"),
@@ -272,7 +272,7 @@ def validate_locator(locator: Any) -> dict[str, Any]:
 def serialize_locator(locator: Any) -> bytes:
     encoded = canonical_json(validate_locator(locator))
     if len(encoded) > MAX_LOCATOR_BYTES:
-        raise ProtocolError("locator length exceeds the v1 bound")
+        raise ProtocolError("locator length exceeds the protocol bound")
     return encoded
 
 
@@ -282,11 +282,11 @@ def parse_locator(data: bytes) -> dict[str, Any]:
 
 def pack_signed_package(record_bytes: bytes, signature: bytes, content: bytes) -> bytes:
     if type(record_bytes) is not bytes or not 0 < len(record_bytes) <= MAX_RECORD_BYTES:
-        raise ProtocolError("record length is outside the v1 bound")
+        raise ProtocolError("record length is outside the protocol bound")
     if type(signature) is not bytes or len(signature) != SIGNATURE_BYTES:
         raise ProtocolError("signature must be exactly 64 bytes")
     if type(content) is not bytes or len(content) > MAX_CONTENT_BYTES:
-        raise ProtocolError("content length is outside the v1 bound")
+        raise ProtocolError("content length is outside the protocol bound")
     return (
         _PACKAGE_HEADER.pack(
             SIGNED_PACKAGE_MAGIC,
@@ -305,7 +305,7 @@ def unpack_signed_package(data: bytes) -> SignedPackageParts:
     if type(data) is not bytes:
         raise ProtocolError("signed package must be bytes")
     if len(data) > MAX_SIGNED_PACKAGE_BYTES:
-        raise ProtocolError("signed package length exceeds the v1 bound")
+        raise ProtocolError("signed package length exceeds the protocol bound")
     if len(data) < _PACKAGE_HEADER.size:
         raise ProtocolError("signed package header is truncated")
     magic, version, flags, record_length, content_length = _PACKAGE_HEADER.unpack_from(data)
@@ -316,9 +316,9 @@ def unpack_signed_package(data: bytes) -> SignedPackageParts:
     if flags != SIGNED_PACKAGE_FLAGS:
         raise ProtocolError("signed package flags are unsupported")
     if not 0 < record_length <= MAX_RECORD_BYTES:
-        raise ProtocolError("signed package record length is outside the v1 bound")
+        raise ProtocolError("signed package record length is outside the protocol bound")
     if content_length > MAX_CONTENT_BYTES:
-        raise ProtocolError("signed package content length is outside the v1 bound")
+        raise ProtocolError("signed package content length is outside the protocol bound")
 
     expected = _PACKAGE_HEADER.size + record_length + SIGNATURE_BYTES + content_length
     if len(data) != expected:
@@ -334,7 +334,7 @@ def unpack_signed_package(data: bytes) -> SignedPackageParts:
 
 def measure_encrypted_envelope_length(record: Any, content_length: int) -> int:
     if type(content_length) is not int or not 0 <= content_length <= MAX_CONTENT_BYTES:
-        raise ProtocolError("content length is outside the v1 bound")
+        raise ProtocolError("content length is outside the protocol bound")
     record_length = len(serialize_record(record))
     package_length = _PACKAGE_HEADER.size + record_length + SIGNATURE_BYTES + content_length
     return AES_GCM_OVERHEAD_BYTES + package_length
