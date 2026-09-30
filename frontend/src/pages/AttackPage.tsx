@@ -11,10 +11,7 @@ import { TextShowcase } from "./TextShowcase";
 import { TamperSummary } from "../ui/TamperSummary";
 
 const STEGO_ACCEPT = "image/*,audio/*,video/*,.png,.bmp,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.wav,.mp3,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.3gp,.m4v";
-const STEGO_SLOT_ID = "tamper-file-slot";
-const COVER_SLOT_ID = "tamper-cover-slot";
-
-const INPUT_LABELS = ["file", "original", "password", "public key"];
+const INPUT_LABELS = ["file", "original", "password", "public key", "recovery file", "recovery code"];
 
 /** Only the clean-cover check requires the original image or recording. */
 const NEEDS_ORIGINAL = new Set(["clean_cover"]);
@@ -22,14 +19,18 @@ const NEEDS_ORIGINAL = new Set(["clean_cover"]);
 /** The test that should come back clean. */
 const POSITIVE_ID = "baseline";
 type TestKind = "reference" | "inputs" | "modified";
-const INPUT_CASES = new Set(["wrong_key", "wrong_passphrase", "wrong_start", "corrected_start"]);
+const INPUT_CASES = new Set(["wrong_key", "wrong_passphrase", "wrong_code", "wrong_start", "corrected_start"]);
 const NO_TESTS: Record<TestKind, boolean> = {reference: false, inputs: false, modified: false};
 const ALL_TESTS: Record<TestKind, boolean> = {reference: true, inputs: true, modified: true};
 function testKind(id: string): TestKind {
   return id === POSITIVE_ID || id === "clean_cover" ? "reference" : INPUT_CASES.has(id) ? "inputs" : "modified";
 }
 
-export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vault; handoff: Handoff | null; onWorkingFile?: (file: File | null) => void; goTo: (page: "keys") => void }) {
+export function AttackPage({ vault, handoff, onWorkingFile, goTo, suite = "tamper", active = true }: {
+  vault: Vault; handoff: Handoff | null; onWorkingFile?: (file: File | null) => void;
+  goTo: (page: "keys") => void; suite?: "tamper" | "attack"; active?: boolean;
+}) {
+  const attack = suite === "attack";
   const [stego, setStego] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
   const [media, setMedia] = useState<"binary" | "text">("binary");
@@ -89,7 +90,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     if (!stego) return;
     const requestId = ++requestRevision.current;
     // Snapshot before the await, so the staleness comparison is against what was really sent.
-    const snapshot = [stego?.name ?? "", cover?.name ?? "", passphrase, publicPem];
+    const snapshot = [stego?.name ?? "", cover?.name ?? "", passphrase, publicPem, recovery?.name ?? "", recoveryCode];
     setBusy(true);
     setError("");
     setJobId("");
@@ -103,7 +104,8 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     setSelectedTests(null);
     const form = new FormData();
     form.append("stego", stego, stego.name);
-    if (cover) form.append("cover", cover, cover.name);
+    if (cover && !attack) form.append("cover", cover, cover.name);
+    form.append("suite", suite);
     if (handoff?.conversion) form.append("conversion_settings", JSON.stringify(handoff.conversion));
     form.append("passphrase", passphrase);
     form.append("public_key", publicPem);
@@ -111,6 +113,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     if (recoveryCode) form.append("recovery_code", recoveryCode);
     try {
       await requestJson("/api/session", { method: "POST" });
+      if (requestId !== requestRevision.current) return;
       const started = await requestJson<Job<{cases: Scenario[]}>>("/api/jobs/tamper-tests", { method: "POST", body: form });
       if (requestId !== requestRevision.current) return;
       setJobId(started.id);
@@ -134,7 +137,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     }
   }
 
-  const currentInputs = [stego?.name ?? "", cover?.name ?? "", passphrase, publicPem];
+  const currentInputs = [stego?.name ?? "", cover?.name ?? "", passphrase, publicPem, recovery?.name ?? "", recoveryCode];
   const changed = resultInputs ? changedInputs(INPUT_LABELS, resultInputs, currentInputs) : [];
   const stale = scenarios !== null && changed.length > 0 && !staleDismissed;
 
@@ -157,11 +160,11 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
 
   // The outcome is the point of the screen, so it takes focus and is announced.
   useEffect(() => {
-    if (scenarios) outcomeRef.current?.focus();
+    if (scenarios && active) outcomeRef.current?.focus();
   }, [scenarios]);
 
   const textHandoff = /\.txt$/i.test(handoff?.stego.name ?? "") ? handoff : null;
-  if (media === "text") return <TextShowcase back={() => setMedia("binary")}
+  if (media === "text") return <TextShowcase suite={suite} backLabel="Image, audio & video tests" back={() => setMedia("binary")}
     initialCarrier={textHandoff?.stego ?? null} initialRecovery={textHandoff?.recovery ?? null}
     initialCode={textHandoff?.recoveryCode ?? ""} initialPublicKey={textHandoff?.publicPem ?? ""} />;
 
@@ -172,24 +175,24 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
         subtitle="Use a file that passes Extract & Verify.">
         <ol className="tamper-guide">
           <li><strong>Baseline:</strong> verify the protected workspace file with your selected credentials, without changes.</li>
-          <li><strong>One change:</strong> edit a separate copy or replace a verification input for that case only. The wrong-key case generates an unrelated key; it does not use your selected sender key.</li>
-          <li><strong>Compare:</strong> a deliberately changed file or incorrect credential should fail verification. Open Reasoning to see what each case checks and whether its result was expected.</li>
+          <li><strong>One change:</strong> {attack ? "try one incorrect secret guess, destroy hidden data without a secret, or forge content using a leaked passphrase but no signing key." : "edit a separate copy of the carrier or payload, and check an unrelated public key as a verification control."}</li>
+          <li><strong>Compare:</strong> {attack ? "judge each attacker goal separately. Blocking recovery counts as successful destruction; forgery succeeds only if changed content is accepted as authentic." : "compare the verifier verdict with each case’s expected result."} Open Reasoning for the assumptions and checks.</li>
         </ol>
         <div className="columns">
-          <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}
+          <DropZone label={<>Protected file <span className="req">· required</span></>} id={`${suite}-file-slot`}
             title="Drop the protected file" hint="image, audio, or video file produced by Embed & Sign"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="shield" file={stego}
             onFile={(file) => { invalidateRun(); setStego(file); if (/\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(file?.name ?? "") && publicPem === vault.publicPem) setPublicPem(""); onWorkingFile?.(file); }} />
-          <DropZone label={<>Original cover <span className="opt">(optional)</span></>} id={COVER_SLOT_ID}
+          {!attack && <DropZone label={<>Original cover <span className="opt">(optional)</span></>} id={`${suite}-cover-slot`}
             title="Drop the original here" hint="checks this separate reference for no hidden payload; use an unsigned original"
             accept={`${STEGO_ACCEPT},.avi,video/x-msvideo`} icon="image" file={cover}
-            onFile={(file) => { invalidateRun(); setCover(file); }} />
+            onFile={(file) => { invalidateRun(); setCover(file); }} />}
         </div>
       </Panel>
 
       <Panel step="2" title="Verification inputs">
         {!isVideo && <PassphraseField value={passphrase} onChange={setPassphrase}
-          hint="The baseline uses this password; the wrong-password case replaces it for that check." />
+          hint={attack ? "The baseline uses this password; the wrong-password case replaces it for that check." : "Use the password that authenticates the unchanged protected file."} />
         }
         {isVideo && <div className="inline-fields"><label>Recovery file<FilePicker accept=".stegloc" onFile={setRecovery} /></label>
           <label>Recovery code<input value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} /></label></div>}
@@ -240,7 +243,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
         {(reasonId) => (
           <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}
             aria-describedby={reasonId} aria-busy={busy}>
-            {busy ? <Spinner /> : <Icon name="zap" />} {busy ? "Running the tests…" : "Run tamper tests"}
+            {busy ? <Spinner /> : <Icon name="zap" />} {busy ? "Running the tests…" : attack ? "Run attack simulations" : "Run tamper tests"}
           </button>
         )}
       </ActionBar>
@@ -250,7 +253,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
 
       {busy && jobId && <button type="button" className="btn ghost" onClick={() => void requestJson(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" })}>Cancel suite</button>}
       {jobId && <div className="evidence-download"><a className="btn ghost" href={`/api/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-evidence.zip">Download evidence ZIP</a>
-        <p className="field-hint">ZIP includes supplied files, public key, and {isVideo ? "recovery code" : "passphrase"}.{!cover && " Add the original file to include it."}</p></div>}
+        <p className="field-hint">ZIP includes supplied files, public key, and {isVideo ? "recovery code" : "passphrase"}.{!attack && !cover && " Add the original file to include it."}</p></div>}
 
       {scenarios && scenarios.length > 0 && (
         <>
@@ -267,7 +270,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                  <>
                     {baselineGenuine ? <>
                       {fromEmbed ? "This is the file created by Embed & Sign. " : "The provided file contains Stegloc-protected content. "}
-                      Its signature matches the sender&apos;s public key and its integrity checks passed. Open the test cases below and select a category to see how Stegloc detects changes and rejects invalid credentials.
+                      Its signature matches the sender&apos;s public key and its integrity checks passed. {attack ? "Open the test cases to inspect credential rejection and attack outcomes." : "Open the test cases to inspect integrity checks and processing damage."}
                       {unsupported > 0 && ` ${unsupported} spatial-LSB cases do not apply to this DCT file.`}
                       {passed < applicable.length && " Some examples returned unexpected results; open the test cases to review them."}
                     </> : `The original file did not pass verification (${baseline?.verdict ?? "not run"}). Its authenticity has not been established.`}
@@ -279,15 +282,15 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                 </button>
               } />
 
-            <TamperSummary cases={scenarios} busy={busy} />
+            <TamperSummary cases={scenarios} busy={busy} suite={suite} />
             <Disclosure title={showTests ? "Hide test cases" : "Show test cases"} open={showTests} onOpenChange={setTestsOpen}>
               {showTests && <>
               <fieldset className="tamper-filters">
                 <legend>Filter test cases</legend>
                 {([
-                  ["reference", "Original and reference checks"],
+                  ["reference", attack ? "Baseline control" : "Original and reference checks"],
                   ["inputs", "Changed verification inputs"],
-                  ["modified", "Modified-file examples"],
+                  ["modified", attack ? "Destruction and forgery examples" : "Modified-file examples"],
                 ] as const).map(([kind, label]) => <label key={kind}>
                   <input type="checkbox" checked={filters[kind]} onChange={(event) => {
                     setSelectedTests({...filters, [kind]: event.target.checked});
@@ -313,10 +316,11 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
                         <div className="attack-observed"><b>Observed:</b>{" "}
                         {scenario.verdict === "Unsupported" ? <span className="chip flat">Unsupported</span> : <><VerdictChip verdict={scenario.verdict} /><span className="small"> {observation(scenario)}</span></>}
                         </div>
-                        {scenario.verdict === "Unsupported" ? <div className="muted small">not applicable</div> : scenario.as_expected
+                        {attack ? <div className={scenario.attack?.succeeded ? "attack-bad" : "attack-ok"}>{scenario.attack_outcome}</div> : scenario.verdict === "Unsupported" ? <div className="muted small">not applicable</div> : scenario.as_expected
                           ? <div className="attack-ok">as expected</div>
                           : <div className="attack-bad">expected {scenario.expected.join(" or ")}</div>}
                         <Disclosure title="Why">
+                          {scenario.attack && <><p>Attacker goal: {scenario.attack.goal}</p><p>Assumptions: {scenario.attack.assumption}</p></>}
                           <p className="small">{scenario.summary}</p>
                           {scenario.elapsed_ms !== undefined && <p className="small">Elapsed: {scenario.elapsed_ms.toLocaleString()} ms</p>}
                           {scenario.stages && <p className="small">Stages: {scenario.stages.map((stage) => `${stage.id} ${stage.status}`).join(" · ")}</p>}
@@ -364,9 +368,10 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
 export function expectation(scenario: Scenario, hasCover: boolean): string {
   if (scenario.verdict === "Unsupported") return "Not applicable (spatial LSB only).";
   const outcomes: Record<string, string> = {
-    baseline: "The correct passphrase is accepted, the signature is valid, and the file is confirmed genuine.",
+    baseline: "The supplied verification credentials are accepted, the signature is valid, and the file is confirmed genuine.",
     wrong_passphrase: "The incorrect passphrase is rejected; the file cannot be authenticated with it.",
     wrong_key: "The unrelated public key does not validate the sender's signature.",
+    wrong_code: "The different recovery code is rejected; it cannot unlock this protected file.",
     flip_cover_bit: "The changed file is identified as tampered because data outside the payload changed.",
     flip_payload_bit: "The changed file is identified as tampered because the protected payload changed.",
     wrong_start: "The selected location is rejected; the file itself remains unchanged.",
@@ -399,7 +404,7 @@ export function noFileReason(scenario: Scenario, hasCover: boolean): string {
   if (scenario.verdict === "Unsupported") return "not applicable to DCT";
   if (scenario.id === POSITIVE_ID) return "file unchanged";
   if (scenario.id === "clean_cover") return hasCover ? "original cover used" : "requires original cover";
-  if (["wrong_passphrase", "wrong_key", "wrong_start", "corrected_start"].includes(scenario.id))
+  if (["wrong_passphrase", "wrong_key", "wrong_code", "wrong_start", "corrected_start"].includes(scenario.id))
     return "file unchanged; check settings changed";
   return "no modified file";
 }

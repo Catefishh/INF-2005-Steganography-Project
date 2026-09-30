@@ -149,6 +149,9 @@ export function EmbedResult({ report, stego, usedCoverUrl, stegoUrl, team, onEdi
           <button type="button" className="btn ghost" onClick={() => onHandOff("attacks")}>
             <Icon name="zap" /> Run the tamper tests
           </button>
+          <button type="button" className="btn ghost" onClick={() => onHandOff("attack-tests")}>
+            <Icon name="zap" /> Run attack simulations
+          </button>
         </div>
       </Panel>
 

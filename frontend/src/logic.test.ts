@@ -44,7 +44,8 @@ function analyseWith(over: Partial<Analysis> = {}): Analysis {
 
 describe("routing", () => {
   it("maps every screen to its canonical path, and only two screens have a result view", () => {
-    expect(PATHS).toEqual({ keys: "/keys", hide: "/embed", verify: "/verify", analyse: "/inspect", attacks: "/tamper-tests", text: "/text" });
+    expect(PATHS).toEqual({ keys: "/keys", hide: "/embed", verify: "/verify", analyse: "/inspect", attacks: "/tamper-tests", "attack-tests": "/attack-tests", text: "/text" });
+    expect(resolveRoute("/attack-tests", false)).toEqual({ page: "attack-tests", view: "form" });
     expect(pathFor("hide", "result")).toBe("/embed/result");
     expect(pathFor("verify", "result")).toBe("/verify/result");
     expect(pathFor("analyse", "result")).toBe("/inspect");

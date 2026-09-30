@@ -245,6 +245,8 @@ export interface AnalysisComparison {
 }
 
 export interface Scenario {
+  attack_outcome?: string;
+  attack?: {goal: string; assumption: string; succeeded: boolean};
   id: string;
   title: string;
   change: string;

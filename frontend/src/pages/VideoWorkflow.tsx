@@ -136,6 +136,7 @@ export function VideoEmbed({ cover, source, conversion, onHandoff, goTo, showRes
       <button type="button" className="btn ghost" onClick={() => goTo("verify")}><Icon name="eye" /> Verify it as the receiver would</button>
       <button type="button" className="btn ghost" onClick={() => goTo("analyse")}><Icon name="layers" /> Inspect it for traces</button>
       <button type="button" className="btn ghost" onClick={() => goTo("attacks")}><Icon name="zap" /> Run the tamper tests</button>
+      <button type="button" className="btn ghost" onClick={() => goTo("attack-tests")}><Icon name="zap" /> Run attack simulations</button>
     </div></Panel>
     <ErrorNote text={error} />
   </div>;

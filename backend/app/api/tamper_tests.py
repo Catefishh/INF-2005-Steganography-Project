@@ -23,7 +23,7 @@ from ..stego.covers import load_cover
 from ..stego.carriers.video import inspect_video
 from ..stego.carriers.video_mp4 import inspect_mp4, is_mp4, extension as mp4_extension
 from ..stego.recovery_security import (load_verification_key, generate_signing_keys, decode_recovery_code,
-    derive_keys, _parse_sidecar, _decrypt_and_verify_locator)
+    recovery_code as encode_recovery_code, derive_keys, _parse_sidecar, _decrypt_and_verify_locator)
 from ..workflows import verify_video
 from .session_jobs import _launch, _read, _session
 
@@ -32,10 +32,12 @@ def attach(app: FastAPI) -> None:
     @app.post("/api/jobs/text-tamper-tests")
     async def text_showcase(request: Request, mode: str = Form("test"), carrier: UploadFile | None = File(None),
                             recovery: UploadFile | None = File(None), recovery_code: str = Form(""),
-                            public_key: str = Form(...)):
+                            public_key: str = Form(...), suite: str = Form("all")):
         _session(request)
         if mode != "test":
             raise HTTPException(400, "Unknown showcase mode")
+        if suite not in {"all", "tamper", "attack"}:
+            raise HTTPException(400, "Unknown test suite")
         text_bytes = await _read(carrier, "text carrier", signed_text.MAX_CARRIER) if carrier and carrier.filename else None
         sidecar = await _read(recovery, "text recovery", 4096) if recovery and recovery.filename else None
         if not public_key or text_bytes is None or sidecar is None or not recovery_code:
@@ -50,7 +52,8 @@ def attach(app: FastAPI) -> None:
 
         def work(session, check):
             job = session.jobs[session.active_job]
-            job.total_cases = 5
+            job.total_cases = 5 if suite == "all" else 3 if suite == "attack" else 4
+            job.evidence = {"suite": suite}
             job.phase = "baseline"
             started = time.monotonic()
             active, material, code = text, sidecar, recovery_code
@@ -66,19 +69,25 @@ def attach(app: FastAPI) -> None:
                 row = {"id": ident, "title": title, "change": change, "expected": expected,
                     "verdict": verdict, "summary": summary, "as_expected": verdict in expected,
                     "elapsed_ms": round((time.monotonic() - started) * 1000), "file": None}
+                if suite == "attack":
+                    attacks.describe_attack(row)
                 rows.append(row); job.cases.append(row); job.phase = title
                 job.progress = min(99, round(len(rows) / job.total_cases * 100))
             case("baseline", "Unmodified text", "none", ["Authentic"], active)
             if rows[0]["verdict"] != "Authentic":
                 return {"cases": rows, "baseline_authentic": False}
-            case("wrong_code", "Wrong recovery code", "invalid code", ["Cannot Verify"], active, code + "-wrong")
-            _, unrelated = generate_signing_keys()
-            case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Cannot Verify"], active,
-                 use_key=load_verification_key(unrelated))
+            if suite != "tamper":
+                case("wrong_code", "Wrong recovery code", "different valid recovery code", ["Cannot Verify"], active,
+                     _wrong_recovery_code(code))
+            if suite != "attack":
+                _, unrelated = generate_signing_keys()
+                case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Cannot Verify"], active,
+                     use_key=load_verification_key(unrelated))
             damaged = _damage_text_symbol(active, json.loads(material)["method"])
             case("symbol_damage", "Hidden symbol damaged", "one encoded symbol changed", ["Cannot Verify"], damaged)
-            visible_edit = _change_visible_text(active, json.loads(material)["method"])
-            case("visible_wording", "Visible wording edited", "one visible character changed", ["Authentic"], visible_edit)
+            if suite != "attack":
+                visible_edit = _change_visible_text(active, json.loads(material)["method"])
+                case("visible_wording", "Visible wording edited", "non-authenticated visible-carrier edit", ["Authentic"], visible_edit)
             return {"cases": rows, "baseline_authentic": True,
                 "input_sha256": hashlib.sha256(active.encode("utf-8")).hexdigest()}
 
@@ -89,10 +98,12 @@ def attach(app: FastAPI) -> None:
                        mode: str = Form("test"),
                        conversion_settings: str = Form(""),
                        passphrase: str = Form(""), public_key: str = Form(...),
-                       recovery: UploadFile | None = File(None), recovery_code: str = Form("")):
+                       recovery: UploadFile | None = File(None), recovery_code: str = Form(""), suite: str = Form("all")):
         _session(request)
         if mode != "test":
             raise HTTPException(400, "Unknown showcase mode")
+        if suite not in {"all", "tamper", "attack"}:
+            raise HTTPException(400, "Unknown test suite")
         carrier = await _read(stego, "stego") if stego and stego.filename else None
         original = await _read(cover, "original") if cover and cover.filename else None
         video = carrier is not None and ((carrier[:4] == b"RIFF" and carrier[8:12] == b"AVI ") or is_mp4(carrier))
@@ -113,13 +124,17 @@ def attach(app: FastAPI) -> None:
         def work(session, check):
             job = session.jobs[session.active_job]
             # ponytail: retain inputs for this session's export; use temp files if large media strains memory.
-            job.evidence = {"files": [("protected", stego.filename, carrier)]
+            job.evidence = {"suite": suite, "files": [("protected", stego.filename, carrier)]
                 + ([("original", cover.filename, original)] if original is not None else [])
                 + ([("recovery", recovery.filename, sidecar)] if sidecar is not None else []),
                 "public_key": public_key, "passphrase": passphrase if not video else None,
                 "recovery_code": recovery_code if video else None}
             dct = not video and engine.detect_method(load_cover(carrier)) == "dct"
-            if video:
+            if suite == "attack":
+                job.total_cases = 3 if video else 4
+            elif suite == "tamper":
+                job.total_cases = (4 if video else 5 if dct else 6) + int(original is not None and not video)
+            elif video:
                 job.total_cases = 4
             elif dct:
                 job.total_cases = 8 if original else 7
@@ -140,10 +155,10 @@ def attach(app: FastAPI) -> None:
             active = carrier
             active_sidecar, active_code = sidecar, recovery_code
             if video:
-                scenarios, files = _video_suite(active, active_sidecar, active_code, public_key.encode(), completed, check)
+                scenarios, files = _video_suite(active, active_sidecar, active_code, public_key.encode(), completed, check, suite)
             else:
                 scenarios, files = attacks.run_suite(active, passphrase, public_key.encode(), original,
-                    on_case=completed, check=check, stop_on_failed_baseline=True, include_hash_mismatch=True)
+                    on_case=completed, check=check, stop_on_failed_baseline=True, include_hash_mismatch=True, suite=suite)
             job.total_cases = len(job.cases)
             if original is not None and active is not None:
                 heatmap_bytes = _comparison_heatmap(original, active, video)
@@ -219,19 +234,20 @@ def attach(app: FastAPI) -> None:
                     heatmap_bytes = session.artifacts[descriptor["id"]].data
                     add("heatmaps/embedding.png", heatmap_bytes)
                     heatmap_src = "data:image/png;base64," + base64.b64encode(heatmap_bytes).decode("ascii")
-            result = {"status": job.status, "completed": len(rows), "cases": rows,
+            result = {"suite": inputs.get("suite", "all"), "status": job.status, "completed": len(rows), "cases": rows,
                 "input_sha256": job.result.get("input_sha256") if job.result else None,
                 "conversion_settings": job.result.get("conversion_settings") if job.result else None,
                 "inputs": archived_inputs, "tampered_files": tampered}
             completed = len(rows)
             total = job.total_cases or completed
-            matched = sum(row.get("as_expected") is True for row in rows)
+            applicable = [row for row in rows if row["verdict"] != "Unsupported"]
+            matched = sum(row.get("as_expected") is True for row in applicable)
             baseline = next((row for row in rows if row.get("id") == "baseline"), None)
             baseline_authentic = bool(baseline and baseline.get("verdict") == "Authentic")
             metrics = (
                 ("Cases completed", f"{completed}/{total}", round(100 * completed / total) if total else 0,
                     "Tests with a recorded verdict"),
-                ("Expected outcomes", f"{matched}/{completed}", round(100 * matched / completed) if completed else 0,
+                ("Expected outcomes", f"{matched}/{len(applicable)}", round(100 * matched / len(applicable)) if applicable else 0,
                     "Observed verdicts matching the test plan"),
                 ("Unchanged baseline", baseline.get("verdict", "Not run") if baseline else "Not run",
                     100 if baseline_authentic else 0, "Authenticity of the protected file"),
@@ -264,6 +280,8 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem}.case{padding:1
 </style></head><body><main class="report"><header class="masthead"><p class="kicker">Stegloc · verification evidence</p>
 <h1>Tamper test report</h1><p class="lede">Actual checks, supplied inputs, and steps to reproduce each result.</p></header>
 <section class="surface" aria-labelledby="summary-title"><div class="section-head"><h2 id="summary-title">Summary</h2></div><div class="metrics">"""]
+            if inputs.get("suite") == "attack":
+                report[0] = report[0].replace("Tamper test report", "Attack simulation report")
             for label, value, percent, description in metrics:
                 tone = "#89988a" if value == "Not run" else "#4c922a" if percent == 100 else "#c87b16" if percent else "#b33c31"
                 report.append(f'<div class="metric" role="group" aria-label="{html.escape(f"{label}: {value}; {percent} percent", quote=True)}">'
@@ -276,11 +294,11 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem}.case{padding:1
                 '<p>Expected and observed verdicts</p></div><div class="table-scroll"><table><thead><tr><th scope="col">Test</th>'
                 '<th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">Result</th></tr></thead><tbody>')
             for row in rows:
-                status = "As expected" if row.get("as_expected") else "Review"
+                status = row.get("attack_outcome") or ("Not applicable" if row["verdict"] == "Unsupported" else "As expected" if row.get("as_expected") else "Review")
                 report.append(f'<tr><th scope="row">{html.escape(row["title"])}</th>'
                     f'<td>{html.escape(", ".join(row["expected"]))}</td>'
                     f'<td class="verdict">{html.escape(row["verdict"])}</td>'
-                    f'<td class="{"match" if row.get("as_expected") else "review"}">{status}</td></tr>')
+                    f'<td class="{"match" if (not row["attack"]["succeeded"] if row.get("attack") else row.get("as_expected")) else "review"}">{status}</td></tr>')
             report.append('</tbody></table></div></section>')
             if inputs:
                 report.append('<section class="surface" aria-labelledby="files-title"><div class="section-head"><h2 id="files-title">Files used</h2>'
@@ -293,7 +311,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem}.case{padding:1
                         report.append(f'<audio controls src="{path}"></audio>')
                     report.append('</div></li>')
                 report.append("</ul>")
-                if "original" not in archived_inputs:
+                if "original" not in archived_inputs and inputs.get("suite") != "attack":
                     report.append("<p>Original cover was not supplied; the clean-cover case could not run.</p>")
                 report.append('</section><section class="surface" aria-labelledby="credentials-title">'
                     '<div class="section-head"><h2 id="credentials-title">Verification materials</h2></div>')
@@ -325,9 +343,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem}.case{padding:1
             report.append('<section class="surface" aria-labelledby="cases-title"><div class="section-head">'
                 '<h2 id="cases-title">Cases and exact changes</h2><p>Details behind each verdict</p></div>')
             for row in rows:
-                status = "As expected" if row.get("as_expected") else "Review"
+                status = row.get("attack_outcome") or ("Not applicable" if row["verdict"] == "Unsupported" else "As expected" if row.get("as_expected") else "Review")
                 report.append('<article class="case"><div class="case-head"><h3>' + html.escape(row["title"]) + '</h3>'
-                    f'<strong class="{"match" if row.get("as_expected") else "review"}">{status}</strong></div><p><strong>Change applied:</strong> '
+                    f'<strong class="{"match" if (not row["attack"]["succeeded"] if row.get("attack") else row.get("as_expected")) else "review"}">{status}</strong></div><p><strong>Change applied:</strong> '
                     + html.escape(row.get("change") or "none") + "</p>")
                 source = tampered.get(row["id"])
                 if source:
@@ -336,8 +354,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem}.case{padding:1
                     report.append(f'<p>Verify {html.escape(archived_inputs["original"]["path"])} with the recorded credentials.</p>')
                 elif row["id"] == "wrong_key" and "protected" in archived_inputs:
                     report.append('<p>Verify the protected file with a freshly generated, unrelated public key.</p>')
+                elif row["id"] in {"wrong_code", "wrong_passphrase"} and "protected" in archived_inputs:
+                    report.append('<p>Verify the protected file using a different valid recovery code or a different passphrase, as specified by this case.</p>')
                 elif row["id"] == "baseline" and "protected" in archived_inputs:
                     report.append('<p>Verify the protected file with the recorded credentials.</p>')
+                if row.get("attack"):
+                    report.append("<p>Attacker goal: " + html.escape(row["attack"]["goal"]) + "</p><p>Assumptions: " + html.escape(row["attack"]["assumption"]) + "</p>")
                 report.append("<p>Expected: " + html.escape(", ".join(row["expected"])) + "; observed: "
                     + html.escape(row["verdict"]) + "</p><p>" + html.escape(row["summary"]) + "</p>")
                 if row.get("stages"):
@@ -405,7 +427,11 @@ def _change_visible_text(carrier: str, method: str) -> str:
     raise ValueError("Carrier has no editable visible character")
 
 
-def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, completed, check):
+def _wrong_recovery_code(code: str) -> str:
+    return encode_recovery_code(bytes(value ^ 1 for value in decode_recovery_code(code)))
+
+
+def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, completed, check, suite="all"):
     key = load_verification_key(public_pem)
     rows, files = [], {}
     def case(ident, title, change, expected, result, summary, file=None):
@@ -415,6 +441,8 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
         row = {"id": ident, "title": title, "change": change, "expected": expected,
                "verdict": verdict, "summary": "; ".join(failures) or summary, "as_expected": verdict in expected, "file": file,
                "stages": [{"id": name, "status": stage["status"]} for name, stage in result.stages.items()]}
+        if suite == "attack":
+            attacks.describe_attack(row)
         rows.append(row)
         completed(row)
     baseline = verify_video(carrier, sidecar, code, key)
@@ -422,13 +450,26 @@ def _video_suite(carrier: bytes, sidecar: bytes, code: str, public_pem: bytes, c
          "All media verification stages passed" if baseline.overall.value == "Authentic" else "Baseline verification failed")
     if baseline.overall.value != "Authentic":
         return rows, files
-    _, unrelated_pem = generate_signing_keys()
-    other = load_verification_key(unrelated_pem)
-    wrong_key = verify_video(carrier, sidecar, code, other)
-    case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Signature Invalid"],
-         wrong_key, "Locator or record signature cannot verify")
+    if suite != "attack":
+        _, unrelated_pem = generate_signing_keys()
+        other = load_verification_key(unrelated_pem)
+        wrong_key = verify_video(carrier, sidecar, code, other)
+        case("wrong_key", "Wrong public key", "unrelated Ed25519 key", ["Signature Invalid"],
+             wrong_key, "Locator or record signature cannot verify")
+    if suite == "attack":
+        wrong_code = verify_video(carrier, sidecar, _wrong_recovery_code(code), key)
+        case("wrong_code", "Wrong recovery code", "different valid recovery code", ["Cannot Verify"],
+             wrong_code, "Recovery material cannot unlock the locator with this code")
     adapter = inspect_mp4(carrier) if is_mp4(carrier) else inspect_video(carrier)
     suffix = mp4_extension(carrier) if is_mp4(carrier) else ".avi"
+    if suite == "attack":
+        slots = np.frombuffer(adapter.slots(), dtype=np.uint8).copy()
+        slots[:] = (slots & 0xFE) | np.random.default_rng(2005).integers(0, 2, len(slots), dtype=np.uint8)
+        changed = adapter.export_slots(slots.tobytes())
+        files["lsb_noise"] = ("video_lsb_noise" + suffix, changed)
+        case("lsb_noise", "Hidden data destruction", "overwrite every frame slot's lowest bit without locating the payload",
+             ["Tampered"], verify_video(changed, sidecar, code, key), "Normal recovery rejects the destroyed package", "lsb_noise")
+        return rows, files
     secret = decode_recovery_code(code)
     salt, _, _, _ = _parse_sidecar(sidecar)
     locator = _decrypt_and_verify_locator(sidecar, derive_keys(secret, salt).locator, key)

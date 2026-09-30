@@ -112,6 +112,19 @@ it("keeps text test inputs separated and supports a public PEM upload", async ()
   await waitFor(() => expect(screen.getByLabelText("Ed25519 public key")).toHaveValue("-----BEGIN PUBLIC KEY-----\npublic\n-----END PUBLIC KEY-----"));
 });
 
+it("runs text attack credentials separately from text tamper cases", async () => {
+  vi.mocked(requestJson).mockImplementation(async (path) => path === "/api/jobs/text-tamper-tests"
+    ? {id: "attack"} as never : {status: "succeeded", phase: "complete", completed: 0, total: 3, cases: [], result: {cases: []}} as never);
+  render(<TextShowcase suite="attack" back={() => undefined} initialCarrier={new File(["carrier"], "carrier.txt")}
+    initialRecovery={new File(["recovery"], "recovery.stegloc-text")} initialCode="code" initialPublicKey="public" />);
+  expect(screen.getByRole("heading", {name: "Text attack simulations"})).toBeInTheDocument();
+  expect(screen.queryByText("Carrier edits")).toBeNull();
+  fireEvent.click(screen.getByRole("button", {name: "Run text attack simulations"}));
+  await waitFor(() => expect(screen.getByRole("heading", {name: "Test results"})).toBeInTheDocument());
+  const sent = vi.mocked(requestJson).mock.calls.find(([path]) => path === "/api/jobs/text-tamper-tests")?.[1]?.body as FormData;
+  expect(sent.get("suite")).toBe("attack");
+});
+
 it("loads a downloaded recovery code file into text tamper tests", async () => {
   render(<TextShowcase back={() => undefined} />);
   const codeFile = new File(["recovery-code"], "stegloc-recovery-code.txt", { type: "text/plain" });

@@ -103,7 +103,7 @@ it("shows the AVI result separately and downloads its recovery code", async () =
   fireEvent.click(screen.getByRole("button", {name: "Download recovery code"}));
   expect(download).toHaveBeenCalledWith("stegloc-recovery-code.txt", recoveryCode);
   expect(screen.getByLabelText("Recovery code (share separately)").closest(".field")).toBeInTheDocument();
-  for (const [label, page] of [["Verify it as the receiver would", "verify"], ["Inspect it for traces", "analyse"], ["Run the tamper tests", "attacks"]] as const) {
+  for (const [label, page] of [["Verify it as the receiver would", "verify"], ["Inspect it for traces", "analyse"], ["Run the tamper tests", "attacks"], ["Run attack simulations", "attack-tests"]] as const) {
     fireEvent.click(screen.getByRole("button", {name: label}));
     expect(goTo).toHaveBeenLastCalledWith(page);
   }

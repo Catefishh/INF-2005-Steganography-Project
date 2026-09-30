@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { requestJson, type Job } from "../api/jobs";
 import type { Scenario } from "../api";
 import { errorText } from "../util";
@@ -8,11 +8,14 @@ import { TamperSummary } from "../ui/TamperSummary";
 
 type Result = {cases: Scenario[]};
 
-export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryChange, onCodeChange, onPublicKeyChange, initialCarrier, initialRecovery, initialCode = "", initialPublicKey = ""}: {
+export function TextShowcase({back, backLabel = "Protect & verify", suite = "tamper", onWorkingFile, onCarrierChange, onRecoveryChange, onCodeChange, onPublicKeyChange, initialCarrier, initialRecovery, initialCode = "", initialPublicKey = ""}: {
   back: () => void; onWorkingFile?: (file: File | null) => void; initialCarrier?: File | null; initialRecovery?: File | null;
   onCarrierChange?: (file: File | null) => void; onRecoveryChange?: (file: File | null) => void; onCodeChange?: (value: string) => void; onPublicKeyChange?: (value: string) => void;
   initialCode?: string; initialPublicKey?: string;
+  suite?: "tamper" | "attack"; backLabel?: string;
 }) {
+  const attack = suite === "attack";
+  const codeId = useId();
   const [carrier, setCarrier] = useState<File | null>(initialCarrier && /\.txt$/i.test(initialCarrier.name) ? initialCarrier : null);
   const [recovery, setRecovery] = useState<File | null>(initialRecovery ?? null);
   const [recoveryCodeFile, setRecoveryCodeFile] = useState<File | null>(null);
@@ -43,6 +46,7 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
       await requestJson("/api/session", {method: "POST"});
       if (revision !== requestRevision.current) return;
       const form = new FormData(); form.append("public_key", publicKey);
+      form.append("suite", suite);
       if (carrier) form.append("carrier", carrier);
       if (recovery) form.append("recovery", recovery);
       form.append("recovery_code", code);
@@ -65,12 +69,12 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
   const ready = Boolean(publicKey && carrier && recovery && code);
   const planned = [
     { group: "Baseline", items: ["Unchanged carrier", "Original recovery materials"] },
-    { group: "Credential changes", items: ["Wrong recovery code", "Wrong public key"] },
-    { group: "Carrier edits", items: ["Remove or alter hidden characters", "Change visible carrier text"] },
+    attack ? { group: "Attacker objectives", items: ["Recover the message with one incorrect code guess", "Block recovery by damaging an encoded symbol"] }
+      : { group: "Carrier edits", items: ["Alter an encoded hidden symbol", "Edit visible wording outside authenticated scope", "Unrelated public key control"] },
   ];
   return <div className="form-column">
-    <button className="btn ghost sm" type="button" onClick={back}>Protect &amp; verify</button>
-    <section className="panel"><div className="panel-titles"><h2>Text tamper tests</h2><p>Run a predictable suite against the protected carrier. Each test uses a separate copy.</p></div>
+    <button className="btn ghost sm" type="button" onClick={back}>{backLabel}</button>
+    <section className="panel"><div className="panel-titles"><h2>{attack ? "Text attack simulations" : "Text tamper tests"}</h2><p>Run a predictable suite against the protected carrier. Each test uses a separate copy.</p></div>
       <div className="text-readiness"><strong>{ready ? "Inputs ready" : "Complete the inputs"}</strong><span>{carrier?.name ?? "Carrier not selected"} · {recovery?.name ?? "Recovery file not selected"}</span></div>
       <div className="tamper-checklist">
         {planned.map((section) => <div className="tamper-check-group" key={section.group}><h3>{section.group}</h3><ul>{section.items.map((item) => <li key={item}><span className="check-mark" aria-hidden="true">✓</span>{item}</li>)}</ul></div>)}
@@ -85,7 +89,7 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
             onFile={(file) => {invalidateRun(); setRecovery(file); onRecoveryChange?.(file);}} />
        </div>
          <div className="recovery-code-input">
-           <div className="field"><label htmlFor="text-showcase-code">Recovery code</label><input id="text-showcase-code" value={code} placeholder="Paste the code from the text protection step" onChange={(event) => {codeFileRevision.current++; invalidateRun(); setCode(event.target.value); onCodeChange?.(event.target.value);}} /><span className="field-hint">Keep this separate from the carrier and recovery file.</span></div>
+           <div className="field"><label htmlFor={codeId}>Recovery code</label><input id={codeId} value={code} placeholder="Paste the code from the text protection step" onChange={(event) => {codeFileRevision.current++; invalidateRun(); setCode(event.target.value); onCodeChange?.(event.target.value);}} /><span className="field-hint">Keep this separate from the carrier and recovery file.</span></div>
           <DropZone label="Recovery code file" title="Drop recovery-code.txt" hint="or click to upload the downloaded code" accept=".txt,text/plain" file={recoveryCodeFile}
             onFile={(file) => { const revision = ++codeFileRevision.current; invalidateRun(); setRecoveryCodeFile(file); if (!file) return;
               setCode(""); void file.text().then((value) => { if (revision !== codeFileRevision.current) return;
@@ -93,16 +97,17 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
         </div>
         <KeyField label="Ed25519 public key" value={publicKey} onChange={(value) => {invalidateRun(); setPublicKey(value); onPublicKeyChange?.(value);}}
          placeholder="-----BEGIN PUBLIC KEY----- (load sender.pem or paste it)" />
-       <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}>{busy ? "Running the tests…" : "Run text tamper tests"}</button>
+       <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}>{busy ? "Running the tests…" : attack ? "Run text attack simulations" : "Run text tamper tests"}</button>
       {error && <p role="alert">{error}</p>}
     </section>
-    {rows.length > 0 && <TamperSummary cases={rows} busy={busy} />}
+    {rows.length > 0 && <TamperSummary cases={rows} busy={busy} suite={suite} />}
     {jobId && <section className="panel"><h2>Test results</h2><p role="status">{phase}: {progress.completed} of {progress.total} completed</p>
       {busy && <button className="btn ghost" type="button" onClick={() => void requestJson(`/api/jobs/${encodeURIComponent(jobId)}`, {method: "DELETE"})}>Cancel suite</button>}
       <a className="btn ghost" href={`/api/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-text-evidence.zip">Download evidence ZIP</a>
-        <div className="text-test-results">{rows.map((row) => <details className={`text-test-result ${row.as_expected ? "passed" : "failed"}`} key={row.id}>
-          <summary><span>{row.as_expected ? "✓" : "!"}</span><b>{row.title}</b><em>{row.as_expected ? "As expected" : "Unexpected"}</em><strong>{row.verdict}</strong></summary>
+        <div className="text-test-results">{rows.map((row) => <details className={`text-test-result ${(attack && row.attack ? !row.attack.succeeded : row.as_expected) ? "passed" : "failed"}`} key={row.id}>
+          <summary><span>{row.as_expected ? "✓" : "!"}</span><b>{row.title}</b><em>{attack ? row.attack_outcome : row.as_expected ? "As expected" : "Unexpected"}</em><strong>{row.verdict}</strong></summary>
           <div className="text-test-detail">
+            {row.attack && <><p>Attacker goal: {row.attack.goal}</p><p>Assumptions: {row.attack.assumption}</p></>}
             <div className="result-detail-grid">
               <section><span className="result-detail-label">Change applied</span><p>{row.change || "No changes made; this is the untouched baseline."}</p></section>
               <section><span className="result-detail-label">Expected outcome</span><p>{row.expected.join(" or ")}</p></section>

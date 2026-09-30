@@ -16,7 +16,9 @@ it("reports the actual baseline failure, excluding passed and skipped checks", (
   expect(table).not.toHaveTextContent("Signature");
   expect(table).not.toHaveTextContent("Cover SHA-256");
   expect(table).toHaveTextContent("Tampered; expected Authentic");
-  expect(table).toHaveTextContent("Test failed");
+  expect(table).toHaveTextContent("Unexpected");
+  expect(table).toHaveTextContent("Verification: Rejected");
+  expect(screen.getByText("Unexpected")).toHaveClass("attack-bad");
   const reason = screen.getByText(baseline.summary);
   const toggle = within(table).getByRole("button", {name: "Reasoning"});
   expect(reason.closest(".disclose-body")).toHaveAttribute("hidden");
@@ -42,18 +44,27 @@ it("separates expected rejections from missed tampering and ignores unsupported 
       as_expected: true, stages: undefined, summary: "Invalid recovery code"},
     {...baseline, id: "unsupported", title: "Not applicable", verdict: "Unsupported"},
   ]} />);
-  expect(screen.getByText("4 applicable cases completed · Verification: 2 passed · 2 failed")).toBeInTheDocument();
+  expect(screen.getByText("4 applicable cases completed · 3 as expected · 1 unexpected")).toBeInTheDocument();
+  expect(screen.getByText("Verification: 2 accepted · 2 rejected")).toBeInTheDocument();
   const table = screen.getByRole("table", {name: "Verification results by test case"});
   const unchanged = within(table).getByRole("rowheader", {name: /Unmodified stego file/}).closest("tr")!;
-  expect(unchanged).toHaveTextContent("Test passed");
+  expect(unchanged).toHaveTextContent("As expected");
+  expect(unchanged).toHaveTextContent("Verification: Accepted");
+  expect(unchanged).not.toHaveClass("mismatch");
   expect(table).not.toHaveTextContent("Not applicable");
   const rejected = within(table).getByRole("rowheader", {name: /Cover edited/}).closest("tr")!;
   expect(rejected).toHaveTextContent("Carrier SHA-256");
-  expect(rejected).toHaveTextContent("Test failed");
+  expect(rejected).toHaveTextContent("As expected");
+  expect(rejected).toHaveTextContent("Verification: Rejected");
+  expect(rejected).not.toHaveClass("mismatch");
+  expect(within(rejected).getByText("As expected")).toHaveClass("attack-ok");
   expect(rejected).toHaveTextContent("The observed verdict matches this scenario's expected outcome.");
   const missed = within(table).getByRole("rowheader", {name: /Missed edit/}).closest("tr")!;
   expect(missed).toHaveTextContent("None — verification passed");
-  expect(missed).toHaveTextContent("Test passed");
+  expect(missed).toHaveTextContent("Unexpected");
+  expect(missed).toHaveTextContent("Verification: Accepted");
+  expect(missed).toHaveClass("mismatch");
+  expect(within(missed).getByText("Unexpected")).toHaveClass("attack-bad");
   expect(missed).toHaveTextContent("The observed verdict does not match this scenario's expected outcome.");
   expect(within(missed).getByRole("button", {name: "Reasoning"})).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(within(rejected).getByRole("button", {name: "Reasoning"}));
@@ -67,8 +78,9 @@ it("separates expected rejections from missed tampering and ignores unsupported 
 it("does not imply a running or successful baseline completed the full suite", () => {
   render(<TamperSummary cases={[{...baseline, verdict: "Authentic", as_expected: true, stages: []}]} busy />);
   expect(screen.getByText(/1 applicable case completed.*Running/)).toBeInTheDocument();
-  expect(screen.getByText(/1 applicable case completed · Verification: 1 passed · 0 failed/)).toBeInTheDocument();
-  expect(screen.getByRole("table", {name: "Verification results by test case"})).toHaveTextContent("Test passed");
+  expect(screen.getByText(/1 applicable case completed · 1 as expected · 0 unexpected/)).toBeInTheDocument();
+  expect(screen.getByText("Verification: 1 accepted · 0 rejected")).toBeInTheDocument();
+  expect(screen.getByRole("table", {name: "Verification results by test case"})).toHaveTextContent("As expected");
 });
 
 it("explains that substituted keys and the original reference do not invalidate the workspace baseline", () => {
@@ -83,11 +95,13 @@ it("explains that substituted keys and the original reference do not invalidate 
   const workspace = within(table).getByRole("rowheader", {name: /Unmodified stego file/}).closest("tr")!;
   const keyCase = within(table).getByRole("rowheader", {name: /Wrong public key/}).closest("tr")!;
   const reference = within(table).getByRole("rowheader", {name: /Original cover reference/}).closest("tr")!;
-  expect(workspace).toHaveTextContent("Test passed");
-  expect(keyCase).toHaveTextContent("Test failed");
+  expect(workspace).toHaveTextContent("Verification: Accepted");
+  expect(keyCase).toHaveTextContent("Verification: Rejected");
+  expect(keyCase).toHaveTextContent("As expected");
+  expect(reference).toHaveTextContent("Unexpected");
   fireEvent.click(within(keyCase).getByRole("button", {name: "Reasoning"}));
   expect(keyCase).toHaveTextContent("instead of using your selected sender key");
-  expect(keyCase).toHaveTextContent("successful detection");
+  expect(keyCase).toHaveTextContent("Verification rejected these test inputs as intended");
   fireEvent.click(within(reference).getByRole("button", {name: "Reasoning"}));
   expect(reference).toHaveTextContent("separately supplied original cover");
   expect(reference).toHaveTextContent("Payload Missing is expected only for an unsigned original");
@@ -96,10 +110,30 @@ it("explains that substituted keys and the original reference do not invalidate 
 });
 
 it.each(["Signature Invalid", "Tampered", "Payload Missing", "Cannot Verify", "Wrong Start Location"] as const)(
-  "%s fails verification even when the controlled scenario behaved as expected", (verdict) => {
+  "%s is an expected rejection when the controlled scenario behaved as expected", (verdict) => {
     render(<TamperSummary cases={[{...baseline, id: "negative", expected: [verdict], verdict, as_expected: true}]} busy={false} />);
     const table = screen.getByRole("table", {name: "Verification results by test case"});
-    expect(table).toHaveTextContent("Test failed");
+    expect(table).toHaveTextContent("As expected");
+    expect(table).toHaveTextContent("Verification: Rejected");
+    expect(table).not.toHaveTextContent("Test failed");
     expect(table).not.toHaveTextContent("Test passed");
-    expect(screen.getByText(/Verification: 0 passed · 1 failed/)).toBeInTheDocument();
+    expect(screen.getByText(/1 applicable case completed · 1 as expected · 0 unexpected/)).toBeInTheDocument();
+    expect(screen.getByText("Verification: 0 accepted · 1 rejected")).toBeInTheDocument();
   });
+
+
+it("judges attacker goals separately and excludes baseline and unsupported cases", () => {
+  render(<TamperSummary suite="attack" busy={false} cases={[
+    {...baseline, verdict: "Authentic", as_expected: true, attack_outcome: "Baseline verified"},
+    {...baseline, id: "lsb_noise", attack_outcome: "Attack succeeded", attack: {goal: "Block recovery", assumption: "No secret", succeeded: true}},
+    {...baseline, id: "forged_payload", attack_outcome: "Attack failed", attack: {goal: "Forge content", assumption: "Leaked password", succeeded: false}},
+    {...baseline, id: "skip", verdict: "Unsupported", attack_outcome: "Not applicable"},
+  ]} />);
+  expect(screen.getByText("2 attacks completed · 1 succeeded · 1 failed")).toBeInTheDocument();
+  expect(screen.getByText("Attack succeeded")).toHaveClass("attack-bad");
+  expect(screen.getByText("Attack failed")).toHaveClass("attack-ok");
+  expect(screen.getByText("Baseline verified")).toBeInTheDocument();
+  expect(screen.queryByText("Test failed")).toBeNull();
+  expect(screen.queryByText("As expected")).toBeNull();
+  expect(screen.queryByText(/^Verification:/)).toBeNull();
+});
