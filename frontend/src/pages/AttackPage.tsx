@@ -109,12 +109,12 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     if (recovery) form.append("recovery", recovery);
     if (recoveryCode) form.append("recovery_code", recoveryCode);
     try {
-      await requestJson("/api/v2/session", { method: "POST" });
-      const started = await requestJson<Job<{cases: Scenario[]}>>("/api/v4/jobs/showcase", { method: "POST", body: form });
+      await requestJson("/api/session", { method: "POST" });
+      const started = await requestJson<Job<{cases: Scenario[]}>>("/api/jobs/tamper-tests", { method: "POST", body: form });
       if (requestId !== requestRevision.current) return;
       setJobId(started.id);
       for (let attempt = 0; attempt < 1200; attempt++) {
-        const state = await requestJson<Job<{cases: Scenario[]}> & {cases: Scenario[]; total: number}>(`/api/v2/jobs/${encodeURIComponent(started.id)}`);
+        const state = await requestJson<Job<{cases: Scenario[]}> & {cases: Scenario[]; total: number}>(`/api/jobs/${encodeURIComponent(started.id)}`);
         if (requestId !== requestRevision.current) return;
         setJobPhase(state.phase); setJobTotal(state.total); setScenarios(state.cases);
         if (state.status === "succeeded") {
@@ -247,8 +247,9 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
         {busy ? `Running ${jobPhase}: ${scenarios?.length ?? 0} of ${jobTotal || "?"} cases complete.` : ""}
       </p>
 
-      {busy && jobId && <button type="button" className="btn ghost" onClick={() => void requestJson(`/api/v2/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" })}>Cancel suite</button>}
-      {jobId && <a className="btn ghost" href={`/api/v4/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-v4-evidence.zip">Download evidence ZIP</a>}
+      {busy && jobId && <button type="button" className="btn ghost" onClick={() => void requestJson(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" })}>Cancel suite</button>}
+      {jobId && <div className="evidence-download"><a className="btn ghost" href={`/api/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-evidence.zip">Download evidence ZIP</a>
+        <p className="field-hint">ZIP includes supplied files, public key, and {isVideo ? "recovery code" : "passphrase"}.{!cover && " Add the original file to include it."}</p></div>}
 
       {scenarios && scenarios.length > 0 && (
         <>

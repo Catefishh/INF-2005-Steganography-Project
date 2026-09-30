@@ -12,7 +12,7 @@ from backend.app.stego.covers import CoverError
 from backend.app.stego import engine
 from backend.app.stego.security import generate_rsa_keys
 from backend.app.stego.security import decrypt, derive_keys, encrypt, sign_digest
-from backend.app.stego.legacy_record import _pack, _unpack, canonical_json
+from backend.app.stego.lsb_record import _pack, _unpack, canonical_json
 
 
 def image_bytes(pixels):

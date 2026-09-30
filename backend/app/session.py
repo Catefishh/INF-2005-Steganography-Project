@@ -32,6 +32,7 @@ class Job:
     error: dict | None = None
     cases: list[dict] = field(default_factory=list)
     total_cases: int = 0
+    evidence: dict | None = field(default=None, repr=False)
     cancel: threading.Event = field(default_factory=threading.Event)
 
 

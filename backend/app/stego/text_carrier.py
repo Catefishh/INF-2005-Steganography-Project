@@ -1,4 +1,4 @@
-"""Text carrier encoding and extraction for the independent V3 format."""
+"""Text carrier encoding and extraction for the independent text format."""
 import struct
 
 MAGIC = b"STXT3"
@@ -19,7 +19,7 @@ def _from_bits(bits: str) -> bytes:
 
 def _frame_length(data: bytes) -> int:
     if len(data) < 9 or data[:5] != MAGIC:
-        raise ValueError("Text carrier has no v3 message frame")
+        raise ValueError("Text carrier has no text message frame")
     length = struct.unpack(">I", data[5:9])[0]
     if not 45 <= length <= MAX_CARRIER or len(data) != 9 + length:
         raise ValueError("Text carrier frame is truncated or has extra symbols")

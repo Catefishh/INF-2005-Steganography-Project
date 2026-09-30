@@ -153,7 +153,7 @@ it("offers the six active destinations, each with its own heading", async () => 
   }
   // Screens stay mounted so a file and a password survive the walk between them.
   expect(document.querySelectorAll(".main > div")).toHaveLength(6);
-  expect(document.querySelector('#rail-nav a[href="/v2"]')).toBeNull();
+  expect(document.querySelectorAll("#rail-nav a")).toHaveLength(6);
 });
 
 it("keys: generates a pair, then guards replacing it", async () => {
@@ -666,8 +666,8 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
     {id: "wrong_key", title: "Wrong public key", change: "Use an unrelated key.", expected: ["Signature Invalid"],
       verdict: "Signature Invalid", summary: "Signature rejected.", as_expected: true, file: null}];
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
-    if (path === "/api/v2/session") return {status: "ready"} as never;
-    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    if (path === "/api/session") return {status: "ready"} as never;
+    if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
     return {status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}} as never;
   });
   await appWithKeys();
@@ -692,7 +692,7 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("Nothing changed");
   expect(within(view()).getByRole("table", {name: "Selected test cases"})).not.toHaveTextContent("One bit changed outside the hidden data");
   fireEvent.click(within(view()).getByRole("checkbox", {name: "Modified-file examples"}));
-  const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/v4/jobs/showcase")?.[1]?.body as FormData;
+  const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/jobs/tamper-tests")?.[1]?.body as FormData;
   expect(sent.get("stego")).toBeInstanceOf(File);
   expect(sent.has("payload")).toBe(false);
   expect(sent.has("private_key")).toBe(false);
@@ -714,8 +714,8 @@ it("tester: shows the failure details when the original is not genuine", async (
   const cases = [{id: "baseline", title: "Nothing changed", change: "The untouched file.",
     expected: ["Authentic"], verdict: "Cannot Verify", summary: "No valid payload.", as_expected: false, file: null}];
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
-    if (path === "/api/v2/session") return {status: "ready"} as never;
-    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    if (path === "/api/session") return {status: "ready"} as never;
+    if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
     return {status: "succeeded", phase: "complete", total: 1, cases, result: {cases}} as never;
   });
   await appWithKeys();
@@ -731,8 +731,8 @@ it("tester: shows the failure details when the original is not genuine", async (
 it("tester: identifies the unchanged file handed off by Embed & Sign", async () => {
   const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
-    if (path === "/api/v2/session") return {status: "ready"} as never;
-    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    if (path === "/api/session") return {status: "ready"} as never;
+    if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
     return {status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}} as never;
   });
   const stego = new File(["protected"], "protected.png");
@@ -784,8 +784,8 @@ it.each(["Protected file", "Original cover"])("tester: changing %s drops an in-f
   const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
   let finish!: (value: unknown) => void;
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
-    if (path === "/api/v2/session") return {status: "ready"} as never;
-    if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+    if (path === "/api/session") return {status: "ready"} as never;
+    if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
     return await new Promise((resolve) => { finish = resolve; });
   });
   await appWithKeys();

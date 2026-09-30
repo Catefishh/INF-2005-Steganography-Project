@@ -1,4 +1,4 @@
-/** Legacy HTTP calls; V2/V3 request helpers live in api/. */
+/** Image/audio HTTP calls; media recovery and text helpers live in api/. */
 export type { VerdictName, EmbeddingMethod, Location, CoverInfo, StoredFile, SignedRecord, LectureRow,
   HideStep, HideReport, HideResponse, VerifyStep, VerifyResponse, Analysis, Scenario,
   KeyInfo, BpcsConfig, BpcsMetrics, BpcsResult, ChiSquareDetails, ChiSquareSegment } from "./api/types";
@@ -51,12 +51,12 @@ export const api = {
   probeMedia(file: File) {
     const form = new FormData(); form.append("file", file, file.name);
     return postForm<{kind: string; native_video: boolean; detected_extension: string; duration: number;
-      streams: {type: string; codec: string; width?: number; height?: number}[]}>("/api/v4/media/probe", form);
+      streams: {type: string; codec: string; width?: number; height?: number}[]}>("/api/media/probe", form);
   },
   prepareMedia(file: File, options: {start: number; duration: number; fps: number; max_width: number; max_height: number}) {
     const form = new FormData(); form.append("file", file, file.name);
     for (const [name, value] of Object.entries(options)) form.append(name, String(value));
-    return postForm<{file: StoredFile; kind: string; conversion: {output_format: string}}>("/api/v4/media/prepare", form);
+    return postForm<{file: StoredFile; kind: string; conversion: {output_format: string}}>("/api/media/prepare", form);
   },
   inspect(file: File) {
     const form = new FormData();

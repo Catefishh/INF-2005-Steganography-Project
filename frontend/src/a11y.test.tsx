@@ -195,8 +195,8 @@ describe("every screen — labels, busy state and heading order", () => {
 
   it("Tamper tests, including the result", async () => {
     vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
-      if (path === "/api/v2/session") return {status: "ready"} as never;
-      if (path === "/api/v4/jobs/showcase") return {id: "job1"} as never;
+      if (path === "/api/session") return {status: "ready"} as never;
+      if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
       return {status: "succeeded", phase: "complete", total: 1, cases: SCENARIOS, result: {cases: SCENARIOS}} as never;
     });
     render(<AttackPage vault={VAULT} handoff={null} goTo={() => undefined} />);

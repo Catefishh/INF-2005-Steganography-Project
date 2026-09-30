@@ -1,4 +1,4 @@
-# DCT PNG format (version 1)
+# DCT PNG format
 
 Stegloc's DCT option accepts an image, decodes its first frame as RGB or RGBA, and writes a PNG of the same dimensions. Each complete 8×8 RGB channel block carries one bit. Blocks run row by row, with R, G, B within each block. Incomplete right and bottom edges and all alpha bytes are preserved.
 

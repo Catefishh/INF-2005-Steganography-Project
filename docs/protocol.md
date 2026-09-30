@@ -1,6 +1,6 @@
 # Stegloc embedding format (`stegloc/2`)
 
-This is the exact legacy format implemented in `backend/app/stego/legacy_record.py`, `legacy_embed.py` and `legacy_verify.py`. `engine.py` keeps the original import path. All integers are unsigned big-endian.
+This is the exact spatial LSB format implemented in `backend/app/stego/lsb_record.py`, `lsb_embed.py` and `lsb_verify.py`. `engine.py` keeps the original import path. All integers are unsigned big-endian.
 
 ## Slots
 

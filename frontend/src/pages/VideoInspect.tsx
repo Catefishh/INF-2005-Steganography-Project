@@ -27,7 +27,7 @@ export function VideoInspect({ file, reference, onFile, onReference }: {
     const form = new FormData(); form.append("file", file);
     if (reference) form.append("reference", reference);
     form.append("frame", String(frame));
-    requestJson<Comparison>("/api/v4/video/compare", {method: "POST", body: form})
+    requestJson<Comparison>("/api/video/compare", {method: "POST", body: form})
       .then((value) => {if (live) setResult(value);})
       .catch((cause) => {if (live) setError(errorText(cause));})
       .finally(() => {if (live) setBusy(false);});

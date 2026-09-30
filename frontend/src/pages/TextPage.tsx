@@ -31,14 +31,14 @@ export function TextPage() {
 
   async function session() {
     if (sessionReady.current) return;
-    await request("/api/v2/session", { method: "POST" });
+    await request("/api/session", { method: "POST" });
     sessionReady.current = true;
   }
   async function keys() {
     setError("");
     try {
       const form = new FormData(); form.append("password", password);
-      const pair = await request<{ private_key: string; public_key: string }>("/api/v2/keys/generate", { method: "POST", body: form });
+      const pair = await request<{ private_key: string; public_key: string }>("/api/signing-keys/generate", { method: "POST", body: form });
       setPrivateKey(pair.private_key); setPublicKey(pair.public_key);
     } catch (cause) { setError(errorText(cause)); }
   }
@@ -47,7 +47,7 @@ export function TextPage() {
     setError("");
     try {
       const form = new FormData(); form.append("message", message); form.append("method", method); form.append("visible", visible);
-      const next = await request<typeof estimate>("/api/v3/text/estimate", { method: "POST", body: form });
+      const next = await request<typeof estimate>("/api/text/estimate", { method: "POST", body: form });
       if (revision === estimateRevision.current) setEstimate(next);
     } catch (cause) { if (revision === estimateRevision.current) setError(errorText(cause)); }
   }
@@ -64,7 +64,7 @@ export function TextPage() {
       await session();
       const form = new FormData();
       for (const [name, value] of Object.entries({ message, method, visible, private_key: privateKey, key_password: password })) form.append(name, value);
-      const result = await runJob<Protected>("/api/v3/jobs/text/protect", form, setStatus);
+      const result = await runJob<Protected>("/api/jobs/text/protect", form, setStatus);
       setProtected(result); setCode(result.recovery_code);
       const produced = await generatedText(result.carrier.id);
       setCarrier(produced);
@@ -84,7 +84,7 @@ export function TextPage() {
       form.append("carrier", new File([carrier], "carrier.txt", { type: "text/plain" }));
       form.append("recovery", recovery);
       form.append("recovery_code", code); form.append("public_key", publicKey);
-      setVerified(await runJob<Verified>("/api/v3/jobs/text/verify", form, setStatus));
+      setVerified(await runJob<Verified>("/api/jobs/text/verify", form, setStatus));
     } catch (cause) { setError(errorText(cause)); }
     finally { setStatus(""); }
   }

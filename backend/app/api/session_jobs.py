@@ -1,4 +1,4 @@
-"""Shared V2/V3 upload limits, session checks, and cancellable jobs."""
+"""Shared media/text upload limits, session checks, and cancellable jobs."""
 from __future__ import annotations
 import secrets
 import threading
@@ -10,18 +10,18 @@ from ..stego.carriers.audio import AudioError
 from ..stego.carriers.image import ImageError
 from ..stego.carriers.video import VideoError
 from ..stego.lsb import CapacityError
-from ..stego.v2_security import RecoveryError
+from ..stego.recovery_security import RecoveryError
 
-MAX_V2_UPLOAD = 200 * 1024 * 1024
+MAX_MEDIA_UPLOAD = 200 * 1024 * 1024
 
 
-async def _read(upload: UploadFile, label: str, limit: int = MAX_V2_UPLOAD) -> bytes:
+async def _read(upload: UploadFile, label: str, limit: int = MAX_MEDIA_UPLOAD) -> bytes:
     total = 0
     with SpooledTemporaryFile(max_size=2 * 1024 * 1024) as staged:
         while part := await upload.read(1024 * 1024):
             total += len(part)
             if total > limit:
-                raise HTTPException(413, f"{label} exceeds the {limit // (1024 * 1024)} MiB v2 input limit")
+                raise HTTPException(413, f"{label} exceeds the {limit // (1024 * 1024)} MiB media input limit")
             staged.write(part)
         staged.seek(0)
         return staged.read()
@@ -31,7 +31,7 @@ def _session(request: Request):
     _check_origin(request)
     token = request.headers.get("X-Session-Token") or request.cookies.get("stegloc_session")
     if not token or token not in request.app.state.registry.sessions:
-        raise HTTPException(401, "start a v2 session first")
+        raise HTTPException(401, "start a media session first")
     _, session = request.app.state.registry.session(token)
     return token, session
 
@@ -40,7 +40,7 @@ def _check_origin(request: Request) -> None:
     if request.method in {"GET", "HEAD"}:
         return
     origin = request.headers.get("origin")
-    if origin and origin not in {str(request.base_url).rstrip("/"), *request.app.state.allowed_v2_origins}:
+    if origin and origin not in {str(request.base_url).rstrip("/"), *request.app.state.allowed_origins}:
         raise HTTPException(403, "Origin not allowed")
 
 
@@ -55,7 +55,7 @@ def _launch(request: Request, operation: str, work):
     token, session = _session(request)
     with session.lock:
         if session.active_job is not None:
-            raise HTTPException(409, "another v2 job is active in this session")
+            raise HTTPException(409, "another media job is active in this session")
         ident = secrets.token_urlsafe(18)
         job = Job(token)
         session.jobs[ident] = job
@@ -102,5 +102,5 @@ def _launch(request: Request, operation: str, work):
                 session.active_job = None
             request.app.state.registry.end_operation(session)
 
-    threading.Thread(target=run, daemon=True, name=f"stegloc-v2-{operation}").start()
+    threading.Thread(target=run, daemon=True, name=f"stegloc-media-{operation}").start()
     return _job_info(ident, job)

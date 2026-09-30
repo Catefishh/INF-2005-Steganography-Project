@@ -12,11 +12,11 @@ it("reports a text job's phase and returns its result", async () => {
   fetch.mockResolvedValueOnce(response({ id: "a/b", status: "queued", phase: "queued", result: null, error: null }));
   fetch.mockResolvedValueOnce(response({ id: "a/b", status: "succeeded", phase: "complete", result: { file: "ready" }, error: null }));
   const phases: string[] = [];
-  const result = await runTextJob<{ file: string }>("/api/v3/jobs/text/protect", new FormData(),
+  const result = await runTextJob<{ file: string }>("/api/jobs/text/protect", new FormData(),
     (phase) => phases.push(phase));
   expect(result.file).toBe("ready");
   expect(phases).toEqual(["complete"]);
-  expect(fetch.mock.calls[1][0]).toBe("/api/v2/jobs/a%2Fb");
+  expect(fetch.mock.calls[1][0]).toBe("/api/jobs/a%2Fb");
 });
 
 it("reports cancellation and text job failure reasons", async () => {
@@ -30,7 +30,7 @@ it("reports cancellation and text job failure reasons", async () => {
   fetch.mockResolvedValueOnce(response({ id: "text", status: "queued", phase: "queued", result: null, error: null }));
   fetch.mockResolvedValueOnce(response({ id: "text", status: "failed", phase: "failed", result: null,
     error: { message: "invalid recovery" } }));
-  await expect(runTextJob("/api/v3/jobs/text/verify", new FormData(), () => undefined))
+  await expect(runTextJob("/api/jobs/text/verify", new FormData(), () => undefined))
     .rejects.toThrow("invalid recovery");
 });
 

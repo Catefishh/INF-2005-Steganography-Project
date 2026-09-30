@@ -259,7 +259,7 @@ def test_record_accepts_documented_maximum_field_bounds() -> None:
     assert parse_record(serialize_record(record)) == record
 
 
-def test_v1_content_and_aggregate_envelope_limits_are_100_mib() -> None:
+def test_protocol_content_and_aggregate_envelope_limits_are_100_mib() -> None:
     from backend.app.stego.protocol import (
         MAX_ENCRYPTED_ENVELOPE_BYTES,
         MAX_SIGNED_PACKAGE_BYTES,
@@ -301,7 +301,7 @@ def test_record_rejects_over_bounds_and_noncanonical_fixed_width_values(change) 
     "change,match",
     [
         (lambda r: r.__setitem__("extra", True), "fields"),
-        (lambda r: r.__setitem__("protocol", "stegloc-v2"), "protocol"),
+        (lambda r: r.__setitem__("protocol", "stegloc-media"), "protocol"),
         (lambda r: r.__setitem__("hash_algorithm", "sha512"), "hash"),
         (lambda r: r.__setitem__("signature_algorithm", "rsa"), "signature"),
         (lambda r: r.__setitem__("media_id", 3), "media_id"),
@@ -333,7 +333,7 @@ def test_locator_serialization_is_bounded_deterministic_and_strict() -> None:
 
     for change in (
         lambda value: value.__setitem__("extra", "no"),
-        lambda value: value.__setitem__("protocol", "stegloc-v2"),
+        lambda value: value.__setitem__("protocol", "stegloc-media"),
         lambda value: value.__setitem__("depth", "00"),
         lambda value: value.__setitem__("encrypted_package_sha256", "FF" * 32),
     ):

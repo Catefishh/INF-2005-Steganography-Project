@@ -60,9 +60,9 @@ it("offers AVI preparation if a native container cannot be decoded", async () =>
 it("shows the AVI result separately and downloads its recovery code", async () => {
   const recoveryCode = "separate-recovery-code";
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
-    if (path === "/api/v2/estimate") return {total_bytes: 200, maximum_message_bytes: 1000, fits_at_selected_start: true} as never;
-    if (path === "/api/v2/keys/generate") return {private_key: "private", public_key: "public"} as never;
-    if (path === "/api/v2/jobs/protect") return {id: "job"} as never;
+    if (path === "/api/media/estimate") return {total_bytes: 200, maximum_message_bytes: 1000, fits_at_selected_start: true} as never;
+    if (path === "/api/signing-keys/generate") return {private_key: "private", public_key: "public"} as never;
+    if (path === "/api/jobs/media/protect") return {id: "job"} as never;
     return {} as never;
   });
   vi.spyOn(jobs, "pollJob").mockResolvedValue({
@@ -94,7 +94,7 @@ it("shows the AVI result separately and downloads its recovery code", async () =
   fireEvent.click(screen.getByRole("button", {name: "Embed in AVI"}));
   await waitFor(() => expect(screen.getByRole("heading", {name: "Video protected"})).toBeInTheDocument());
   expect(handoff).toHaveBeenCalledWith(expect.objectContaining({
-    protocol: "v2-video", recoveryCode, publicPem: "public",
+    protocol: "video", recoveryCode, publicPem: "public",
     stego: expect.objectContaining({name: "protected.avi"}),
     recovery: expect.objectContaining({name: "recovery.stegloc"}),
   }));
@@ -114,14 +114,14 @@ it("shows the AVI result separately and downloads its recovery code", async () =
 it("clears an AVI verification when its recovery code changes mid-request", async () => {
   let finish!: (value: never) => void;
   const pending = new Promise<never>((resolve) => { finish = resolve; });
-  vi.spyOn(jobs, "requestJson").mockImplementation((path) => path === "/api/v2/session"
+  vi.spyOn(jobs, "requestJson").mockImplementation((path) => path === "/api/session"
     ? Promise.resolve({status: "ready"} as never) : pending);
-  render(<VideoVerify showResult={false} onShowResult={() => undefined} handoff={{id: "1", protocol: "v2-video", stego: new File(["avi"], "protected.avi"), cover: null,
+  render(<VideoVerify showResult={false} onShowResult={() => undefined} handoff={{id: "1", protocol: "video", stego: new File(["avi"], "protected.avi"), cover: null,
     recovery: new File(["recovery"], "recovery.stegloc"), recoveryCode: "first",
     publicPem: "public key", passphrase: "", serial: 1}} />);
 
   fireEvent.click(screen.getByRole("button", {name: "Extract and verify"}));
-  await waitFor(() => expect(jobs.requestJson).toHaveBeenCalledWith("/api/v4/video/verify", expect.anything()));
+  await waitFor(() => expect(jobs.requestJson).toHaveBeenCalledWith("/api/video/verify", expect.anything()));
   fireEvent.change(screen.getByLabelText("Recovery code"), {target: {value: "second"}});
   expect(screen.queryByText("Verifying video")).toBeNull();
   expect(screen.getByRole("button", {name: "Extract and verify"})).toBeEnabled();
@@ -131,11 +131,11 @@ it("clears an AVI verification when its recovery code changes mid-request", asyn
 });
 
 it("loads a recovery code file and verifies the AVI with its contents", async () => {
-  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => path === "/api/v4/video/verify"
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => path === "/api/video/verify"
     ? {verdict: "Authentic", stages: {signature: {status: "passed", evidence: "valid", reason: ""}},
       content: null, payload_hash: {algorithm: "SHA-256", scope: "payload", expected: "a", computed: "a", status: "match", expected_trusted: true}} as never
     : {} as never);
-  const handoff = {id: "file", protocol: "v2-video" as const, stego: new File(["avi"], "protected.avi"), cover: null,
+  const handoff = {id: "file", protocol: "video" as const, stego: new File(["avi"], "protected.avi"), cover: null,
     recovery: new File(["recovery"], "recovery.stegloc"), recoveryCode: "",
     publicPem: "public key", passphrase: "", serial: 1};
   function Page() {
@@ -152,7 +152,7 @@ it("loads a recovery code file and verifies the AVI with its contents", async ()
   expect(screen.getByLabelText("Recovery code").closest(".field")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", {name: "Extract and verify"}));
   await waitFor(() => expect(screen.getByRole("heading", {name: "This file is genuine"})).toBeInTheDocument());
-  const submitted = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/v4/video/verify")?.[1]?.body as FormData;
+  const submitted = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/video/verify")?.[1]?.body as FormData;
   expect(submitted.get("recovery_code")).toBe("code from file");
   expect(screen.getByRole("button", {name: /What was checked/})).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", {name: "Change and check again"}));

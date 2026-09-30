@@ -63,7 +63,7 @@ export default function App() {
   function replaceWorkingFile(file: File | null) {
     const video = /\.(avi|mp4|mov|mkv|webm|flv|wmv|3gp|m4v)$/i.test(file?.name ?? "");
     setHandoff(file ? { id: crypto.randomUUID(), origin: "manual", stego: file, cover: null,
-      protocol: video ? "v2-video" : "legacy", passphrase: "", publicPem: video ? "" : vault.publicPem,
+      protocol: video ? "video" : "image-audio", passphrase: "", publicPem: video ? "" : vault.publicPem,
       serial: Date.now() } : null);
     if (!file) setWorkspaceEpoch((value) => value + 1);
     if (!file) { embedAvailable.current = false; lastEmbedView.current = "form"; }

@@ -8,7 +8,7 @@ import { CharacterChanges } from "./text/CharacterChanges";
 import type { Scenario } from "../api";
 
 vi.mock("../api/jobs", () => ({
-  requestJson: vi.fn(), runTextJob: vi.fn(), artifactUrl: (id: string) => `/api/v2/artifacts/${id}`,
+  requestJson: vi.fn(), runTextJob: vi.fn(), artifactUrl: (id: string) => `/api/artifacts/${id}`,
 }));
 vi.mock("../api/text", () => ({ generatedText: vi.fn(), recoveryFile: vi.fn() }));
 
@@ -95,7 +95,7 @@ it("loads a downloaded recovery code file into text tamper tests", async () => {
 it("renders in-depth tamper evidence when a result is returned", async () => {
   const scenario: Scenario = { id: "baseline", title: "Nothing changed", change: "The carrier was not edited.", expected: ["Authentic"], verdict: "Authentic", summary: "Signature and payload checks passed.", as_expected: true, file: null, elapsed_ms: 18, stages: [{ id: "extract", status: "passed" }, { id: "signature", status: "passed" }], payload_hash: { status: "match" } };
   const { requestJson } = await import("../api/jobs");
-  vi.mocked(requestJson).mockImplementation(async (path) => path === "/api/v4/jobs/text-showcase" ? { id: "job" } as never : { status: "succeeded", phase: "complete", completed: 1, total: 1, cases: [scenario], result: { cases: [scenario] } } as never);
+  vi.mocked(requestJson).mockImplementation(async (path) => path === "/api/jobs/text-tamper-tests" ? { id: "job" } as never : { status: "succeeded", phase: "complete", completed: 1, total: 1, cases: [scenario], result: { cases: [scenario] } } as never);
   render(<TextShowcase back={() => undefined} initialCarrier={new File(["carrier"], "carrier.txt")} initialRecovery={new File(["recovery"], "recovery.stegloc-text")} initialCode="code" initialPublicKey="public" />);
   fireEvent.click(screen.getByRole("button", { name: "Run text tamper tests" }));
   await waitFor(() => expect(screen.getByText("Verification explanation")).toBeInTheDocument());
@@ -109,8 +109,8 @@ it("renders in-depth tamper evidence when a result is returned", async () => {
 it("ignores text tamper results returned after recovery inputs change", async () => {
   let finish!: (value: unknown) => void;
   vi.mocked(requestJson).mockImplementation(async (path) => {
-    if (path === "/api/v2/session") return {} as never;
-    if (path === "/api/v4/jobs/text-showcase") return {id: "job"} as never;
+    if (path === "/api/session") return {} as never;
+    if (path === "/api/jobs/text-tamper-tests") return {id: "job"} as never;
     return await new Promise((resolve) => { finish = resolve; });
   });
   render(<TextShowcase back={() => undefined} initialCarrier={new File(["carrier"], "carrier.txt")}
