@@ -54,7 +54,7 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
         scenarios.append(_scenario("wrong_key", "Wrong public key", "verify with an unrelated RSA key",
                                    [Verdict.SIGNATURE_INVALID], verify(stego, passphrase, other_public)))
         if original_cover:
-            scenarios.append(_scenario("clean_cover", "Original cover (no payload)", "verify the cover before embedding",
+            scenarios.append(_scenario("clean_cover", "Original cover reference", "verify the separate original cover; expect no existing payload",
                                        [Verdict.PAYLOAD_MISSING], verify(original_cover, passphrase, public_pem)))
         from .dct_codec import DctCarrier
         changed = DctCarrier(stego)
@@ -100,7 +100,7 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
                                [Verdict.TAMPERED], verify(tampered, passphrase, public_pem), "flip_cover_bit"))
 
     if original_cover:
-        scenarios.append(_scenario("clean_cover", "Original cover (no payload)", "verify the cover before embedding",
+        scenarios.append(_scenario("clean_cover", "Original cover reference", "verify the separate original cover; expect no existing payload",
                                    [Verdict.PAYLOAD_MISSING], verify(original_cover, passphrase, public_pem)))
 
     # Scenarios below need the location of the payload, i.e. a working passphrase.

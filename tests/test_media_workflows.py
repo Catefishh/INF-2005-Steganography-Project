@@ -1,7 +1,9 @@
 """Real decoder and media video verification integration checks."""
+import base64
 import hashlib
 import io
 import json
+import re
 import subprocess
 import sys
 import time
@@ -90,6 +92,17 @@ def test_media_rejects_invalid_source_and_oversized_video(tmp_path):
         invalid_setting = client.post("/api/media/prepare", data={"duration": "31"},
             files={"file": ("source.mov", source)})
         assert invalid_setting.status_code == 400
+
+
+@pytest.mark.parametrize("name", ["example.txt", "renamed.mp4"])
+def test_media_rejects_ansi_text_even_with_video_mime(name):
+    # ffprobe otherwise treats a .txt ANSI document as a 640x400 video stream.
+    document = b"\x1b[2J\x1b[31mSTEGLOC text example\x1b[0m\r\n" * 4000
+    with TestClient(create_app(), base_url="http://127.0.0.1:8000") as client:
+        for endpoint in ("probe", "prepare"):
+            response = client.post(f"/api/media/{endpoint}",
+                                   files={"file": (name, document, "video/mp4")})
+            assert response.status_code == 400, response.text
 
 
 def test_missing_converter_and_cancellable_subprocess(monkeypatch):
@@ -195,6 +208,11 @@ def test_original_mp4_is_a_lossless_lsb_carrier_with_audio(tmp_path, kind):
         assert suite["status"] == "succeeded", suite.get("error")
         assert [case["verdict"] for case in suite["result"]["cases"]] == [
             "Authentic", "Signature Invalid", "Tampered", "Tampered"]
+        cases = suite["result"]["cases"]
+        assert [[stage["id"] for stage in case["stages"] if stage["status"] == "failed"]
+                for case in cases] == [[], ["locator"], ["carrier_hash"], ["ciphertext_digest"]]
+        assert "canonical carrier digest mismatch" in cases[2]["summary"]
+        assert "encrypted package digest does not match locator" in cases[3]["summary"]
 
 
 @pytest.mark.parametrize("kind", ["mkv", "webm", "flv", "wmv", "3gp", "m4v"])
@@ -277,6 +295,12 @@ def test_live_showcase_existing_file_and_export(kind):
             assert any(name.startswith("tampered/") for name in manifest)
             assert not any(name.startswith("samples/") for name in manifest)
             report = bundle.read("report.html").decode()
+            heatmap = re.search(r'<img class="heatmap" src="data:image/png;base64,([^"]+)"', report)
+            if kind == "image":
+                assert heatmap is not None, "Heatmap must load when report.html is opened without extracting the ZIP"
+                assert base64.b64decode(heatmap.group(1), validate=True) == bundle.read("heatmaps/embedding.png")
+            else:
+                assert '<img class="heatmap"' not in report
             for detail in ("inputs/original" + extension, "inputs/protected" + extension,
                            public.decode().strip(), "testing passphrase", "Reproduce verification",
                            "Change applied", "tampered/flip_cover_bit" + extension,
@@ -307,4 +331,8 @@ def test_text_showcase_methods(method):
         rows = state["result"]["cases"]
         assert len(rows) == 5
         assert all(row["as_expected"] for row in rows), rows
+        assert rows[0]["summary"] == "Text authentication and signature checks passed"
+        assert rows[1]["summary"] != rows[0]["summary"]
+        assert rows[2]["summary"] == "Text message authentication or signature verification failed"
+        assert rows[3]["summary"] != rows[0]["summary"]
         assert client.post("/api/jobs/text-tamper-tests", data={"mode": "encode", "public_key": keys["public_key"]}).status_code == 400

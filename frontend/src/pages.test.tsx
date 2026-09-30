@@ -133,6 +133,34 @@ function pick(label: string, name: string, type = "image/png") {
   fireEvent.change(input);
 }
 
+it("cover picker rejects spoofed text and accepts supported image extensions without a MIME type", async () => {
+  const probe = vi.spyOn(api, "probeMedia");
+  await appWithKeys();
+  await screenNamed("Embed & Sign");
+  pick("Cover file", "cover.PPM", "");
+  await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
+  expect(api.inspect).toHaveBeenCalledWith(expect.objectContaining({name: "cover.PPM"}));
+  expect(probe).not.toHaveBeenCalled();
+  pick("Cover file", "demo.stegloc-text.txt", "video/mp4");
+  expect(within(view()).getByRole("alert")).toHaveTextContent("accepted types");
+  expect(within(view()).getByText("Cover file").closest(".slot")).toHaveTextContent("cover.PPM");
+  expect(api.inspect).toHaveBeenCalledTimes(1);
+  expect(probe).not.toHaveBeenCalled();
+});
+
+it("working-file replacement picker preserves the current file when given text", async () => {
+  await appWithKeys();
+  await screenNamed("Extract & Verify");
+  pick("File to check", "received.PNG", "");
+  await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("received.PNG"));
+  const strip = document.querySelector(".working-strip")!;
+  const input = strip.querySelector("input[type=file]")!;
+  fireEvent.change(input, {target: {files: [new File(["text"], "demo.txt", {type: "video/mp4"})]}});
+  expect(within(strip as HTMLElement).getByRole("alert")).toHaveTextContent("accepted types");
+  expect(strip).toHaveTextContent("received.PNG");
+  expect(within(view()).getByText("File to check").closest(".slot")).toHaveTextContent("received.PNG");
+});
+
 /**
  * Renders the app with a key pair already in the vault.
  *
@@ -182,7 +210,7 @@ it.each(["private", "public"] as const)("keys: removing the %s file clears pair 
     const slot = within(view()).getByText(`${kind === "private" ? "Private" : "Public"} key file`).closest(".slot") as HTMLElement;
     const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
     const file = Object.assign(new File([kind], `${kind}.pem`), {
-      text: async () => `-----BEGIN ${kind.toUpperCase()} KEY-----`,
+      text: async () => `-----BEGIN ${kind.toUpperCase()} KEY-----\nk\n-----END ${kind.toUpperCase()} KEY-----`,
     });
     setFiles(input, file);
     fireEvent.change(input);
@@ -214,7 +242,7 @@ it("keys: a removed file cannot finish loading into the vault", async () => {
   fireEvent.click(within(view()).getByRole("button", {name: /Already have a key pair/}));
   const slot = within(view()).getByText("Private key file").closest(".slot") as HTMLElement;
   const input = slot.querySelector<HTMLInputElement>('input[type="file"]')!;
-  setFiles(input, Object.assign(new File(["private"], "private.pem"), {text: async () => "private"}));
+  setFiles(input, Object.assign(new File(["private"], "private.pem"), {text: async () => "-----BEGIN PRIVATE KEY-----\nk\n-----END PRIVATE KEY-----"}));
   fireEvent.change(input);
   await waitFor(() => expect(finish).toBeTypeOf("function"));
   const remove = within(slot).getByRole("button", {name: "Remove private.pem"});
@@ -507,7 +535,7 @@ it("sender: says so when the payload will not fit, and offers the ways out", asy
   await screenNamed("Embed & Sign");
   pick("Cover file", "harbour.png");
   await waitFor(() => expect(within(view()).getByText("places to hide bits")).toBeInTheDocument());
-  fireEvent.click(within(view()).getByRole("button", { name: "long" }));
+  fireEvent.change(within(view()).getByLabelText("Message"), {target: {value: "A message exceeding this cover's capacity."}});
 
   await waitFor(() => expect(within(view()).getByText(/It needs 922,757 bytes and this cover holds 115,134 bytes/)).toBeInTheDocument());
   expect(view().querySelector(".action-why")).toHaveTextContent("something small enough to fit in this cover");
@@ -680,6 +708,7 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("Provided file verified as genuine"));
   expect(view().querySelector(".outcome")).toHaveTextContent("Stegloc-protected content");
   expect(view().querySelector(".outcome")).toHaveTextContent("signature matches the sender's public key");
+  expect(within(view()).getByRole("table", {name: "Verification results by test case"})).toHaveTextContent("Wrong public key");
   expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
   fireEvent.click(within(view()).getByRole("button", {name: "Show test cases"}));
   expect(within(view()).getByRole("button", {name: "Hide test cases"})).toHaveAttribute("aria-expanded", "true");
@@ -704,10 +733,11 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   expect(within(view()).queryByText(/behaved correctly/)).toBeNull();
   expect(within(view()).getByText(/correct passphrase is accepted/)).toBeInTheDocument();
   fireEvent.click(within(view()).getAllByRole("button", { name: "Examine variant" })[0]);
-  expect(within(view()).getAllByText(/Flip the lowest bit/)).toHaveLength(2);
+  expect(within(view()).getAllByText(/Flip the lowest bit/)).toHaveLength(3);
   expect(within(view()).getAllByText(/integrity check detected a change/)).toHaveLength(2);
   fireEvent.click(within(view()).getByRole("button", {name: "Hide test cases"}));
   expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
+  expect(within(view()).getByRole("table", {name: "Verification results by test case"})).toBeInTheDocument();
 });
 
 it("tester: shows the failure details when the original is not genuine", async () => {
@@ -761,7 +791,7 @@ it("tester: image workspace does not fill or accept the text tamper carrier", ()
   const textInput = screen.getByText("Protected text file").closest(".slot")!.querySelector("input[type=file]")!;
   fireEvent.change(textInput, {target: {files: [image]}});
   expect(screen.getByText("Protected text file").closest(".slot")).toHaveTextContent("Choose protected text file");
-  expect(screen.getByRole("alert")).toHaveTextContent("Choose a protected .txt file");
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose a file of the accepted types: .txt,text/plain");
   fireEvent.change(textInput, {target: {files: [new File(["carrier"], "protected.txt", {type: "text/plain"})]}});
   expect(screen.getByText("Protected text file").closest(".slot")).toHaveTextContent("protected.txt");
   expect(screen.queryByRole("alert")).toBeNull();

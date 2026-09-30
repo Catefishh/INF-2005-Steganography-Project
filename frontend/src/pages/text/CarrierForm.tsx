@@ -1,4 +1,4 @@
-import { Meter, Panel } from "../../components";
+import { FilePicker, Meter, Panel } from "../../components";
 import { formatBytes } from "../../util";
 
 /** Selects the text carrier and estimates how much visible structure it needs. */
@@ -18,7 +18,7 @@ export function CarrierForm({ method, onMethod, message, onMessage, visible, onV
     <div className="field"><label htmlFor="text-message">Message to hide</label><textarea id="text-message" value={message} onChange={(event) => onMessage(event.target.value)} /></div>
     <div className="field"><label htmlFor="text-visible">Visible cover text {method === "acrostic" ? "(generated after protection)" : "(optional)"}</label>
       <textarea id="text-visible" value={visible} onChange={(event) => onVisible(event.target.value)} disabled={method === "acrostic"} />
-      {method !== "acrostic" && <input type="file" accept=".txt,text/plain" aria-label="Import visible text" onChange={(event) => onImport(event.target.files?.[0])} />}</div>
+      {method !== "acrostic" && <FilePicker accept=".txt,text/plain" label="Import visible text" onFile={onImport} />}</div>
     {estimate && <p className="field-hint">Encrypted frame: {estimate.frame_bytes.toLocaleString()} bytes; {estimate.required_lines_or_symbols.toLocaleString()} lines or hidden characters required.</p>}
     {estimate && <Meter label="Estimated text carrier size" used={estimate.estimated_carrier_bytes} total={estimate.max_carrier_bytes}
       reading={estimate.estimated_carrier_bytes > estimate.max_carrier_bytes

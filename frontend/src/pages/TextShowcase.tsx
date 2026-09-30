@@ -4,6 +4,7 @@ import type { Scenario } from "../api";
 import { errorText } from "../util";
 import { DropZone, KeyField } from "../components";
 import { artifactUrl } from "../api/jobs";
+import { TamperSummary } from "../ui/TamperSummary";
 
 type Result = {cases: Scenario[]};
 
@@ -78,11 +79,6 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
          <DropZone label="Protected text file" title="Choose protected text file" hint="Drop or choose a .txt carrier" accept=".txt,text/plain" file={carrier}
             onFile={(file) => {
               invalidateRun();
-              if (file && !/\.txt$/i.test(file.name)) {
-                setCarrier(null); onCarrierChange?.(null);
-                setError("Choose a protected .txt file for text tamper tests.");
-                return;
-              }
               setCarrier(file); onCarrierChange?.(file); onWorkingFile?.(file);
             }} />
          <DropZone label="Recovery file" title="Choose recovery file" hint="Drop or choose a .stegloc-text file" accept=".stegloc-text" file={recovery}
@@ -100,6 +96,7 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
        <button type="button" className="btn primary lg" disabled={!ready || busy} onClick={() => void run()}>{busy ? "Running the tests…" : "Run text tamper tests"}</button>
       {error && <p role="alert">{error}</p>}
     </section>
+    {rows.length > 0 && <TamperSummary cases={rows} busy={busy} />}
     {jobId && <section className="panel"><h2>Test results</h2><p role="status">{phase}: {progress.completed} of {progress.total} completed</p>
       {busy && <button className="btn ghost" type="button" onClick={() => void requestJson(`/api/jobs/${encodeURIComponent(jobId)}`, {method: "DELETE"})}>Cancel suite</button>}
       <a className="btn ghost" href={`/api/jobs/${encodeURIComponent(jobId)}/evidence`} download="stegloc-text-evidence.zip">Download evidence ZIP</a>

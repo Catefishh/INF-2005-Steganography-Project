@@ -4,6 +4,7 @@ import {
   ActionBar, ConfirmDialog, Disclosure, DropZone, EmptyState, ErrorNote, Icon, Panel, Spinner,
 } from "../components";
 import { downloadText, errorText, shortHash, type Page, type Vault } from "../util";
+import { readKeyFile } from "../upload";
 
 export function KeysPage({ vault, setVault, goTo }: {
   vault: Vault;
@@ -41,20 +42,26 @@ export function KeysPage({ vault, setVault, goTo }: {
 
   async function load(file: File | null, kind: "private" | "public") {
     const revision = ++loadRevision.current[kind];
-    if (kind === "private") setPrivateFile(file);
-    else setPublicFile(file);
-    setVault((current) => kind === "private"
-      ? { ...current, privatePem: "", privateFingerprint: null }
-      : { ...current, publicPem: "", publicFingerprint: null });
-    setSaved((current) => ({ ...current, [kind === "private" ? "privateKey" : "publicKey"]: false }));
     setError("");
-    if (!file) return;
+    if (!file) {
+      if (kind === "private") setPrivateFile(null);
+      else setPublicFile(null);
+      setVault((current) => kind === "private"
+        ? { ...current, privatePem: "", privateFingerprint: null }
+        : { ...current, publicPem: "", publicFingerprint: null });
+      setSaved((current) => ({ ...current, [kind === "private" ? "privateKey" : "publicKey"]: false }));
+      return;
+    }
     try {
-      const pem = await file.text();
+      const pem = await readKeyFile(file);
       if (revision !== loadRevision.current[kind]) return;
+      if (kind === "private") setPrivateFile(file);
+      else setPublicFile(file);
       const info = await api.inspectKey(pem);
       if (revision !== loadRevision.current[kind]) return;
       if (info.type !== kind) {
+        if (kind === "private") setPrivateFile(privateFile);
+        else setPublicFile(publicFile);
         setError(kind === "public"
           ? "That file is a PRIVATE key. The receiver only ever needs the sender's public key."
           : "That file is a public key. Signing needs the matching private key.");
@@ -69,7 +76,11 @@ export function KeysPage({ vault, setVault, goTo }: {
         setSaved((current) => ({ ...current, publicKey: true }));
       }
     } catch (e) {
-      if (revision === loadRevision.current[kind]) setError(errorText(e));
+      if (revision === loadRevision.current[kind]) {
+        if (kind === "private") setPrivateFile(privateFile);
+        else setPublicFile(publicFile);
+        setError(errorText(e));
+      }
     }
   }
 
