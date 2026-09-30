@@ -12,7 +12,7 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
   onCarrierChange?: (file: File | null) => void; onRecoveryChange?: (file: File | null) => void; onCodeChange?: (value: string) => void; onPublicKeyChange?: (value: string) => void;
   initialCode?: string; initialPublicKey?: string;
 }) {
-  const [carrier, setCarrier] = useState<File | null>(initialCarrier ?? null);
+  const [carrier, setCarrier] = useState<File | null>(initialCarrier && /\.txt$/i.test(initialCarrier.name) ? initialCarrier : null);
   const [recovery, setRecovery] = useState<File | null>(initialRecovery ?? null);
   const [recoveryCodeFile, setRecoveryCodeFile] = useState<File | null>(null);
   const [code, setCode] = useState(initialCode);
@@ -76,7 +76,15 @@ export function TextShowcase({back, onWorkingFile, onCarrierChange, onRecoveryCh
       </div>
        <div className="text-test-inputs">
          <DropZone label="Protected text file" title="Choose protected text file" hint="Drop or choose a .txt carrier" accept=".txt,text/plain" file={carrier}
-            onFile={(file) => {invalidateRun(); setCarrier(file); onCarrierChange?.(file); onWorkingFile?.(file);}} />
+            onFile={(file) => {
+              invalidateRun();
+              if (file && !/\.txt$/i.test(file.name)) {
+                setCarrier(null); onCarrierChange?.(null);
+                setError("Choose a protected .txt file for text tamper tests.");
+                return;
+              }
+              setCarrier(file); onCarrierChange?.(file); onWorkingFile?.(file);
+            }} />
          <DropZone label="Recovery file" title="Choose recovery file" hint="Drop or choose a .stegloc-text file" accept=".stegloc-text" file={recovery}
             onFile={(file) => {invalidateRun(); setRecovery(file); onRecoveryChange?.(file);}} />
        </div>
