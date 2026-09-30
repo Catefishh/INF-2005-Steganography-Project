@@ -173,7 +173,7 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
         <ol className="tamper-guide">
           <li><strong>Baseline:</strong> verify the protected workspace file with your selected credentials, without changes.</li>
           <li><strong>One change:</strong> edit a separate copy or replace a verification input for that case only. The wrong-key case generates an unrelated key; it does not use your selected sender key.</li>
-          <li><strong>Compare:</strong> a deliberately changed file or incorrect credential should fail verification. Open Reasoning to see what each case checks and whether its result was expected.</li>
+          <li><strong>Compare:</strong> a deliberately changed file or incorrect credential should be rejected by verification; when it is, that test passes. Open Reasoning to see what each case checks and whether its result was expected.</li>
         </ol>
         <div className="columns">
           <DropZone label={<>Protected file <span className="req">· required</span></>} id={STEGO_SLOT_ID}

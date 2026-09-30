@@ -28,35 +28,42 @@ const TEST_PURPOSE: Record<string, string> = {
   visible_wording: "Changes a visible character while preserving the hidden message encoding. Authentic is expected because the signature protects the hidden message, not the surrounding visible wording. This demonstrates the limit of text-carrier integrity checking.",
 };
 
+/**
+ * A test case passes when verification returns the verdict that case expects: Authentic for the
+ * unchanged file, and a rejection for each deliberate change. It fails only when the verdict
+ * differs, for example a tampered copy that still verifies, or a genuine file that is rejected.
+ */
 export function TamperSummary({ cases, busy }: { cases: Scenario[]; busy: boolean }) {
   const applicable = cases.filter((row) => row.verdict !== "Unsupported");
-  const verified = applicable.filter((row) => row.verdict === "Authentic").length;
+  const passed = applicable.filter((row) => row.as_expected).length;
   const baselineFailed = applicable.length === 1 && applicable[0].id === "baseline" && !applicable[0].as_expected;
 
-  return <Panel title="Tamper test summary" subtitle="Test passed means the file verified as Authentic. Test failed means the file or verification inputs were rejected.">
-    <p className="small">Each row is a separate verification run. The baseline uses your unchanged protected file and selected credentials. Other cases change a copy or substitute an input for that case only; your workspace file and keys stay unchanged. Deliberate negative cases are expected to fail verification when Stegloc detects the change.</p>
-    <p>{applicable.length} applicable {applicable.length === 1 ? "case" : "cases"} completed · Verification: {verified} passed · {applicable.length - verified} failed{busy ? " · Running…" : ""}</p>
+  return <Panel title="Tamper test summary" subtitle="A test passes when verification gives the verdict that case expects: Authentic for the unchanged file, a rejection for each deliberate change. It fails only when the verdict is different.">
+    <p className="small">Each row is a separate verification run. The baseline uses your unchanged protected file and selected credentials. Other cases change a copy or substitute an input for that case only; your workspace file and keys stay unchanged. For a deliberate change, rejection is the correct result, so the test passes when Stegloc catches it.</p>
+    <p>{applicable.length} applicable {applicable.length === 1 ? "case" : "cases"} completed · Tests: {passed} passed · {applicable.length - passed} failed{busy ? " · Running…" : ""}</p>
     {baselineFailed && !busy && <p className="note note-error">The supplied file failed baseline verification. Remaining tamper cases were not run.</p>}
     {applicable.length === 0 ? <p>No applicable test cases have completed.</p> : <div className="table-wrap">
       <table className="attacks">
         <caption>Verification results by test case</caption>
-        <thead><tr><th scope="col">Test case / change</th><th scope="col">Failed verification check</th><th scope="col">Verification result / reason</th></tr></thead>
+        <thead><tr><th scope="col">Test case / change</th><th scope="col">Check that rejected it</th><th scope="col">Test result / verdict</th></tr></thead>
         <tbody>{applicable.map((row) => {
           const authentic = row.verdict === "Authentic";
+          const testPassed = row.as_expected;
           const failed = row.stages?.filter((stage) => stage.status === "failed") ?? [];
-          return <tr key={row.id} className={authentic && row.as_expected ? "" : "mismatch"}>
+          return <tr key={row.id} className={testPassed ? "" : "mismatch"}>
             <th scope="row"><strong>{row.title}</strong><p className="attack-what">{row.change}</p></th>
             <td>{failed.length ? failed.map((stage) => CHECK_NAMES[stage.id] ?? stage.id.replaceAll("_", " ")).join(", ")
-              : authentic ? "None — verification passed" : "Check details unavailable"}</td>
-            <td><strong className={authentic ? "attack-ok" : "attack-bad"}>{authentic ? "Test passed" : "Test failed"}</strong>
-              <p>{row.verdict}{!row.as_expected && `; expected ${row.expected.join(" or ")}`}</p>
+              : authentic ? row.expected.includes("Authentic") ? "None — verification passed" : "None — the change was not detected"
+                : "Check details unavailable"}</td>
+            <td><strong className={testPassed ? "attack-ok" : "attack-bad"}>{testPassed ? "Test passed" : "Test failed"}</strong>
+              <p>Verdict: {row.verdict}{!testPassed && `; expected ${row.expected.join(" or ")}`}</p>
               <Disclosure title="Reasoning">
                 {TEST_PURPOSE[row.id] && <p className="small"><b>What this case checks:</b> {TEST_PURPOSE[row.id]}</p>}
                 <p className="small">Expected verdict: {row.expected.join(" or ")}</p>
-                <p className="small">{row.as_expected ? authentic
+                <p className="small">{testPassed ? authentic
                   ? "The observed verdict matches this scenario's expected outcome. Verification accepted the file."
-                  : "The observed verdict matches this scenario's expected outcome. Verification rejected these test inputs as intended; this is successful detection, even though the row says Test failed."
-                  : "The observed verdict does not match this scenario's expected outcome."}</p>
+                  : "The observed verdict matches this scenario's expected outcome. Verification rejected the changed file or input as intended; this is successful detection, so the test passes."
+                  : "The observed verdict does not match this scenario's expected outcome. The test fails."}</p>
                 <p className="small"><b>Observed verification:</b> {row.summary}</p>
               </Disclosure>
             </td>

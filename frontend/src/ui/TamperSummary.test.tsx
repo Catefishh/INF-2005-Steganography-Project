@@ -42,18 +42,20 @@ it("separates expected rejections from missed tampering and ignores unsupported 
       as_expected: true, stages: undefined, summary: "Invalid recovery code"},
     {...baseline, id: "unsupported", title: "Not applicable", verdict: "Unsupported"},
   ]} />);
-  expect(screen.getByText("4 applicable cases completed · Verification: 2 passed · 2 failed")).toBeInTheDocument();
+  expect(screen.getByText("4 applicable cases completed · Tests: 3 passed · 1 failed")).toBeInTheDocument();
   const table = screen.getByRole("table", {name: "Verification results by test case"});
   const unchanged = within(table).getByRole("rowheader", {name: /Unmodified stego file/}).closest("tr")!;
   expect(unchanged).toHaveTextContent("Test passed");
   expect(table).not.toHaveTextContent("Not applicable");
   const rejected = within(table).getByRole("rowheader", {name: /Cover edited/}).closest("tr")!;
   expect(rejected).toHaveTextContent("Carrier SHA-256");
-  expect(rejected).toHaveTextContent("Test failed");
+  expect(rejected).toHaveTextContent("Test passed");
+  expect(rejected).not.toHaveClass("mismatch");
   expect(rejected).toHaveTextContent("The observed verdict matches this scenario's expected outcome.");
   const missed = within(table).getByRole("rowheader", {name: /Missed edit/}).closest("tr")!;
-  expect(missed).toHaveTextContent("None — verification passed");
-  expect(missed).toHaveTextContent("Test passed");
+  expect(missed).toHaveTextContent("None — the change was not detected");
+  expect(missed).toHaveTextContent("Test failed");
+  expect(missed).toHaveClass("mismatch");
   expect(missed).toHaveTextContent("The observed verdict does not match this scenario's expected outcome.");
   expect(within(missed).getByRole("button", {name: "Reasoning"})).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(within(rejected).getByRole("button", {name: "Reasoning"}));
@@ -67,7 +69,7 @@ it("separates expected rejections from missed tampering and ignores unsupported 
 it("does not imply a running or successful baseline completed the full suite", () => {
   render(<TamperSummary cases={[{...baseline, verdict: "Authentic", as_expected: true, stages: []}]} busy />);
   expect(screen.getByText(/1 applicable case completed.*Running/)).toBeInTheDocument();
-  expect(screen.getByText(/1 applicable case completed · Verification: 1 passed · 0 failed/)).toBeInTheDocument();
+  expect(screen.getByText(/1 applicable case completed · Tests: 1 passed · 0 failed/)).toBeInTheDocument();
   expect(screen.getByRole("table", {name: "Verification results by test case"})).toHaveTextContent("Test passed");
 });
 
@@ -84,7 +86,8 @@ it("explains that substituted keys and the original reference do not invalidate 
   const keyCase = within(table).getByRole("rowheader", {name: /Wrong public key/}).closest("tr")!;
   const reference = within(table).getByRole("rowheader", {name: /Original cover reference/}).closest("tr")!;
   expect(workspace).toHaveTextContent("Test passed");
-  expect(keyCase).toHaveTextContent("Test failed");
+  expect(keyCase).toHaveTextContent("Test passed");
+  expect(reference).toHaveTextContent("Test failed");
   fireEvent.click(within(keyCase).getByRole("button", {name: "Reasoning"}));
   expect(keyCase).toHaveTextContent("instead of using your selected sender key");
   expect(keyCase).toHaveTextContent("successful detection");
@@ -96,10 +99,36 @@ it("explains that substituted keys and the original reference do not invalidate 
 });
 
 it.each(["Signature Invalid", "Tampered", "Payload Missing", "Cannot Verify", "Wrong Start Location"] as const)(
-  "%s fails verification even when the controlled scenario behaved as expected", (verdict) => {
+  "a %s verdict is a passed test when the deliberate change was expected to be rejected that way", (verdict) => {
     render(<TamperSummary cases={[{...baseline, id: "negative", expected: [verdict], verdict, as_expected: true}]} busy={false} />);
     const table = screen.getByRole("table", {name: "Verification results by test case"});
-    expect(table).toHaveTextContent("Test failed");
-    expect(table).not.toHaveTextContent("Test passed");
-    expect(screen.getByText(/Verification: 0 passed · 1 failed/)).toBeInTheDocument();
+    expect(table).toHaveTextContent("Test passed");
+    expect(table).not.toHaveTextContent("Test failed");
+    expect(screen.getByText(/Tests: 1 passed · 0 failed/)).toBeInTheDocument();
   });
+
+it("shows every test passing for a genuine file whose changes were all caught", () => {
+  render(<TamperSummary busy={false} cases={[
+    {...baseline, verdict: "Authentic", as_expected: true, stages: []},
+    {...baseline, id: "wrong_passphrase", title: "Wrong passphrase", expected: ["Cannot Verify"], verdict: "Cannot Verify", as_expected: true},
+    {...baseline, id: "wrong_key", title: "Wrong public key", expected: ["Signature Invalid"], verdict: "Signature Invalid", as_expected: true},
+    {...baseline, id: "flip_cover_bit", title: "Cover bit flipped", expected: ["Tampered"], verdict: "Tampered", as_expected: true},
+  ]} />);
+  const table = screen.getByRole("table", {name: "Verification results by test case"});
+  expect(screen.getByText(/Tests: 4 passed · 0 failed/)).toBeInTheDocument();
+  expect(table).not.toHaveTextContent("Test failed");
+  expect(table.querySelectorAll("tr.mismatch")).toHaveLength(0);
+});
+
+it("fails only the cases whose verdict differs from what was expected", () => {
+  render(<TamperSummary busy={false} cases={[
+    {...baseline, verdict: "Authentic", as_expected: true, stages: []},
+    {...baseline, id: "flip_cover_bit", title: "Cover bit flipped", expected: ["Tampered"], verdict: "Authentic", as_expected: false, stages: []},
+  ]} />);
+  const table = screen.getByRole("table", {name: "Verification results by test case"});
+  expect(screen.getByText(/Tests: 1 passed · 1 failed/)).toBeInTheDocument();
+  const missed = within(table).getByRole("rowheader", {name: /Cover bit flipped/}).closest("tr")!;
+  expect(missed).toHaveTextContent("Test failed");
+  expect(missed).toHaveTextContent("Verdict: Authentic; expected Tampered");
+  expect(missed).toHaveTextContent("None — the change was not detected");
+});
