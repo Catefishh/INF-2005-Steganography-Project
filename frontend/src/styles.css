@@ -684,7 +684,16 @@ details.advanced > :not(summary) { margin: 0 12px 12px; }
 .analysis-settings { margin: 0; padding: 0; border: 0; }
 .analysis-settings legend { padding: 0 6px; font-size: 0.78rem; font-weight: 700; color: var(--muted); }
 .analysis-settings select, .analysis-settings input { min-width: 0; padding: 8px 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
-.analysis-settings label { min-width: 110px; }
+.bpcs-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 18px 20px; }
+.bpcs-settings-grid label { display: grid; gap: 8px; min-width: 0; font-size: .82rem; font-weight: 600; }
+.bpcs-settings-grid select, .bpcs-settings-grid input { width: 100%; }
+.bpcs-settings-guide { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.bpcs-settings-guide h3 { margin: 0 0 12px; font-size: .92rem; }
+.bpcs-settings-guide dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin: 0; }
+.bpcs-settings-guide dt { font-size: .82rem; font-weight: 700; }
+.bpcs-settings-guide dd { margin: 4px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.analysis-settings > .btn { margin-top: 18px; }
+@media (max-width: 640px) { .bpcs-settings-guide dl { grid-template-columns: minmax(0, 1fr); } }
 .bpcs-planes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
 .bpcs-planes figure { margin: 0; }
 .bpcs-maps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -762,6 +771,8 @@ details.advanced > :not(summary) { margin: 0 12px 12px; }
 .hash-evidence > div:not(.hash-heading) { display: grid; grid-template-columns: 160px minmax(0,1fr); gap: 10px; }
 .hash-evidence p, .conversion-panel p, .retry-panel p { color: var(--muted); font-size: .84rem; }
 .conversion-panel input, .retry-panel input { width: 100px; }
+.retry-fields { column-gap: 16px; row-gap: 10px; }
+.retry-fields label { display: grid; gap: 6px; font-size: .82rem; font-weight: 600; }
 @media (max-width: 640px) { .hash-evidence > div:not(.hash-heading) { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .panel, .outcome { animation: none !important; } }
 

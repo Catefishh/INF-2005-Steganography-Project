@@ -159,9 +159,10 @@ export function AttackPage({ vault, handoff, onWorkingFile, goTo }: { vault: Vau
     if (scenarios) outcomeRef.current?.focus();
   }, [scenarios]);
 
-  if (media === "text") return <TextShowcase back={() => setMedia("binary")} onWorkingFile={onWorkingFile}
-    initialCarrier={handoff?.stego ?? null} initialRecovery={handoff?.recovery ?? null}
-    initialCode={handoff?.recoveryCode ?? ""} initialPublicKey={handoff?.publicPem ?? ""} />;
+  const textHandoff = /\.txt$/i.test(handoff?.stego.name ?? "") ? handoff : null;
+  if (media === "text") return <TextShowcase back={() => setMedia("binary")}
+    initialCarrier={textHandoff?.stego ?? null} initialRecovery={textHandoff?.recovery ?? null}
+    initialCode={textHandoff?.recoveryCode ?? ""} initialPublicKey={textHandoff?.publicPem ?? ""} />;
 
   return (
     <div className="form-column">

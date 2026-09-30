@@ -117,8 +117,8 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
         </div>
         <Disclosure title="BPCS image settings" value="optional">
           <fieldset className="analysis-settings" disabled={busy || result?.info.kind === "audio"}>
-            <legend>BPCS image settings</legend>
-            <div className="inline-fields">
+            <legend className="sr-only">BPCS image settings</legend>
+            <div className="bpcs-settings-grid">
               <label>Channel<select value={draftBpcs.channel} onChange={(event) => updateBpcs("channel", event.target.value)}>
                 <option value="0">Red</option><option value="1">Green</option><option value="2">Blue</option>
               </select></label>
@@ -132,6 +132,16 @@ export function AnalysePage({ handoff, onWorkingFile }: { handoff: Handoff | nul
               <label>Complexity threshold<input type="number" min="0" max="1" step="0.01" value={draftBpcs.complexityThreshold}
                 onChange={(event) => updateBpcs("complexityThreshold", event.target.value)} /></label>
             </div>
+            <section className="bpcs-settings-guide" aria-labelledby="bpcs-settings-guide-title">
+              <h3 id="bpcs-settings-guide-title">What each setting does</h3>
+              <dl>
+                <div><dt>Channel</dt><dd>Which colour channel to inspect: red, green, or blue. Only the selected channel is measured.</dd></div>
+                <div><dt>Block size</dt><dd>Width and height, in pixels, of each square block used to measure bit patterns. For example, 8 means 8 × 8.</dd></div>
+                <div><dt>First plane</dt><dd>Lowest bit plane to include. Plane 0 is the least significant bit of each channel value.</dd></div>
+                <div><dt>Last plane</dt><dd>Highest bit plane to include. Plane 7 is the most significant bit; the range includes both ends.</dd></div>
+                <div><dt>Complexity threshold</dt><dd>Minimum share of neighbouring bits that must differ for a block to count as complex. At 0.3, at least 30% must differ.</dd></div>
+              </dl>
+            </section>
             <button type="button" className="btn ghost" disabled={!ready || busy}
               onClick={() => void run(channel, draftBpcs, true)}>Apply BPCS settings and rerun</button>
             <ErrorNote text={bpcsError} />

@@ -580,6 +580,36 @@ it("receiver: a failure names the check, and editing an input marks the verdict 
   expect(within(view()).getByText(/This result is out of date/)).toBeInTheDocument();
 });
 
+it("receiver: retrying an exact slot keeps the new result current", async () => {
+  vi.mocked(api.verify).mockResolvedValue({
+    verdict: "Wrong Start Location", summary: "The selected start is wrong.",
+    steps: VERIFY_STEPS.map((step) => step.id === "decrypt"
+      ? {...step, status: "failed", detail: "Wrong start"} : step),
+    info: {}, record: null, record_trusted: false, content: null,
+  });
+  await appWithKeys();
+  await screenNamed("Extract & Verify");
+  pick("File to check", "received.png");
+  await waitFor(() => expect(within(view()).getByText("places to look in")).toBeInTheDocument());
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: /Check file/}));
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "Retry on this file"})).toBeInTheDocument());
+
+  fireEvent.change(within(view()).getByRole("spinbutton", {name: "Exact slot"}), {target: {value: "2"}});
+  fireEvent.click(within(view()).getByRole("button", {name: "Retry extraction"}));
+  await waitFor(() => expect(api.verify).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(within(view()).getByText("Previous attempts (2)")).toBeInTheDocument());
+  expect(vi.mocked(api.verify).mock.calls.at(-1)?.[0].get("start_slot")).toBe("2");
+  expect(within(view()).queryByText(/This result is out of date/)).toBeNull();
+
+  fireEvent.change(within(view()).getByRole("spinbutton", {name: "Exact slot"}), {target: {value: "9"}});
+  expect(within(view()).getByText(/This result is out of date/)).toBeInTheDocument();
+  fireEvent.click(within(view()).getByRole("button", {name: "Retry extraction"}));
+  await waitFor(() => expect(within(view()).getByText("Previous attempts (3)")).toBeInTheDocument());
+  expect(vi.mocked(api.verify).mock.calls.at(-1)?.[0].get("start_slot")).toBe("9");
+  expect(within(view()).queryByText(/This result is out of date/)).toBeNull();
+});
+
 it("detects an independently uploaded DCT PNG and reports its partial integrity scope", async () => {
   vi.mocked(api.inspect).mockResolvedValue({...IMAGE_INFO, embedding_method: "dct",
     dct: {n_slots: 14_400, max_package_bytes: 1671}});
@@ -712,6 +742,42 @@ it("tester: identifies the unchanged file handed off by Embed & Sign", async () 
   fireEvent.click(within(document.body).getByRole("button", {name: "Run tamper tests"}));
   await waitFor(() => expect(document.querySelector(".outcome")).toHaveTextContent("Provided file verified as genuine"));
   expect(document.querySelector(".outcome")).toHaveTextContent("created by Embed & Sign");
+});
+
+it("tester: image workspace does not fill or accept the text tamper carrier", () => {
+  const image = new File(["image"], "protected.png", {type: "image/png"});
+  const onWorkingFile = vi.fn();
+  render(<AttackPage vault={{privatePem: "", publicPem: "image key", privateFingerprint: null,
+    publicFingerprint: "fingerprint", bits: null}} handoff={{id: "image", stego: image, cover: null,
+    recovery: new File(["recovery"], "image.stegloc"), recoveryCode: "image code",
+    passphrase: "password", publicPem: "image key", serial: 1}}
+    onWorkingFile={onWorkingFile} goTo={() => undefined} />);
+  expect(screen.getByText("Protected file").closest(".slot")).toHaveTextContent("protected.png");
+  fireEvent.click(screen.getByRole("button", {name: "Text carrier tests"}));
+  expect(screen.getByText("Protected text file").closest(".slot")).toHaveTextContent("Choose protected text file");
+  expect(document.querySelector(".text-readiness")).toHaveTextContent("Carrier not selected · Recovery file not selected");
+  expect(screen.getByLabelText("Ed25519 public key")).toHaveValue("");
+
+  const textInput = screen.getByText("Protected text file").closest(".slot")!.querySelector("input[type=file]")!;
+  fireEvent.change(textInput, {target: {files: [image]}});
+  expect(screen.getByText("Protected text file").closest(".slot")).toHaveTextContent("Choose protected text file");
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose a protected .txt file");
+  fireEvent.change(textInput, {target: {files: [new File(["carrier"], "protected.txt", {type: "text/plain"})]}});
+  expect(screen.getByText("Protected text file").closest(".slot")).toHaveTextContent("protected.txt");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(onWorkingFile).not.toHaveBeenCalled();
+});
+
+it("tester: a text workspace still opens with its text recovery inputs", () => {
+  render(<AttackPage vault={{privatePem: "", publicPem: "", privateFingerprint: null,
+    publicFingerprint: null, bits: null}} handoff={{id: "text", stego: new File(["carrier"], "protected.txt"),
+    cover: null, recovery: new File(["recovery"], "recovery.stegloc-text"),
+    recoveryCode: "text code", passphrase: "", publicPem: "text key", serial: 1}} goTo={() => undefined} />);
+  fireEvent.click(screen.getByRole("button", {name: "Text carrier tests"}));
+  expect(screen.getByText("Protected text file").closest(".slot")).toHaveTextContent("protected.txt");
+  expect(screen.getByText("Recovery file").closest(".slot")).toHaveTextContent("recovery.stegloc-text");
+  expect(screen.getByLabelText("Recovery code")).toHaveValue("text code");
+  expect(screen.getByLabelText("Ed25519 public key")).toHaveValue("text key");
 });
 
 it.each(["Protected file", "Original cover"])("tester: changing %s drops an in-flight result", async (changed) => {

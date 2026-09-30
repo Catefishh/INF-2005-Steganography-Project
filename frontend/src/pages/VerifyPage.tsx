@@ -97,6 +97,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   useEffect(() => {
     setInfo(null);
     setOverride(false);
+    setOverrideSlot("");
     if (!stego) return;
     let live = true;
     api.inspect(stego).then((details) => live && setInfo(details)).catch(() => undefined);
@@ -117,17 +118,15 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     }
   }, [info]);
 
-  const startSignature = override && info?.embedding_method !== "dct"
-    ? info?.kind === "audio"
-      ? `s:${overrideSeconds}`
-      : `xy:${overrideX},${overrideY}`
-    : "from the password";
+  const selectedStart = overrideSlot !== "" ? `slot:${overrideSlot}`
+    : info?.kind === "audio" ? `s:${overrideSeconds}` : `xy:${overrideX},${overrideY}`;
+  const startSignature = override && info?.embedding_method !== "dct" ? selectedStart : "from the password";
   const currentInputs = [stego?.name ?? "", passphrase, publicPem, startSignature];
   const changed = resultInputs ? changedInputs(INPUT_LABELS, resultInputs, currentInputs) : [];
   const stale = result !== null && changed.length > 0 && !staleDismissed;
 
   const overrideValue = override && info?.embedding_method !== "dct"
-    ? info?.kind === "audio"
+    ? overrideSlot !== "" ? `ON · slot ${overrideSlot}` : info?.kind === "audio"
       ? `ON · ${Number(overrideSeconds || 0).toFixed(3)} s`
       : `ON · (${overrideX || 0}, ${overrideY || 0})`
     : "off";
@@ -157,7 +156,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
     const requestId = ++requestRevision.current;
     // Snapshot before the await: state read after it belongs to a later render.
     const sentOverride = useOverride && info?.embedding_method !== "dct";
-    const sentStart = overrideSlot !== "" ? `slot:${overrideSlot}` : info?.kind === "audio" ? `s:${overrideSeconds}` : `xy:${overrideX},${overrideY}`;
+    const sentStart = selectedStart;
     const submittedPassphrase = passphrase;
     const submittedKey = publicPem;
     const snapshot = [submittedFile.name, submittedPassphrase, submittedKey, sentOverride ? sentStart : "from the password"];
@@ -219,6 +218,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
   /** Back to the form, with the override already off so a re-run reads the file's own start. */
   function overrideOff() {
     setOverride(false);
+    setOverrideSlot("");
     void submit(false);
   }
 
@@ -243,11 +243,14 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
           {result.verdict === "Wrong Start Location" && <div className="retry-panel">
             <h2>Retry on this file</h2>
             <p>Enter a corrected location or use the authenticated stored location.</p>
-            <div className="btn-row">
-              <label>Exact slot<input type="number" min="0" value={overrideSlot} onChange={(e) => setOverrideSlot(e.target.value)} /></label>
-              {info?.kind === "audio" ? <label>Time (seconds)<input type="number" min="0" step="0.001" value={overrideSeconds} onChange={(e) => { setOverrideSeconds(e.target.value); setOverrideSlot(""); }} /></label> : <>
-                <label>X<input type="number" min="0" value={overrideX} onChange={(e) => { setOverrideX(e.target.value); setOverrideSlot(""); }} /></label>
-                <label>Y<input type="number" min="0" value={overrideY} onChange={(e) => { setOverrideY(e.target.value); setOverrideSlot(""); }} /></label>
+            <p id="retry-start-help">{info?.kind === "audio"
+              ? "Exact slot counts audio sample positions from the start. Time selects a position in seconds. A filled Exact slot takes priority; changing Time clears it."
+              : "X is the pixel column from the left; Y is the row from the top. Both start at 0, and X/Y begins at that pixel's red channel. Exact slot counts R, G, B channels across each row (0 = top-left R, 1 = G, 2 = B). A filled Exact slot takes priority; changing X or Y clears it."}</p>
+            <div className="btn-row retry-fields">
+              <label>Exact slot<input type="number" min="0" aria-describedby="retry-start-help" value={overrideSlot} onChange={(e) => setOverrideSlot(e.target.value)} /></label>
+              {info?.kind === "audio" ? <label>Time (seconds)<input type="number" min="0" step="0.001" aria-describedby="retry-start-help" value={overrideSeconds} onChange={(e) => { setOverrideSeconds(e.target.value); setOverrideSlot(""); }} /></label> : <>
+                <label>X<input type="number" min="0" aria-describedby="retry-start-help" value={overrideX} onChange={(e) => { setOverrideX(e.target.value); setOverrideSlot(""); }} /></label>
+                <label>Y<input type="number" min="0" aria-describedby="retry-start-help" value={overrideY} onChange={(e) => { setOverrideY(e.target.value); setOverrideSlot(""); }} /></label>
               </>}
             </div>
             <div className="btn-row"><button type="button" className="btn primary" disabled={busy} onClick={() => { setOverride(true); void submit(true); }}>Retry extraction</button>
@@ -373,6 +376,7 @@ export function VerifyPage({ vault, handoff, onWorkingFile, goTo, showResult, on
               </>
             )}
             <small className="field-hint">
+              {info?.kind !== "audio" && "X counts pixel columns from the left; Y counts rows from the top. Both start at 0 and select that pixel's red channel. "}
               {info?.header
                 ? `The header is at ${info.header.text}; it is not the payload start. The authenticated payload start becomes available after unlocking.`
                 : "The payload start becomes available after unlocking the file."}
