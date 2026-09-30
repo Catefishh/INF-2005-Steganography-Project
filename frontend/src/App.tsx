@@ -26,6 +26,8 @@ const PAGES: { id: Page; icon: IconName; label: string; role: string; group: Gro
     lede: "Hide a signed, encrypted message in acrostics, whitespace, or zero-width text." },
   { id: "analyse", icon: "layers", label: "Inspect a file", role: "Analyst", group: "Examine",
     lede: "Look for signs that something is hidden in a file, without needing the password or any key." },
+  { id: "attack-tests", icon: "zap", label: "Attack simulations", role: "Tester", group: "Examine",
+    lede: "Try a secret guess, disrupt message recovery, or forge accepted content. Results follow the attacker’s objective." },
   { id: "attacks", icon: "zap", label: "Tamper tests", role: "Tester", group: "Examine",
     lede: "Run controlled changes against a protected file and compare each verification result with the expected verdict." },
 ];
@@ -207,7 +209,8 @@ export default function App() {
             active={route.page === "verify"} />
         </Reveal>
         <Reveal hidden={route.page !== "analyse"}><AnalysePage key={workspaceEpoch} handoff={handoff} onWorkingFile={replaceWorkingFile} /></Reveal>
-        <Reveal hidden={route.page !== "attacks"}><AttackPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo} /></Reveal>
+        <Reveal hidden={route.page !== "attacks"}><AttackPage key={workspaceEpoch} vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo} active={route.page === "attacks"} /></Reveal>
+        <Reveal hidden={route.page !== "attack-tests"}><AttackPage key={workspaceEpoch} suite="attack" vault={vault} handoff={handoff} onWorkingFile={replaceWorkingFile} goTo={goTo} active={route.page === "attack-tests"} /></Reveal>
       </SidebarInset>
     </SidebarProvider></MotionConfig>
   );

@@ -115,7 +115,7 @@ def create_app(frontend_dist: Path | None = None, *, desktop_token: str | None =
         app.add_api_route("/graph/{graph_id}", graph_entry, methods=["GET"], include_in_schema=False)
         # Client routes must return the SPA shell on refresh and direct navigation.
         for route in ("/keys", "/embed", "/embed/result", "/verify", "/verify/result",
-                      "/inspect", "/tamper-tests", "/text"):
+                      "/inspect", "/tamper-tests", "/attack-tests", "/text"):
             app.add_api_route(route, lambda: FileResponse(dist / "index.html"), methods=["GET"],
                               include_in_schema=False)
         app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")

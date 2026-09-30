@@ -2,7 +2,7 @@ import { fileUrl, type HideResponse } from "../../api";
 import { Panel } from "../../components";
 
 export function DctResult({ result, onEdit, onHandOff }: {
-  result: HideResponse; onEdit: () => void; onHandOff: (page: "verify" | "analyse" | "attacks") => void;
+  result: HideResponse; onEdit: () => void; onHandOff: (page: "verify" | "analyse" | "attacks" | "attack-tests") => void;
 }) {
   const { report, stego } = result;
   return <div className="result-column">
@@ -11,7 +11,8 @@ export function DctResult({ result, onEdit, onHandOff }: {
       <a className="btn primary" href={fileUrl(stego.id, true)} download={stego.filename}>Download protected PNG</a>
       <div className="btn-row"><button className="btn ghost" onClick={onEdit}>Edit embedding</button>
         <button className="btn ghost" onClick={() => onHandOff("verify")}>Extract &amp; Verify</button>
-        <button className="btn ghost" onClick={() => onHandOff("attacks")}>Tamper tests</button></div>
+        <button className="btn ghost" onClick={() => onHandOff("attacks")}>Tamper tests</button>
+        <button type="button" className="btn ghost" onClick={() => onHandOff("attack-tests")}>Run attack simulations</button></div>
     </Panel>
     <Panel title="Capacity and integrity">
       <p>Encrypted package: {report.package_bytes.toLocaleString()} bytes in {report.span_slots.toLocaleString()} coefficient blocks.

@@ -193,20 +193,20 @@ describe("every screen — labels, busy state and heading order", () => {
     expectNoSkippedLevels(headingLevels(document.body));
   });
 
-  it("Tamper tests, including the result", async () => {
+  it.each(["tamper", "attack"] as const)("%s tests, including the result", async (suite) => {
     vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
       if (path === "/api/session") return {status: "ready"} as never;
       if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
       return {status: "succeeded", phase: "complete", total: 1, cases: SCENARIOS, result: {cases: SCENARIOS}} as never;
     });
-    render(<AttackPage vault={VAULT} handoff={null} goTo={() => undefined} />);
+    render(<AttackPage suite={suite} vault={VAULT} handoff={null} goTo={() => undefined} />);
     expectNoSkippedLevels(headingLevels(document.body));
 
     const input = document.querySelectorAll<HTMLInputElement>('input[type="file"]')[0];
     setFiles(input, new File([new Uint8Array(8)], "stego.png", { type: "image/png" }));
     fireEvent.change(input);
     fireEvent.change(screen.getByLabelText("Shared password"), { target: { value: "pw" } });
-    fireEvent.click(screen.getByRole("button", { name: /Run tamper tests/ }));
+    fireEvent.click(screen.getByRole("button", { name: suite === "attack" ? "Run attack simulations" : "Run tamper tests" }));
     await waitFor(() => expect(document.querySelector(".outcome")).toBeInTheDocument());
     expectNoSkippedLevels(headingLevels(document.body));
   });

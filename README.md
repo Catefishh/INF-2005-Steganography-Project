@@ -13,9 +13,12 @@ The React interface and Python FastAPI service run locally. The Windows distribu
 | **Extract & Verify** | `/verify` | Reupload a protected file, supply its verification material, and inspect the verdict and verification stages |
 | **Text Steganography** | `/text` | Generate and verify signed, encrypted acrostic, trailing-whitespace, or zero-width text |
 | **Inspect a file** | `/inspect` | Examine bit planes, statistical measurements, and differences against an optional original |
-| **Tamper tests** | `/tamper-tests` | Run controlled positive and negative verification cases and export evidence |
+| **Tamper tests** | `/tamper-tests` | Check carrier/payload edits, processing damage, and signed-digest integrity |
+| **Attack simulations** | `/attack-tests` | Check credential rejection, LSB destruction, and payload forgery |
 
 Embed and verification results have their own `/embed/result` and `/verify/result` routes. Browser Back/Forward navigation works within the studio. A working-file strip carries the selected media file and its SHA-256 between screens; **Replace file** and **Clear workspace** manage that selection. Keys, form inputs, and working files are kept in the current tab, so download them before refreshing or closing it.
+
+Protected image, audio, DCT, and video results offer **Run attack simulations** alongside the existing next-step buttons. It opens **Attack simulations** with the current protected file and verification material already loaded. The sidebar uses the same name; its route remains `/attack-tests`.
 
 ### Protection formats and keys
 
@@ -71,7 +74,7 @@ In **Text Steganography**, enter a message and choose acrostic, trailing whitesp
 
 The message limit is **32 KiB** and the UTF-8 carrier limit is **2 MiB**. Acrostic sentence bodies may be rewritten if the A–P initials and line order stay exact. Trailing spaces/tabs and U+200B/U+200C characters must survive copying unchanged. The hidden message and signer are authenticated; visible wording is outside that guarantee. See [text protection](docs/text-protection.md).
 
-## Inspection and tamper evidence
+## Inspection, tamper tests, and attack simulations
 
 **Inspect a file** provides bit planes 0–7, channel histograms, Chi-Square measurements, and image-only RS statistics and BPCS complexity maps. Bit 0 is the even/odd filter: even values are black and odd values are white. An original enables paired bit planes and histograms, difference maps, and image MSE, PSNR, and full-resolution luminance SSIM. SSIM requires a same-size image of at least 11×11 pixels. WAV analysis shows changes across time and channels; video has frame comparison and a change timeline.
 
@@ -79,11 +82,30 @@ Image comparisons include side-by-side, swipe, overlay, and heatmap views. Bit-p
 
 Chi-Square, RS, histograms, and BPCS are descriptive evidence, not proof of hidden content or authenticity. BPCS capacity is a theoretical analysis estimate, not an embedding method or payload allowance. Preview sampling is labelled in the UI. See [steganalysis methods and limits](docs/steganalysis.md).
 
-**Tamper tests** verifies the supplied file as a baseline, then runs applicable negative cases against protected image, WAV, video, or text inputs. Cases include wrong credentials, incorrect placement and correction, payload/carrier modifications, and a controlled RSA payload-hash mismatch. The summary shows every applicable case and failed verification checks when available. **Test passed** means the file verified as **Authentic**; **Test failed** means verification rejected the file or its inputs. A deliberately modified case should fail verification when the change is detected. Expand **Reasoning** to see the expected verdict, whether the scenario behaved as expected, and the actual verification explanation. A failed baseline stops the remaining cases. DCT cases that require spatial LSB slots are marked not applicable. Results arrive as cases finish, with downloadable variants and an evidence ZIP.
+**Tamper tests** verifies the supplied file as a baseline, then checks carrier/payload bit edits, JPEG recompression, WAV edits, and a controlled RSA payload-hash mismatch. Text cases damage an encoded symbol or edit visible wording. The visible-wording case expects **Authentic** for the hidden message because ordinary visible prose is outside its authenticated scope. An optional clean original is a negative control.
+
+**Attack simulations** uses the same UI format, with its own form and results. This screen tests one deliberately incorrect secret guess, hidden-data destruction, and payload forgery after a passphrase leak. Text damages an encoded symbol; video overwrites frame LSBs. Unrelated-public-key checks belong to Tamper tests as verification controls. Spatial-LSB wiping and forgery are marked not applicable for DCT and excluded from verification counts.
+
+Attack results use **Attack succeeded / Attack failed** against the stated goal: destruction succeeds when normal receiver recovery is blocked; guessing and forgery succeed only if accepted as Authentic. The baseline and unsupported cases are excluded from attack totals. A single incorrect guess does not measure brute-force resistance.
+
+Both pages verify the unchanged baseline first and stop if it fails. Tamper tests separates the test outcome from the verification result:
+
+| Label | Meaning |
+| --- | --- |
+| **As expected** | The observed verdict matches the case's expected verdict, including an intentional rejection |
+| **Unexpected** | The observed verdict differs from the expected verdict; the row is highlighted for review |
+| **Accepted** | Verification returned **Authentic** |
+| **Rejected** | Verification rejected the file or supplied inputs |
+
+The summary counts **as expected / unexpected** outcomes separately from **accepted / rejected** verification results. For example, an unchanged baseline accepted as Authentic and six negative cases rejected as expected produce **7 as expected · 0 unexpected**, with **Verification: 1 accepted · 6 rejected**. Those six rejections are successful test outcomes. If a case expected to be Tampered is accepted as Authentic, its test outcome is **Unexpected**. Unsupported cases are excluded from both counts.
+
+**Payload Missing** and **Cannot Verify** alone do not prove tampering. Expand **Reasoning** to compare expected and observed outcomes and see the failed verification checks. Results arrive as cases finish, with downloadable variants and an evidence ZIP. Both pages reuse the existing job endpoints with a `suite` selector; clients that omit it retain the combined suite.
 
 The baseline uses your selected protected file and credentials unchanged. The wrong-key case temporarily substitutes a freshly generated, unrelated public key; it does not change your workspace keys. Carrier and payload edits use separate copies. The optional original-cover case verifies a separate reference and expects **Payload Missing** only for an unsigned original; an already protected reference may contain a payload signed by another key. Each case's **Reasoning** explains its purpose, inputs, expected verdict, and observed verification result.
 
 Media ZIPs contain supplied original/protected files, optional recovery material, the public key, the passphrase or video recovery code, generated variants under `tampered/`, replay steps, `results.json`, an offline `report.html`, and a SHA-256 manifest. **These exports contain verification secrets.** Private keys and extracted plaintext are excluded. The report embeds its heatmap so it can be opened on its own; extract the full ZIP to use its file links. Text exports record test outcomes without the complete media input/credential bundle.
+
+Attack simulations shows an **Attack simulation summary** and titles its exported media report **Attack simulation report**. Its **Attack succeeded / Attack failed** labels describe the attacker's objective, separately from the verifier's verdict.
 
 ## Run the packaged Windows app
 
@@ -188,7 +210,7 @@ Browser and desktop use the same local API. [backend/app/main.py](backend/app/ma
 | Preparation, comparison and retry | Source/options or manual location → prepared cover, differences or verdict | [backend/app/api/media.py](backend/app/api/media.py), [backend/app/api/video_verify.py](backend/app/api/video_verify.py) | [tests/test_media_workflows.py](tests/test_media_workflows.py), [frontend/src/pages/VideoWorkflow.test.tsx](frontend/src/pages/VideoWorkflow.test.tsx) |
 | Signed text | Message/key → encrypted text; recovery inputs → verified message | [backend/app/stego/signed_text.py](backend/app/stego/signed_text.py), [backend/app/stego/text_carrier.py](backend/app/stego/text_carrier.py) | [tests/test_text.py](tests/test_text.py) |
 | Steganalysis | Image/audio and optional original → descriptive statistics and differences | [backend/app/stego/analysis/service.py](backend/app/stego/analysis/service.py), [backend/app/stego/analysis/](backend/app/stego/analysis/), [backend/app/stego/analysis_parts/](backend/app/stego/analysis_parts/) | [tests/test_analysis_service.py](tests/test_analysis_service.py), [tests/test_analysis_chi_square.py](tests/test_analysis_chi_square.py), [tests/test_analysis_bpcs.py](tests/test_analysis_bpcs.py) |
-| Tamper cases and evidence | Protected file and credentials → verdicts, variants and ZIP | [backend/app/stego/attacks.py](backend/app/stego/attacks.py), [backend/app/api/tamper_tests.py](backend/app/api/tamper_tests.py) | [tests/test_workflows.py](tests/test_workflows.py), [tests/test_media_workflows.py](tests/test_media_workflows.py) |
+| Tamper tests and attack simulations | Protected file, credentials and selected suite → verification verdicts, expected outcomes, attacker objectives, variants and ZIP | [backend/app/stego/attacks.py](backend/app/stego/attacks.py), [backend/app/api/tamper_tests.py](backend/app/api/tamper_tests.py), [frontend/src/ui/TamperSummary.tsx](frontend/src/ui/TamperSummary.tsx) | [tests/test_workflows.py](tests/test_workflows.py), [tests/test_media_workflows.py](tests/test_media_workflows.py), [tests/test_suite_split.py](tests/test_suite_split.py), [frontend/src/ui/TamperSummary.test.tsx](frontend/src/ui/TamperSummary.test.tsx) |
 | Jobs and artifacts | Session and task → progress, cancellation and scoped downloads | [backend/app/api/session_jobs.py](backend/app/api/session_jobs.py), [backend/app/api/sessions.py](backend/app/api/sessions.py), [backend/app/session.py](backend/app/session.py) | [tests/test_media_api.py](tests/test_media_api.py), [tests/test_module_boundaries.py](tests/test_module_boundaries.py) |
 | Interface | User inputs → typed requests and result panels | [frontend/src/api/](frontend/src/api/), [frontend/src/pages/](frontend/src/pages/), [frontend/src/ui/](frontend/src/ui/) | [frontend/src/pages.test.tsx](frontend/src/pages.test.tsx), [frontend/src/logic.test.ts](frontend/src/logic.test.ts) |
 | Upload validation | Allowed file types and PEM checks → accepted selections or inline errors | [frontend/src/upload.ts](frontend/src/upload.ts), [frontend/src/ui/inputs.tsx](frontend/src/ui/inputs.tsx), [backend/app/api/media.py](backend/app/api/media.py) | [frontend/src/ui/inputs.test.tsx](frontend/src/ui/inputs.test.tsx), [tests/test_media_workflows.py](tests/test_media_workflows.py) |
@@ -205,7 +227,7 @@ Packaging is defined in [Stegloc.spec](Stegloc.spec) and [build-windows.bat](bui
 4. **Video.** `VideoWorkflow.tsx` calls `/api/media/probe` and, when needed, `/api/media/prepare`, then the media protection job. `/api/video/verify` → `video_verify.verify_at()` evaluates stored or manual placement. `VideoInspect.tsx` calls `/api/video/compare` for frame previews and comparison data.
 5. **Text.** `TextPage.tsx` → `api/text.py` → `signed_text.protect()` signs/encrypts the message → `text_carrier.encode()`. Verification decodes and authenticates using `.stegloc-text`, the code and public key. Visible prose is outside the signature.
 6. **Analysis.** `/api/analyse` → `analysis.analyse()` → `analysis/service.py` runs bit-plane, histogram, Chi-Square, BPCS, RS and comparison helpers. `frontend/src/pages/analysis/Results.tsx` presents descriptive findings. An original enables exact differences and quality metrics.
-7. **Evidence.** `AttackPage.tsx` → `/api/jobs/tamper-tests` → `attacks.run_suite()` or `_video_suite()`. Each case uses a separate copy. `/api/jobs/{ident}/evidence` assembles session files, steps and report. `TextShowcase.tsx` uses the separate `/api/jobs/text-tamper-tests` route and text inputs.
+7. **Tamper and attack evidence.** The **Run attack simulations** result button uses the existing file/credential handoff and opens `/attack-tests`. `AttackPage.tsx` → `/api/jobs/tamper-tests` with `suite=attack` or `suite=tamper` → `attacks.run_suite()` or `_video_suite()`. The baseline uses unchanged inputs; subsequent cases use separate copies or substituted credentials. `TamperSummary.tsx` separates expected outcomes from verification verdicts and attacker objectives. `/api/jobs/{ident}/evidence` assembles session files, steps and report. `TextShowcase.tsx` uses `/api/jobs/text-tamper-tests` with the same suite selector and text inputs. Navigation and handoff checks are in `frontend/src/pages.test.tsx` and `frontend/src/pages/VideoWorkflow.test.tsx`.
 
 ## Further documentation
 

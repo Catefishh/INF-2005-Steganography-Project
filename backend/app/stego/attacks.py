@@ -17,6 +17,31 @@ from .engine import MAGIC, Verdict, _pack, _unpack, canonical_json, open_header,
 from .security import decrypt, encrypt, generate_rsa_keys, sha256_hex
 
 
+def describe_attack(row):
+    """Judge the attacker's objective separately from the verifier's verdict."""
+    if row["id"] == "baseline":
+        row["attack_outcome"] = "Baseline verified" if row["verdict"] == "Authentic" else "Baseline rejected"
+        return
+    if row["verdict"] == "Unsupported":
+        row["attack_outcome"] = "Not applicable"
+        return
+    destructive = row["id"] in {"lsb_noise", "symbol_damage"}
+    if destructive:
+        goal = "Prevent the legitimate receiver from recovering the message through normal verification."
+        assumption = "Attacker can edit the carrier but has no secret or signing key. The receiver uses the correct credentials."
+        succeeded = row["verdict"] in {"Payload Missing", "Cannot Verify", "Tampered", "Signature Invalid"}
+    elif row["id"] == "forged_payload":
+        goal = "Have changed content accepted as authentic sender content."
+        assumption = "Attacker knows the leaked passphrase, but has no sender signing key; the receiver trusts the original public key."
+        succeeded = row["verdict"] == "Authentic"
+    else:
+        goal = "Recover the hidden message with one incorrect secret guess."
+        assumption = "Attacker has the carrier, public key and any recovery file, but not the secret. This is one deliberately wrong guess, not a brute-force test."
+        succeeded = row["verdict"] == "Authentic"
+    row["attack"] = {"goal": goal, "assumption": assumption, "succeeded": succeeded}
+    row["attack_outcome"] = "Attack succeeded" if succeeded else "Attack failed"
+
+
 def _scenario(key, title, change, expected, result, file=None):
     return {"id": key, "title": title, "change": change, "expected": expected, "verdict": result["verdict"],
             "summary": result["summary"], "as_expected": result["verdict"] in expected, "file": file,
@@ -31,12 +56,16 @@ def _flip_slot_bit(stego, slot):
 
 
 def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, check=None,
-              stop_on_failed_baseline=False, include_hash_mismatch=False):
+              stop_on_failed_baseline=False, include_hash_mismatch=False, suite="all"):
     """Returns (scenarios, files) where files maps scenario id -> tampered bytes."""
+    if suite not in {"all", "tamper", "attack"}:
+        raise ValueError("Unknown test suite")
     class CaseList(list):
         def append(self, case):
             if check:
                 check()
+            if suite == "attack":
+                describe_attack(case)
             super().append(case)
             if on_case:
                 on_case(dict(case))
@@ -46,13 +75,23 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
                                [Verdict.AUTHENTIC], base))
     if stop_on_failed_baseline and base["verdict"] != Verdict.AUTHENTIC:
         return scenarios, files
-    # Credential and manual-location probes are handled by Verify, not this integrity suite.
     cover = load_cover(stego)
     ext = cover.extension
-    if detect_method(cover) == "dct":
+    if suite == "attack":
+        scenarios.append(_scenario("wrong_passphrase", "Wrong passphrase", "verify the unchanged file with a different passphrase",
+                                   [Verdict.CANNOT_VERIFY], verify(stego, passphrase + "-wrong", public_pem)))
+    if suite != "attack":
         _, other_public = generate_rsa_keys()
-        scenarios.append(_scenario("wrong_key", "Wrong public key", "verify with an unrelated RSA key",
+        scenarios.append(_scenario("wrong_key", "Wrong public key", "verify with a freshly generated, unrelated RSA key",
                                    [Verdict.SIGNATURE_INVALID], verify(stego, passphrase, other_public)))
+    if detect_method(cover) == "dct":
+        if suite != "tamper":
+            for name, title in (("lsb_noise", "LSB overwrite"), ("forged_payload", "LSB package forgery")):
+                scenarios.append({"id": name, "title": title, "change": "LSB-only attack is unsupported for DCT",
+                                  "expected": [], "verdict": "Unsupported", "summary": "This attack assumes pixel LSB framing.",
+                                  "as_expected": True, "file": None, "stages": []})
+        if suite == "attack":
+            return scenarios, files
         if original_cover:
             scenarios.append(_scenario("clean_cover", "Original cover reference", "verify the separate original cover; expect no existing payload",
                                        [Verdict.PAYLOAD_MISSING], verify(original_cover, passphrase, public_pem)))
@@ -72,10 +111,6 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
             scenarios.append(_scenario("flip_payload_bit", "DCT payload bit changed",
                                        "invert the first encoded bit of the encrypted payload",
                                        [Verdict.TAMPERED], verify(altered, passphrase, public_pem), "flip_payload_bit"))
-        for name, title in (("lsb_noise", "LSB overwrite"), ("forged_payload", "LSB package forgery")):
-            scenarios.append({"id": name, "title": title, "change": "LSB-only attack is unsupported for DCT",
-                              "expected": [], "verdict": "Unsupported", "summary": "This attack assumes pixel LSB framing.",
-                              "as_expected": True, "file": None, "stages": []})
         if cover.kind == "image":
             image = Image.open(io.BytesIO(stego)).convert("RGB")
             jpeg = io.BytesIO()
@@ -88,18 +123,14 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
                                        verify(back.getvalue(), passphrase, public_pem), "jpeg"))
         return scenarios, files
 
-    # Wrong public key (someone else's key)
-    _, other_public = generate_rsa_keys()
-    scenarios.append(_scenario("wrong_key", "Wrong public key", "verify with a freshly generated, unrelated RSA key",
-                               [Verdict.SIGNATURE_INVALID], verify(stego, passphrase, other_public)))
-
     # One bit of the cover outside the hidden data (slot 0 is never used)
-    tampered, where = _flip_slot_bit(stego, 0)
-    files["flip_cover_bit"] = ("tampered_cover_bit" + ext, tampered)
-    scenarios.append(_scenario("flip_cover_bit", "1 bit changed in the cover", f"flip the LSB at {where}",
-                               [Verdict.TAMPERED], verify(tampered, passphrase, public_pem), "flip_cover_bit"))
+    if suite != "attack":
+        tampered, where = _flip_slot_bit(stego, 0)
+        files["flip_cover_bit"] = ("tampered_cover_bit" + ext, tampered)
+        scenarios.append(_scenario("flip_cover_bit", "1 bit changed in the cover", f"flip the LSB at {where}",
+                                   [Verdict.TAMPERED], verify(tampered, passphrase, public_pem), "flip_cover_bit"))
 
-    if original_cover:
+    if original_cover and suite != "attack":
         scenarios.append(_scenario("clean_cover", "Original cover reference", "verify the separate original cover; expect no existing payload",
                                    [Verdict.PAYLOAD_MISSING], verify(original_cover, passphrase, public_pem)))
 
@@ -110,18 +141,20 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
         return scenarios, files
     start, length, n_lsb = opened["start"], opened["length"], opened["n_lsb"]
 
-    tampered, where = _flip_slot_bit(stego, start)
-    files["flip_payload_bit"] = ("tampered_payload_bit" + ext, tampered)
-    scenarios.append(_scenario("flip_payload_bit", "1 bit changed inside the payload", f"flip the LSB at {where}",
-                               [Verdict.TAMPERED], verify(tampered, passphrase, public_pem), "flip_payload_bit"))
+    if suite != "attack":
+        tampered, where = _flip_slot_bit(stego, start)
+        files["flip_payload_bit"] = ("tampered_payload_bit" + ext, tampered)
+        scenarios.append(_scenario("flip_payload_bit", "1 bit changed inside the payload", f"flip the LSB at {where}",
+                                   [Verdict.TAMPERED], verify(tampered, passphrase, public_pem), "flip_payload_bit"))
 
-    noisy = load_cover(stego)
-    rng = np.random.default_rng(2005)
-    noisy.slots[:] = (noisy.slots & 0xFE) | rng.integers(0, 2, noisy.n_slots, dtype=np.uint8)
-    files["lsb_noise"] = ("tampered_lsb_noise" + ext, noisy.export())
-    scenarios.append(_scenario("lsb_noise", "LSB plane overwritten", "replace every slot's LSB with random bits",
-                               [Verdict.PAYLOAD_MISSING, Verdict.CANNOT_VERIFY],
-                               verify(files["lsb_noise"][1], passphrase, public_pem), "lsb_noise"))
+    if suite != "tamper":
+        noisy = load_cover(stego)
+        rng = np.random.default_rng(2005)
+        noisy.slots[:] = (noisy.slots & 0xFE) | rng.integers(0, 2, noisy.n_slots, dtype=np.uint8)
+        files["lsb_noise"] = ("tampered_lsb_noise" + ext, noisy.export())
+        scenarios.append(_scenario("lsb_noise", "LSB plane overwritten", "replace every slot's LSB with random bits",
+                                   [Verdict.PAYLOAD_MISSING, Verdict.CANNOT_VERIFY],
+                                   verify(files["lsb_noise"][1], passphrase, public_pem), "lsb_noise"))
 
     # Attacker who knows the passphrase swaps the hidden content but cannot re-sign.
     associated = MAGIC + opened["salt"]
@@ -131,7 +164,7 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
         forged_content = bytes([content[0] ^ 0xFF]) + content[1:]
         # Keep the signed record and signature intact, but re-encrypt changed plaintext.
         # This reaches the payload SHA-256 check, unlike a raw LSB flip (AES-GCM fails first).
-        if include_hash_mismatch:
+        if include_hash_mismatch and suite != "attack":
             mismatch_package = encrypt(opened["keys"]["payload"], _pack(record_json, signature, forged_content), associated)
             mismatch = load_cover(stego)
             lsb.encode(mismatch.slots, mismatch_package, n_lsb, start)
@@ -141,17 +174,21 @@ def run_suite(stego, passphrase, public_pem, original_cover=None, on_case=None, 
             scenarios.append(_scenario("payload_hash_mismatch", "Signed SHA-256 mismatch",
                                        "same-length plaintext changed; original signed digest retained and payload re-encrypted",
                                        [Verdict.TAMPERED], mismatch_result, "payload_hash_mismatch"))
-        record = json.loads(record_json)
-        record["payload"]["sha256"] = sha256_hex(forged_content)
-        forged_package = encrypt(opened["keys"]["payload"], _pack(canonical_json(record), signature, forged_content),
-                                 associated)
-        forged = load_cover(stego)
-        lsb.encode(forged.slots, forged_package, n_lsb, start)
-        files["forged_payload"] = ("forged_payload" + ext, forged.export())
-        scenarios.append(_scenario("forged_payload", "Passphrase leaked: content swapped",
-                                   "attacker decrypts, changes the payload, updates its hash, re-encrypts",
-                                   [Verdict.SIGNATURE_INVALID], verify(files["forged_payload"][1], passphrase, public_pem),
-                                   "forged_payload"))
+        if suite != "tamper":
+            record = json.loads(record_json)
+            record["payload"]["sha256"] = sha256_hex(forged_content)
+            forged_package = encrypt(opened["keys"]["payload"], _pack(canonical_json(record), signature, forged_content),
+                                     associated)
+            forged = load_cover(stego)
+            lsb.encode(forged.slots, forged_package, n_lsb, start)
+            files["forged_payload"] = ("forged_payload" + ext, forged.export())
+            scenarios.append(_scenario("forged_payload", "Passphrase leaked: content swapped",
+                                       "attacker decrypts, changes the payload, updates its hash, re-encrypts",
+                                       [Verdict.SIGNATURE_INVALID], verify(files["forged_payload"][1], passphrase, public_pem),
+                                       "forged_payload"))
+
+    if suite == "attack":
+        return scenarios, files
 
     if cover.kind == "image":
         image = Image.open(io.BytesIO(stego)).convert("RGB")

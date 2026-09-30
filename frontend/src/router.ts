@@ -1,4 +1,4 @@
-// Minimal History API router. Six screen paths plus two result paths.
+// Minimal History API router. Seven screen paths plus two result paths.
 //
 // The app deliberately keeps every page mounted (see App.tsx) so that keys, files and
 // passphrases carry between screens. The router therefore only decides *which* page is
@@ -22,6 +22,7 @@ export const PATHS: Record<Page, string> = {
   verify: "/verify",
   analyse: "/inspect",
   attacks: "/tamper-tests",
+  "attack-tests": "/attack-tests",
   text: "/text",
 };
 

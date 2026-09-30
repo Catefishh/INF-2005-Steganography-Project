@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type Page = "keys" | "hide" | "verify" | "analyse" | "attacks" | "text";
+export type Page = "keys" | "hide" | "verify" | "analyse" | "attacks" | "attack-tests" | "text";
 
 export interface Vault {
   privatePem: string;

@@ -117,6 +117,7 @@ const SCREENS: [RegExp, string][] = [
   [/Text Steganography/, "Text Steganography"],
   [/Inspect a file/, "Inspect a file"],
   [/Tamper tests/, "Tamper tests"],
+  [/Attack simulations/, "Attack simulations"],
 ];
 
 /** Waits for the named screen via its sidebar entry. */
@@ -173,15 +174,15 @@ async function appWithKeys() {
   await waitFor(() => expect(within(view()).getByRole("button", { name: /Save both keys/ })).toBeInTheDocument());
 }
 
-it("offers the six active destinations, each with its own heading", async () => {
+it("offers the seven active destinations, each with its own heading", async () => {
   render(<App />);
   for (const [linkName, heading] of SCREENS) {
     await goTo(linkName, heading);
     expect(document.querySelector(".topbar h1")).toHaveTextContent(heading);
   }
   // Screens stay mounted so a file and a password survive the walk between them.
-  expect(document.querySelectorAll(".main > div")).toHaveLength(6);
-  expect(document.querySelectorAll("#rail-nav a")).toHaveLength(6);
+  expect(document.querySelectorAll(".main > div")).toHaveLength(7);
+  expect(document.querySelectorAll("#rail-nav a")).toHaveLength(7);
 });
 
 it("keys: generates a pair, then guards replacing it", async () => {
@@ -305,8 +306,8 @@ it("sender: blocks until it has what it needs, then embeds and offers the downlo
   expect(primaries[0]).toHaveAttribute("download", "stego_harbour.png");
 });
 
-it("keeps the embedded file across receiving, inspection and tamper screens until cleared", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
+it("opens attack simulations from the embed result and keeps the working file across screens until cleared", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
   await appWithKeys();
   await screenNamed("Embed & Sign");
   pick("Cover file", "harbour.png");
@@ -315,6 +316,12 @@ it("keeps the embedded file across receiving, inspection and tamper screens unti
   fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "session password"}});
   fireEvent.click(within(view()).getByRole("button", {name: /Embed & sign/}));
   await waitFor(() => expect(document.querySelector(".working-strip")).toHaveTextContent("stego_harbour.png"));
+  fireEvent.click(within(view()).getByRole("button", {name: "Run attack simulations"}));
+  await waitFor(() => expect(document.querySelector(".topbar h1")).toHaveTextContent("Attack simulations"));
+  expect(window.location.pathname).toBe("/attack-tests");
+  expect(within(view()).getAllByText("stego_harbour.png").length).toBeGreaterThan(0);
+  expect(within(view()).getByLabelText("Shared password")).toHaveValue("session password");
+  expect(within(view()).getByRole("button", {name: "Run attack simulations"})).toBeEnabled();
   await screenNamed("Extract & Verify");
   expect(within(view()).getAllByText("stego_harbour.png").length).toBeGreaterThan(0);
   await waitFor(() => expect(within(view()).getByLabelText("Shared password")).toHaveValue("session password"));
@@ -429,6 +436,7 @@ it("finishing an embed while another screen is active does not change that scree
 });
 
 it("sends DCT selection and shows the method-specific PNG result", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(new Blob([new Uint8Array(64)], {type: "image/png"}), {status: 200}));
   vi.mocked(api.inspect).mockResolvedValue({...IMAGE_INFO, dct: {n_slots: 14_400, max_package_bytes: 1671}});
   const response = await vi.mocked(api.hide).getMockImplementation()?.(new FormData());
   if (!response) throw new Error("missing hide mock");
@@ -447,6 +455,10 @@ it("sends DCT selection and shows the method-specific PNG result", async () => {
   await waitFor(() => expect(within(view()).getByRole("heading", {name: "DCT image protected"})).toBeInTheDocument());
   expect(vi.mocked(api.hide).mock.calls.at(-1)?.[0].get("method")).toBe("dct");
   expect(within(view()).getByRole("link", {name: "Download protected PNG"})).toHaveAttribute("download", "stego_harbour.png");
+  fireEvent.click(within(view()).getByRole("button", {name: "Run attack simulations"}));
+  await waitFor(() => expect(document.querySelector(".topbar h1")).toHaveTextContent("Attack simulations"));
+  expect(window.location.pathname).toBe("/attack-tests");
+  expect(within(view()).getByLabelText("Shared password")).toHaveValue("password");
 });
 
 it("keeps text work independent of the media working file", async () => {
@@ -690,9 +702,7 @@ it("analyst: reports a reading, not a certainty, and re-runs on a channel change
 });
 
 it("tester: explains expected outcomes, file integrity, and tampered variants", async () => {
-  const cases = [...(await vi.mocked(api.attacks)(new FormData())).scenarios,
-    {id: "wrong_key", title: "Wrong public key", change: "Use an unrelated key.", expected: ["Signature Invalid"],
-      verdict: "Signature Invalid", summary: "Signature rejected.", as_expected: true, file: null}];
+  const cases = (await vi.mocked(api.attacks)(new FormData())).scenarios;
   vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
     if (path === "/api/session") return {status: "ready"} as never;
     if (path === "/api/jobs/tamper-tests") return {id: "job1"} as never;
@@ -708,21 +718,23 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   await waitFor(() => expect(view().querySelector(".outcome")).toHaveTextContent("Provided file verified as genuine"));
   expect(view().querySelector(".outcome")).toHaveTextContent("Stegloc-protected content");
   expect(view().querySelector(".outcome")).toHaveTextContent("signature matches the sender's public key");
-  expect(within(view()).getByRole("table", {name: "Verification results by test case"})).toHaveTextContent("Wrong public key");
+  expect(within(view()).getByRole("table", {name: "Verification results by test case"})).toHaveTextContent("One bit changed outside the hidden data");
+  expect(within(view()).queryByRole("checkbox", {name: "Changed verification inputs"})).toBeNull();
   expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
   fireEvent.click(within(view()).getByRole("button", {name: "Show test cases"}));
   expect(within(view()).getByRole("button", {name: "Hide test cases"})).toHaveAttribute("aria-expanded", "true");
   expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
-  fireEvent.click(within(view()).getByRole("checkbox", {name: "Changed verification inputs"}));
-  expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("Wrong public key");
+  fireEvent.click(within(view()).getByRole("checkbox", {name: "Modified-file examples"}));
+  expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("One bit changed outside the hidden data");
   expect(within(view()).getByRole("table", {name: "Selected test cases"})).not.toHaveTextContent("Nothing changed");
-  fireEvent.click(within(view()).getByRole("checkbox", {name: "Changed verification inputs"}));
+  fireEvent.click(within(view()).getByRole("checkbox", {name: "Modified-file examples"}));
   fireEvent.click(within(view()).getByRole("checkbox", {name: "Original and reference checks"}));
   expect(within(view()).getByRole("table", {name: "Selected test cases"})).toHaveTextContent("Nothing changed");
   expect(within(view()).getByRole("table", {name: "Selected test cases"})).not.toHaveTextContent("One bit changed outside the hidden data");
   fireEvent.click(within(view()).getByRole("checkbox", {name: "Modified-file examples"}));
   const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/jobs/tamper-tests")?.[1]?.body as FormData;
   expect(sent.get("stego")).toBeInstanceOf(File);
+  expect(sent.get("suite")).toBe("tamper");
   expect(sent.has("payload")).toBe(false);
   expect(sent.has("private_key")).toBe(false);
   expect(within(view()).getAllByText("as expected")).toHaveLength(2);
@@ -731,13 +743,47 @@ it("tester: explains expected outcomes, file integrity, and tampered variants", 
   expect(within(view()).getAllByText(/Expected outcome:/)).toHaveLength(2);
   expect(within(view()).getByText(/Provided file verified as genuine/)).toBeInTheDocument();
   expect(within(view()).queryByText(/behaved correctly/)).toBeNull();
-  expect(within(view()).getByText(/correct passphrase is accepted/)).toBeInTheDocument();
+  expect(within(view()).getByText(/supplied verification credentials are accepted/)).toBeInTheDocument();
   fireEvent.click(within(view()).getAllByRole("button", { name: "Examine variant" })[0]);
   expect(within(view()).getAllByText(/Flip the lowest bit/)).toHaveLength(3);
   expect(within(view()).getAllByText(/integrity check detected a change/)).toHaveLength(2);
   fireEvent.click(within(view()).getByRole("button", {name: "Hide test cases"}));
   expect(within(view()).queryByRole("table", {name: "Selected test cases"})).toBeNull();
   expect(within(view()).getByRole("table", {name: "Verification results by test case"})).toBeInTheDocument();
+});
+
+it("attack tester: uses the tamper layout, selects attack cases, and preserves separate page state", async () => {
+  const baseline = (await vi.mocked(api.attacks)(new FormData())).scenarios[0];
+  const cases = [baseline, {id: "wrong_passphrase", title: "Wrong passphrase", change: "Use a different password.",
+    expected: ["Cannot Verify"], verdict: "Cannot Verify", summary: "Password rejected.", as_expected: true, file: null}];
+  vi.spyOn(jobs, "requestJson").mockImplementation(async (path) => {
+    if (path === "/api/session") return {status: "ready"} as never;
+    if (path === "/api/jobs/tamper-tests") return {id: "attack1"} as never;
+    return {status: "succeeded", phase: "complete", total: cases.length, cases, result: {cases}} as never;
+  });
+  await appWithKeys();
+  await screenNamed("Attack simulations");
+  expect(window.location.pathname).toBe("/attack-tests");
+  expect(within(view()).getByRole("heading", {name: "Choose the protected file"})).toBeInTheDocument();
+  expect(within(view()).queryByText("Original cover")).toBeNull();
+  pick("Protected file", "protected.png");
+  fireEvent.change(within(view()).getByLabelText("Shared password"), {target: {value: "password"}});
+  fireEvent.click(within(view()).getByRole("button", {name: "Run attack simulations"}));
+  await waitFor(() => expect(within(view()).getByRole("heading", {name: "Attack simulation summary"})).toBeInTheDocument());
+  const sent = vi.mocked(jobs.requestJson).mock.calls.find(([path]) => path === "/api/jobs/tamper-tests")?.[1]?.body as FormData;
+  expect(sent.get("suite")).toBe("attack");
+  expect(sent.get("passphrase")).toBe("password");
+  expect(sent.has("cover")).toBe(false);
+  expect(within(view()).getByRole("table", {name: "Attack outcomes by objective"})).toHaveTextContent("Wrong passphrase");
+  expect(within(view()).getByRole("link", {name: "Download evidence ZIP"})).toHaveAttribute("href", "/api/jobs/attack1/evidence");
+  await screenNamed("Tamper tests");
+  expect(within(view()).getByLabelText("Shared password")).toHaveValue("");
+  expect(within(view()).queryByRole("heading", {name: "Attack simulation summary"})).toBeNull();
+  await screenNamed("Attack simulations");
+  expect(within(view()).getByLabelText("Shared password")).toHaveValue("password");
+  expect(within(view()).getByRole("heading", {name: "Attack simulation summary"})).toBeInTheDocument();
+  const ids = Array.from(document.querySelectorAll("[id]")).map((element) => element.id);
+  expect(new Set(ids).size).toBe(ids.length);
 });
 
 it("tester: shows the failure details when the original is not genuine", async () => {
